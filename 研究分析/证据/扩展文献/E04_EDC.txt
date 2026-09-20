@@ -1,0 +1,1135 @@
+===== PDF PAGE 1 =====
+Extract, Define, Canonicalize: An LLM-based Framework for Knowledge
+                          Graph Construction
+
+                                       Bowen Zhang1 and Harold Soh1,2
+1
+    Dept. of Computer Science, National University of Singapore, 2 NUS Smart Systems Institute
+                                         {bowenzhang, harold}@comp.nus.edu.sg
+
+
+
+
+                        Abstract                                    EDC: Extract-Define-Canonicalize
+      In this work, we are interested in automated                      Phase 1: Open Information Extraction
+      methods for knowledge graph creation (KGC)
+      from input text. Progress on large language                  Extract relational triplets from the text: ‘Alan Shepard
+                                                                   participated in the Apollo 14 mission’
+      models (LLMs) has prompted a series of re-
+      cent works applying them to KGC, e.g., via                                        [Alan Shepard, participatedIn, Apollo 14]
+      zero/few-shot prompting. Despite successes on
+      small domain-specific datasets, these models
+      face difficulties scaling up to text common in                            Phase 2: Schema Definition
+      many real-world applications. A principal is-
+      sue is that, in prior methods, the KG schema                 Write a definition for the relation ‘participatedIn’ in the
+                                                                   current context
+      has to be included in the LLM prompt to gen-
+      erate valid triplets; larger and more complex                          The subject entity took part in the mission specified
+      schemas easily exceed the LLMs’ context win-                                                             by the object entity
+      dow length. Furthermore, there are scenar-
+      ios where a fixed pre-defined schema is not
+      available and we would like the method to con-                       Phase 3: Schema Canonicalization
+      struct a high-quality KG with a succinct self-               The most semantically similar relation in the schema
+      generated schema. To address these problems,                 is ‘mission’
+      we propose a three-phase framework named
+      Extract-Define-Canonicalize (EDC): open in-                  Can the relation ‘participatedIn’ be replaced by
+                                                                   ‘mission’ given the current context?
+      formation extraction followed by schema def-
+      inition and post-hoc canonicalization. EDC                                           Yes! The converted relational triplet is
+                                                                                             [Alan Shepard, mission, Apollo 14]
+      is flexible in that it can be applied to settings
+      where a pre-defined target schema is available
+      and when it is not; in the latter case, it con-
+      structs a schema automatically and applies self-       Figure 1: A high-level illustration of Extract-Define-
+      canonicalization. To further improve perfor-           Canonicalize (EDC) for Knowledge Graph Construc-
+      mance, we introduce a trained component that           tion.
+      retrieves schema elements relevant to the input
+      text; this improves the LLMs’ extraction per-
+      formance in a retrieval-augmented generation-          used in a variety of downstream tasks such as
+      like manner. We demonstrate on three KGC               decision-making (Guo et al., 2021; Lan et al.,
+      benchmarks that EDC is able to extract high-
+                                                             2020), question-answering (Huang et al., 2019; Ya-
+      quality triplets without any parameter tuning
+      and with significantly larger schemas compared         sunaga et al., 2021), and recommendation (Guo
+      to prior works. Code for EDC is available at           et al., 2020; Wang et al., 2019). However, knowl-
+      https://github.com/clear-nus/edc.                      edge graph construction (KGC) is inherently chal-
+                                                             lenging: the task requires competence in under-
+1     Introduction
+                                                             standing syntax and semantics to generate a con-
+Knowledge graphs (KGs) (Ji et al., 2021) are a               sistent, concise, and meaningful knowledge graph.
+structured representation of knowledge that orga-            As such, KGC predominantly relies on intensive
+nizes interconnected information through graph               human labor (Ye et al., 2022). KGC is a broad
+structures, where entities and relations are rep-            problem and in this work, we focus on the task
+resented as nodes and edges. They are broadly                of relational triplet extraction as it is crucial for
+                                                          9820
+        Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing, pages 9820–9836
+                          November 12-16, 2024 ©2024 Association for Computational Linguistics
+
+
+===== PDF PAGE 2 =====
+KGC. Following previous works (Ye et al., 2022;          semantically equivalent relation phrases such as
+Melnyk et al., 2022; Bi et al., 2024), we still refer    ‘profession’, ‘job’, and ‘occupation’ (Kamp et al.,
+to the task we are addressing as KGC.                    2023; Putri et al., 2019; Vashishth et al., 2018).
+   Recent attempts to automate KGC (Zhong et al.,           Phases 2 and 3 (Define and Canonicalize) stan-
+2023; Ye et al., 2022) have employed large lan-          dardize the triplets to make them useful for down-
+guage models (LLMs) in view of their remark-             stream tasks. We designed EDC to be flexible: it
+able natural language understanding and generation       can either discover triplets consistent with a pre-
+capabilities. LLM-based KGC methods employ               existing schema of potentially large size (Target
+various innovative prompt-based techniques, such         Alignment) or self-generate a schema (Self Canon-
+as multi-turn conversation (Wei et al., 2023) and        icalization). To achieve this, we use LLMs to de-
+code generation (Bi et al., 2024), to generate entity-   fine the schema components by exploiting their
+relation triplets that represent the knowledge graph.    explanation generation capabilities — LLMs can
+However, these methods are currently limited to          justify their extractions via explanations that are
+small and domain-specific scenarios — to ensure          agreeable to human experts (Li et al., 2023). The
+the validity of generated triplets, schema informa-      definitions are used to find the closest entity/rela-
+tion (e.g., possible entity and relation types) has to   tion type candidates (via a vector similarity search)
+be included in the prompt. Complex datasets (e.g.,       that the LLM can then reference to canonicalize
+Wikipedia) typically require large schemas that          a component. In the case there is no equivalent
+exceed the context window length or can be ig-           counterpart in the existing schema, we can choose
+nored by the LLMs (Wadhwa et al., 2023). Further-        to add it to enrich the schema.
+more, pre-defined schemas are not always avail-             To further improve performance, the three steps
+able — the users might not have pre-determined           above can be followed by an additional Refine-
+or fixed intentions about what information is of         ment phase: we repeat EDC but provide the pre-
+interest in advance but still would like to extract      viously extracted triplets and a relevant part of the
+intrinsically high-quality KGs. It is unclear how        schema in the prompt during the initial extraction.
+existing methods will work in such situations.           We propose a trained Schema Retriever that re-
+   To address these problems, we propose Ex-             trieves schema components relevant to the input
+tract-Define-Canonicalize (EDC), a structured            text, akin to retrieval-augmented generation (Lewis
+approach for KGC: the key idea is to decompose           et al., 2020), which we find improves the generated
+KGC into three primary phases corresponding to           triplets.
+three subtasks (Fig. 1):                                    Experiments on three KGC datasets in both Tar-
+                                                         get Alignment and Self Canonicalization settings
+  1. Open Information Extraction: extract a list         show that EDC is able to extract higher-quality
+     of entity-relation triplets from the input text     KGs compared to state-of-the-art methods through
+     freely.                                             both automatic and manual evaluation. Further-
+                                                         more, the use of the Schema Retriever is shown
+  2. Schema Definition: generate a definition for
+                                                         to significantly and consistently improve EDC’s
+     each component of the schema, e.g. entity
+                                                         performance.
+     type and relation type, induced by triplets ob-
+                                                            In summary, the paper makes the following con-
+     tained in the extraction phase.
+                                                         tributions:
+  3. Schema Canonicalization: use the schema
+                                                            • EDC, a flexible and performant LLM-based
+     definitions to standardize the triplets such
+                                                              framework for knowledge graph construc-
+     that semantically-equivalent entities/relations
+                                                              tion that is able to extract high-quality KGs
+     types have the same noun/relation phrase.
+                                                              with schema of large size or without any pre-
+   Each phase exploits the strengths of LLMs:                 defined schema.
+the Extract subtask leverages recent findings that          • Schema Retriever, a trained model to extract
+LLMs are effective open information extractors (Li            schema components relevant to input text in
+et al., 2023; Han et al., 2023) — they can extract            the same vein as information retrieval.
+semantically correct and meaningful triplets. How-
+ever, the resulting triplets typically contain redun-       • Empirical evidence that demonstrate the effec-
+dant and ambiguous information, e.g., multiple                tiveness of EDC and the Schema Retriever.
+                                                     9821
+
+
+===== PDF PAGE 3 =====
+2   Background                                          the KGs useful for downstream applications.
+                                                           Canonicalization methods differ depending on
+In this section, we provide relevant background on
+                                                        whether a target schema is available. In case a
+knowledge graph construction (KGC), open infor-
+                                                        target schema is present, the task is sometimes re-
+mation extraction (OIE), and canonicalization.
+                                                        ferred to as “alignment” (Putri et al., 2019). For
+Knowledge Graph Construction. Tradi-                    example, Putri et al. (2019) uses WordNet (Miller,
+tional methods typically addressed KGC using            1995) as side information to obtain definitions for
+“pipelines”, comprising subtasks like entity            the OIE-extracted relation phrases and a Siamese
+discovery (Žukov-Gregorič et al., 2018; Martins        network to compare an OIE relation definition and
+et al., 2019), entity typing (Choi et al., 2018; Onoe   a pre-defined relation in the target schema. In case
+and Durrett, 2020), and relation classification         no target schema is available, state-of-the-art meth-
+(Zeng et al., 2014, 2015). Thanks to advances           ods are commonly based on clustering (Vashishth
+in pre-trained generative language models (e.g.,        et al., 2018; Dash et al., 2020). CESI (Vashishth
+T5 (Raffel et al., 2020) and BERT(Lewis et al.,         et al., 2018) creates embeddings for the OIE rela-
+2019)), more recent works instead frame KGC             tions using side information from external sources
+as a sequence-to-sequence problem and generate          like PPDB (Ganitkevitch et al., 2013) and WordNet.
+relational triplets in an end-to-end manner by          However, clustering-based methods are prone to
+fine-tuning these moderately-sized language             over-generalization (Kamp et al., 2023; Putri et al.,
+models (Ye et al., 2022). The success of large          2019), e.g., CESI may put “is brother of”, “is son
+language models (LLMs) has pushed this paradigm         of”, “is main villain of”, and “was professor of”
+further: current methods directly prompt the            into the same relation cluster.
+LLMs to generate triplets in a zero/few-shot               Compared to the existing canonicalization meth-
+manner. For example, ChatIE (Wei et al., 2023)          ods, EDC is more general; it works whether a
+extracts triplets by framing the task as a multi-turn   target schema is provided or not. Instead of using
+question-answering problem and CodeKGC (Bi              static external sources like WordNet, EDC utilizes
+et al., 2024) approaches the task as a code             contextual and semantically-rich side information
+generation problem. As previously mentioned,            generated by LLMs. Furthermore, by allowing
+these models face difficulties scaling up to general    the LLMs to verify if a transformation can be per-
+text common in many real-world applications as          formed (instead of solely relying on the embedding
+the KG schema has to be included in the LLM             similarity), EDC alleviates the over-generalization
+prompt. Our EDC framework circumvents this              issue faced by previous methods.
+problem by using post-hoc canonicalization (and
+without requiring fine-tuning of the base LLMs).        3     Method: EDC for KGC
+
+Open Information Extraction and Canonical-              This section outlines our primary contribution: an
+ization. Standard (closed) information extraction       approach to constructing knowledge graphs that
+requires the output triplets to follow a pre-defined    leverages LLMs in a structured manner. We first
+schema, e.g. a list of relation or entity types to      detail the EDC framework followed by a descrip-
+be extracted from. In contrast, open information        tion of refinement (EDC+R). Given input text, our
+extraction (OIE) does not have such a requirement.      goal is to extract relational triplets in a canonical
+OIE has a long history and we refer readers who         form such that the resulting KGs will have minimal
+want comprehensive coverage to the excellent sur-       ambiguity and redundancy. When there is a pre-
+veys (Liu et al., 2022; Zhou et al., 2022; Kamp         defined target schema, all generated triplets should
+et al., 2023). Recent studies have found LLMs           conform to it. In the scenario where there is not
+to exhibit excellent performance on OIE tasks (Li       one, the system should dynamically create one and
+et al., 2023). However, the relational triplets ex-     canonicalize the triplets with respect to it.
+tracted from OIE systems are not canonicalized;
+                                                        3.1    EDC: Extract-Define-Canonicalize
+multiple semantically equivalent relations can co-
+exist without being unified to a canonical form,        At a high level, EDC decomposes KGC into three
+causing redundancy and ambiguity in the induced         connected subtasks. To ground our discussion, we
+open knowledge graph. An extra canonicalization         will use a specific input text example: “Alan Shep-
+step is required to standardize the triplets to make    ard was born on Nov 18, 1923 and selected by
+                                                    9822
+
+
+===== PDF PAGE 4 =====
+NASA in 1959. He was a member of the Apollo 14
+                                                                    14’]]
+crew” and walk through each of the phases:
+Phase 1: Open Information Extraction: we first                     This example prompt results in the definitions
+leverage Large Language Models (LLMs) for open                  for (bornOn: The subject entity was born on
+information extraction. Through few-shot prompt-                the date specified by the object entity.) and
+ing, LLMs identify and extract relational triplets              (participatedIn: The subject entity took part in
+([Subject, Relation, Object]) from input texts, inde-           the event or mission specified by the object
+pendent of any specific schema. Using our example               entity.), which are then passed to the next stage as
+above, the prompt is:                                           side information used for canonicalization.
+
+   OIE Prompt                                                   Phase 3: Schema Canonicalization: The third
+                                                                phase aims to refine the open KG into a canoni-
+   Given a piece of text, extract relational triplets in        cal form, eliminating redundancies and ambigui-
+   the form of [Subject, Relation, Object] from it.
+   Here are some examples:
+                                                                ties. We start by vectorizing the definitions of each
+   Example 1:                                                   schema component using a sentence transformer to
+   Text: The 17068.8 millimeter long ALCO RS-3                  create embeddings. Canonicalization then proceeds
+   has a diesel-electric transmission.
+   Triplets: [[‘ALCO RS-3’, ‘powerType’, ‘Diesel-               in one of two ways, depending on the availability
+   electric transmission’], [‘ALCO RS-3’, ‘length’,             of a target schema:
+   ‘17068.8 (millimetres)’]] ...
+   Now please extract triplets from the following
+                                                                    • Target Alignment: With an existing target
+   text: Alan Shepard was born on Nov 18, 1923
+                                                                      schema, we identify the most closely related
+   and selected by NASA in 1959. He was a mem-
+                                                                      components within the target schema for each
+   ber of the Apollo 14 crew.
+                                                                      element, considering them for canonicaliza-
+                                                                      tion. To prevent issues of over-generalization,
+                                                                      LLMs assess the feasibility of each potential
+  The resultant triplets (in this case, [‘Alan Shep-
+                                                                      transformation. If a transformation is deemed
+ard’, ‘bornOn’, ‘Nov 18, 1923’], [‘Alan Shep-
+                                                                      unreasonable, indicating no semantic equiva-
+ard’, ‘participatedIn’, ‘Apollo 14’]) form an open
+                                                                      lent in the target schema, the component, and
+KG, which is forwarded to subsequent phases.
+                                                                      its related triplets are excluded.
+Phase 2: Schema Definition: Next, we prompt
+                                                                    • Self Canonicalization: Absent a target
+the LLMs to provide a natural language definition
+                                                                      schema, the goal is to consolidate semanti-
+for each component of the schema induced by the
+                                                                      cally similar schema components, standardiz-
+open KG:
+                                                                      ing them to a singular representation to stream-
+   Schema Definition Prompt                                           line the KG. Starting with an empty canonical
+                                                                      schema, we examine the open KG triplets,
+   Given a piece of text and a list of relational triplets            searching for potential consolidation candi-
+   extracted from it, write a definition for each rela-
+   tion present.                                                      dates through vector similarity and LLM veri-
+   Example 1:                                                         fication. Unlike target alignment, components
+   Text: The 17068.8 millimeter long ALCO RS-3                        deemed non-transformable are added to the
+   has a diesel-electric transmission.
+   Triplets: [[‘ALCO RS-3’, ‘powerType’, ‘Diesel-                     canonical schema, thereby expanding it.
+   electric transmission’], [‘ALCO RS-3’, ‘length’,
+   ‘17068.8 (millimetres)’]]                                    Using our example, the prompt is:
+   Definitions:
+   powerType: The subject entity uses the type of                   Schema Canonicalization Prompt
+   power or energy source specified by the object
+   entity.                                                          Given a piece of text, a relational triplet extracted
+   ...                                                              from it, and the definition of the relation in it,
+   Now write a definition for each relation present                 choose the most appropriate relation to replace it
+   in the triplets extracted from the following text:               in this context if there is any.
+   Text: Alan Shepard was an American who was                       Text: Alan Shepard was born on Nov 18, 1923
+   born on Nov 18, 1923 in New Hampshire, was                       and selected by NASA in 1959. He was a member
+   selected by NASA in 1959, was a member of the                    of the Apollo 14 crew.
+   Apollo 14 crew and died in California                            Triplets:    [‘Alan Shepard’, ‘participatedIn’,
+   Triplets: [[‘Alan Shepard’, ‘bornOn’, ‘Nov 18,                   ‘Apollo 14’]
+   1923’], [‘Alan Shepard’, ‘participatedIn’, ‘Apollo               Definition of ‘participatedIn’: The subject entity
+
+
+                                                             9823
+
+
+===== PDF PAGE 5 =====
+                                                            our setting, the similarity space is different from
+   took part in the event or mission specified by the
+   object entity.                                           the standard sentence embedding models where
+   Choices:                                                 cosine similarity in the vector space captures se-
+   A. ‘mission’: The subject entity participated in
+   the event or operation specified by the object en-
+                                                            mantic equivalence. Our Schema Retriever is a
+   tity.                                                    fine-tuned variant of the sentence embedding model
+   B. ‘season’: The subject entity participated in the      E5-mistral-7b-instruct (Wang et al., 2023). We fol-
+   season of a series specified by the object entity.
+   ...                                                      low the original training methodology detailed in
+   F. None of the above                                     the paper, which involves utilizing pairs of text
+                                                            and their corresponding defined relations. For de-
+   Note that the choices above are obtained by us-          tails, please refer to the Appendix A.3. For a given
+ing vector similarity search. After the LLM makes           positive text-relation pair (t+ , r+ ), we employ an
+its choice, the relations are transformed to yield:         instruction template on t+ to generate a new text
+[‘Alan Shepard’, ‘birthDate’, ‘Nov 18, 1923’],              t+
+                                                             inst = “Instruct: retrieve relations that are present
+[‘Alan Shepard’, ‘mission’, ‘Apollo 14’], which             in the given text \n Query: {t+ }”.
+forms our canonicalized KG.                                    We then finetune the embedding model to distin-
+                                                            guish between the correct relation associated with
+3.2 EDC+R: iteratively refine EDC with                      a given text and other non-relevant relations using
+    Schema Retriever                                        the InfoNCE loss.
+The refinement process leverages the data gener-               Back to our example, refinement with the
+ated by EDC to enhance the quality of the extracted         schema retriever adds the following relation to the
+triplets. Inspired by retrieval-augmented genera-           previous set: [‘Alan Shepard’, ‘selectedByNasa’,
+tion and prior work (Bi et al., 2024), we construct         ‘1959’]. The relation ‘selectedByNasa’ is rather
+a “hint” for the extraction phase (details in Ap-           obscure but was specified in the target schema.
+pendix A.4), which comprises two main elements:
+                                                            4     Experiments
+   • Candidate Entities: The entities extracted by
+     EDC from the previous iteration, and entities          In this section, we describe experiments designed
+     extracted from the text using the LLM;                 to evaluate the performance of EDC and EDC+R.
+                                                            Briefly, our results demonstrate that EDC signif-
+   • Candidate Relations: The relations extracted           icantly outperforms the state-of-the-art methods
+     by EDC from the previous cycle and relations           in both Target Alignment and Self Canonicaliza-
+     retrieved from the pre-defined/canonicalized           tion settings. Refinement further improves EDC.
+     schema by using a trained Schema Retriever.            Source code for EDC and to replicate our experi-
+                                                            ments are available in the supplementary materials,
+The inclusion of entities and relations from both
+                                                            with full tables in the Appendix C.
+the LLM and the schema retriever provides a richer
+pool of candidates for the LLM, which addresses             4.1    Experimental Setup
+issues where the absence of entities or relations im-
+                                                            Datasets. We evaluate EDC using three KGC
+pairs the LLM’s effectiveness. By merging the en-
+                                                            datasets:
+tities and relations extracted in earlier phases with
+new findings from entity extraction and schema                  • WebNLG (Ferreira et al., 2020): We use the
+retrieval, the hint serves to aid the OIE by boot-                test split from the semantic parsing task of
+strapping from the previous round.                                WebNLG+2020 (v3.0). It contains 1165 pairs
+    To scale EDC to large schemas, we employ a                    of text and triplets. The schema derived
+trained Schema Retriever which allows us to ef-                   from these reference triplets encompasses 159
+ficiently search schemas. The Schema Retriever                    unique relation types.
+works in a similar fashion to information retrieval
+methods based on vector spaces (Ganguly et al.,                 • REBEL (Cabot and Navigli, 2021): The
+2015; Lewis et al., 2020); it projects the schema                 original test partition of REBEL comprises
+components and the input text to a vector space                   105,516 entries. To manage costs, we select a
+such that cosine similarity captures the relevance                random sample of 1000 text-triplet pairs. This
+between the two, i.e., how likely a schema compo-                 subset induces a schema with 200 distinct re-
+nent to be present in the input text. Note that in                lation types.
+                                                         9824
+
+
+===== PDF PAGE 6 =====
+   • Wiki-NRE (Distiawan et al., 2019): From           each of the datasets:
+     Wiki-NRE’s test split (29,619 entries), we
+     sample 1000 text-triplet pairs, resulting in a       • REGEN (Dognin et al., 2021) is the SOTA
+     schema with 45 unique relation types.                  model for WebNLG. It is a sequence-to-
+                                                            sequence model that leverages pre-trained
+   These datasets were chosen due to their richer
+                                                            T5 (Raffel et al., 2020) and Reinforcement
+variety of relation types over alternatives like
+                                                            Learning (RL) for bidirectional text-to-graph
+ADE (Gurulingappa et al., 2012) (1 relation type),
+                                                            and graph-to-text generation.
+SciERC (Luan et al., 2018) (7 relation types), and
+CoNLL04 (Roth and Yih, 2004) (4 relation types)           • GenIE (Josifoski et al., 2022), a sequence-
+used to evaluate previous LLM-based methods (Bi             to-sequence model that leverages pre-trained
+et al., 2024; Wadhwa et al., 2023). This diversity          BART (Lewis et al., 2019) and a constrained
+better mimics real-world complexity. In our experi-         generation strategy to constrain the output
+ments, we focus on extracting relations as the only         triplets to be consistent with the pre-defined
+schema component available across all datasets.             schema. GenIE is the state-of-the-art model
+Relations, being a foundational element of KGs,             for REBEL and Wiki-NRE.
+are prioritized over other components like entity
+or event types. However, note that EDC can be          Following previous work (Dognin et al., 2021; Mel-
+readily extended to other schema components.           nyk et al., 2022), we use the WEBNLG evalua-
+                                                       tion script (Ferreira et al., 2020) which computes
+EDC Models. EDC contains multiple modules
+                                                       the Precision, Recall, and F1 scores for the output
+that are powered by LLMs. Since the OIE mod-
+                                                       triplets against the ground truth in a token-based
+ule is the key upstream module that determines the
+                                                       manner. Metrics based on Named Entity Evalua-
+semantic content captured in the KG, we tested
+                                                       tion were used to measure the Precision, Recall,
+different LLMs of different sizes including GPT-
+                                                       and F1 score in three different ways.
+4 (Achiam et al., 2023), GPT-3.5-turbo (Brown
+et al., 2020), and Mistral-7b (Jiang et al., 2023).       • Exact: Requires a complete match between
+Mistral-7b was deployed on a local workstation,             the candidate and reference triple, disregard-
+whereas the GPT models were accessed via the                ing the type (subject, relation, object).
+OpenAI API. For the framework’s remaining com-
+ponents which required prompting, we used GPT-            • Partial: Allows for at least a partial match
+3.5-turbo. In the canonicalization phase, the E5-           between the candidate and reference triple,
+Mistral-7b model was utilized for vector similarity         disregarding the type.
+searches without modifications.
+                                                          • Strict: Demands an exact match between the
+4.1.1 Evaluation Criteria and Baselines                     candidate and reference triplet, including the
+We evaluate our methods differently under Target            element types.
+Alignment (when a schema is provided) and Self
+Canonicalization (no schema) due to the inherently     Self Canonicalization. For evaluating self-
+different objectives: the former aims to recover the   canonicalization performance, comparisons are
+ground-truth annotated triplets consistent with the    made with:
+target schema while the latter is to extract seman-
+tically correct and meaningful triplets that induce       • Baseline Open KG, which is the initial open
+a succinct and non-redundant KG without a pre-              KG output from the OIE (Open Information
+defined target to compare against. For the datasets         Extraction) phase. This serves as a reference
+above, the preivous LLM-based KGC methods                   point to illustrate the changes in precision and
+(ChatIE and CodeKGC) could not be used due to               schema conciseness resulting from the canon-
+the schema size. Although EDC is not intended for           icalization process.
+small domain-specific datasets, we include the re-
+                                                          • CESI (Vashishth et al., 2018), recognized as
+sults on SciERC and CoNLL04 in the Appendix E
+                                                            a leading clustering-based approach for open
+for the comprehensiveness of the evaluation.
+                                                            KG canonicalization. By applying CESI to the
+Target Alignment. We compare EDC and                        open KG, we aim to contrast its performance
+EDC+R against the specialized trained models for            against canonicalization by EDC.
+                                                   9825
+
+
+===== PDF PAGE 7 =====
+                          WebNLG                                            REBEL                                              Wiki-NRE
+            0.8                                               0.6                                                0.7
+
+            0.7                                               0.5                                                0.6
+
+F1 Scores   0.6                                   F1 Scores   0.4                                    F1 Scores   0.5
+
+            0.5                REGEN(Baseline)                0.3                  GenIE(Baseline)               0.4                 GenIE(Baseline)
+                               EDC                                                 EDC                                               EDC
+                               EDC + R                                             EDC + R                                           EDC + R
+            0.4   GPT-4    GPT-3.5   Mistral-7b               0.2   GPT-4    GPT-3.5    Mistral-7b               0.3   GPT-4    GPT-3.5   Mistral-7b
+
+
+Figure 2: Performance of EDC and EDC+R on WebNLG, REBEL, and Wiki-NRE datasets against baselines in the
+Target Alignment setting (F1 scores with ‘Partial’ criteria). EDC+R only performs one iteration of refinement due
+to diminishing marginal improvement.
+
+Given that canonicalized triplets may use relations                             datasets; this is primarily due to the GenIE’s con-
+phrased differently from the reference triplets or en-                          strained generation approach, which falls short in
+tirely out-of-schema relations, a token-based evalu-                            extracting triplets that include literals, such as num-
+ation becomes unsuitable. Thus, we resort to man-                               bers and dates.
+ual evaluation, focusing on three key aspects that                                 Refinement (EDC+R) consistently and signif-
+reflect the intrinsic quality of an extracted KG:                               icantly enhances performance. Post-refinement,
+                                                                                the difference in performance between GPT-3.5-
+            • Precision: The canonicalized triplets remain
+                                                                                turbo and Mistral-7b is larger, suggesting Mistral-
+              correct and meaningful with respect to the text
+                                                                                7b’s was not as able to leverage the provided hints.
+              compared to the OIE triplets.
+                                                                                Nevertheless, a single refinement iteration with the
+            • Conciseness: The schema’s brevity is mea-                         hint improved performance for all the tested LLMs.
+              sured by the number of relations types.                             From the scores, it appears that EDC perfor-
+                                                                               mance is significantly better on WebNLG com-
+            • Redundancy: We employ a redundancy score
+                                                                               pared to REBEL and Wiki-NRE. However, we ob-
+              — the average cosine similarity among each
+                                                                               served that EDC was penalized despite producing
+              canonicalized relation and its nearest coun-
+                                                                               valid triplets on the latter datasets. A reason for
+              terpart — where low scores indicate that the
+                                                                               this is that the reference triplets in these datasets
+              schema’s relations are semantically distinct.
+                                                                               are non-exhaustive. For example, given the text
+4.2 Results and Analysis                                                       in the REBEL dataset, ‘Romany Love is a 1931
+                                                                               British musical film directed by Fred Paul and star-
+In the following, we focus on conveying our main
+                                                                               ring Esmond Knight, Florence McHugh and Roy
+findings and results. For full results and tables,
+                                                                               Travers.’, EDC extracts: [‘Romany Love’, ‘cast
+please refer to the Appendix.
+                                                                               member’, ‘Esmond Knight’], [‘Romany Love’,
+4.2.1 Target Alignment                                                         ‘cast member’, ‘Florence McHugh’], [‘Romany
+The bar charts in Figure 2 summarize the Partial F1                            Love’, ‘cast member’, ‘Roy Travers’], which are
+scores obtained by EDC and EDC+R on all three                                  all semantically correct, but only the first triplet is
+datasets with different LLMs for OIE compared                                  present in the reference set. The datasets also con-
+against the respective baselines. EDC demon-                                   tain reference triplets based on information extra-
+strates performance that is superior to or on                                  neous to the text, e.g., ‘Daniel is an Ethiopian foot-
+par with the state-of-the-art baselines for all                                baller, who currently plays for Hawassa City S.C.’
+evaluated datasets. Comparing the LLMs, GPT-4                                  has a corresponding reference triplet [‘Hawassa
+emerges as the top performer, with Mistral-7b and                              City S.C.’, ‘country’, ‘Ethiopia’].
+GPT-3.5-turbo exhibiting comparable results. The                                  These issues can be attributed to the distinct
+disparity between our methods and the baselines is                              methodologies employed in the creation of these
+more pronounced on the REBEL and Wiki-NRE                                       datasets. For WebNLG, annotators were asked to
+                                                                            9826
+
+
+===== PDF PAGE 8 =====
+Table 1: Ablation study results (F1 scores with all cri-       Table 2: Performance of EDC in the Self Canonical-
+teria) on schema retriever, the LLM used for OIE is            ization setting (human-evaluated precision and schema
+GPT-3.5-turbo. S.R. stands for Schema Retriever.               metrics). The best result for each dataset and metric is
+                                                               bolded. Prec. stands for precision, No. Rel. stands for
+     Dataset    Method           Partial   Strict   Exact      the number of relations and Red. stands for redundancy
+                EDC+R            0.794     0.753    0.772
+     WebNLG     EDC+R w/o S.R.   0.752     0.701    0.721      score.
+                EDC              0.746     0.688    0.713
+                EDC+R            0.559     0.516    0.529          Dataset    Method    Prec.(↑)   No. Rel.(↓)   Red.(↓)
+     REBEL      EDC+R w/o S.R.   0.517     0.466    0.482
+                                                                              EDC        0.956         200        0.833
+                EDC              0.506     0.449    0.473
+                                                                   WebNLG     CESI       0.724         280        0.893
+                EDC+R            0.693     0.685    0.657                     Open KG    0.982         529        0.927
+     Wiki-NRE   EDC+R w/o S.R.   0.653     0.645    0.641
+                                                                              EDC        0.867         225        0.831
+                EDC              0.647     0.638    0.640
+                                                                   REBEL      CESI       0.504         307        0.854
+                                                                              Open KG    0.903         667        0.895
+                                                                              EDC        0.898         106        0.833
+                                                                   Wiki-NRE   CESI       0.753         114        0.849
+                                                                              Open KG    0.909         204        0.881
+
+
+compose text solely from the triplets. Thus, the
+text and the triplets have a direct correspondence,            4.2.2    Self Canonicalization
+and the text typically does not include informa-
+                                                               Here, we focus on evaluating EDC’s self-
+tion other than what is apparent from the triplets.
+                                                               canonicalization performance (utilizing GPT-3.5-
+In contrast, REBEL and Wiki-NRE are created
+                                                               turbo for OIE). We omit refinement in Self Canon-
+by aligning text and triplets using distant supervi-
+                                                               icalization setting as it has already been stud-
+sion (Smirnova and Cudré-Mauroux, 2018). This
+                                                               ied above and in subsequent iterations, the self-
+approach can result in less straightforward triplet
+                                                               constructed canonicalized schema becomes the tar-
+extraction and incomplete reference sets, leading
+                                                               get schema. Following prior work (Wadhwa et al.,
+to overly pessimistic evaluations for methods like
+                                                               2023; Kolluru et al., 2020), we conducted a tar-
+EDC, which generate correct triplets not present in
+                                                               geted human evaluation of knowledge graphs. This
+the dataset. (Han et al., 2023; Wadhwa et al., 2023).
+                                                               evaluation involved two independent annotators
+On average, EDC extracts one additional triplet per
+                                                               assessing the reasonableness of triplet extractions
+sentence on REBEL and Wiki-NRE compared to
+                                                               from given text without prior knowledge of the sys-
+the reference set, while on WebNLG, it extracts a
+                                                               tem’s details. We observed a high inter-annotator
+similar number of triplets to the reference.
+                                                               agreement score of 0.94.
+                                                                  The evaluation results and schema metrics are
+Ablation study on schema retriever. To evaluate                summarized in Table 2.While the open KG gen-
+the impact of the relations provided by the schema             erated by the OIE stage contains semantically
+retriever during refinement, we conducted an abla-             valid triplets (which affirms the previous findings
+tion study with GPT-3.5-turbo by removing these                that LLMs are competent open information extrac-
+relations. The results in Table 1 show that ablating           tors (Li et al., 2023)), there is a significant degree
+the Schema Retriever leads to a decline in perfor-             of redundancy within the resultant schema. EDC
+mance. Qualitatively, we find that the schema re-              accurately canonicalizes the open KG and yields
+triever helps to find relevant relations that are chal-        a schema that is both more concise and less re-
+lenging for the LLMs to identify during the OIE                dundant compared to CESI. EDC avoids CESI’s
+stage. For example, given the text ‘The University             tendency toward over-generalization — in line with
+of Burgundy in Dijon has 16,800 undergraduate                  prior work (Putri et al., 2019), we observed CESI
+students’, the LLMs extract [‘University of Bur-               inappropriately clusters diverse relations such as
+gundy’, ‘location’, ‘Dijon’] during OIE. Although              ‘place of death’, ‘place of birth’, ‘date of death’,
+semantically correct, this relation overlooks the              ‘date of birth’, and ‘cause of death’ into a single
+more specific relation present in the target schema,           ‘date of death’ category.
+namely ‘campus’, for denoting university’s loca-
+tion. The schema retriever successfully identifies             5   Conclusion
+this finer relation, enabling the LLMs to adjust their
+extraction to [‘University of Burgundy’, ‘campus’,             In this work, we presented EDC, an LLM-based
+‘Dijon’]. This experiment highlights the schema                three-phase framework that addresses the problem
+retriever’s value in facilitating the extraction of pre-       of KGC by open information extraction followed
+cise and contextually appropriate relations.                   by post-hoc canonicalization. Experiments show
+                                                            9827
+
+
+===== PDF PAGE 9 =====
+that EDC and EDC+R are able to extract better                 facts about humans (Zhang and Soh, 2023),
+KGs than specialized trained models when a tar-               the task or goal (Xie et al., 2023), and the
+get schema is available and dynamically create a              environment.
+schema when none is provided. The scalability and
+versatility of EDC opens up many opportunities           7   Ethical Considerations
+for applications: it allows us to automatically ex-      Artifact usage. The datasets we used in the
+tract high-quality KGs from general text using large     paper are only leveraged for research purposes
+schemas like Wikidata (Vrandečić and Krötzsch,         and we strictly follow the corresponding licenses
+2014) and even enrich these schemas with newly           (e.g. WebNLG uses cc-by-nc-sa-4.0). It is to
+discovered relations.                                    be noted that, due to the nature of the task, the
+                                                         datasets may inherently contain information about
+6    Limitations and Future Directions
+                                                         individuals (especially celebrities). Software and
+There are several limitations that we would like to      code for this paper is publicly available at https:
+address in future works.                                 //github.com/clear-nus/edc.
+
+    • We only considered schema canonicalization         Human annotators. The two annotators (1 male
+      within the scope of this paper, it is of great     and 1 female) are recruited university students. The
+      interest to incorporate an entity de-duplication   annotators are compensated fairly and given abun-
+      mechanism in the future to reduce the redun-       dant and flexible time to complete the tasks. The
+      dancy in the constructed KGs, e.g., via coref-     collection protocol is determined exempt by our
+      erence resolution (Sukthanker et al., 2020).       institution’s IRB committee.
+      We briefly explored this approach and the pre-     Potential Risks. The use of current LLMs may
+      liminary results can be found in Appendix F.       incur risks such as hallucinations (Xu et al., 2024)
+                                                         and privacy issues (Yao et al., 2024).
+    • EDC’s components can be further improved to
+      boost performance. Specifically, the schema        Acknowledgements
+      retriever may benefit from training on more
+      diverse and higher-quality data.                   This research is supported by the National Research
+                                                         Foundation Singapore and DSO National Labora-
+    • Due to time and resource constraints, we only      tories under the AI Singapore Programme (AISG
+      tested different LLMs for OIE while all the        Award No: AISG2-RP-2020-016).
+      other modules of EDC rely on GPT-3.5-turbo,
+      it will be beneficial to test the smaller open-
+      source models’ performance on the other tasks      References
+      as well.                                           Josh Achiam, Steven Adler, Sandhini Agarwal, Lama
+                                                           Ahmad, Ilge Akkaya, Florencia Leoni Aleman,
+    • EDC is a costly framework, involving a large         Diogo Almeida, Janko Altenschmidt, Sam Altman,
+      number of LLM calls. When GPT-3.5-turbo is           Shyamal Anadkat, et al. 2023. Gpt-4 technical report.
+                                                           arXiv preprint arXiv:2303.08774.
+      used for all components, the cost was around
+      0.009 USD per example in our experiments.          Oshin Agarwal, Heming Ge, Siamak Shakeri, and
+      It is possible to have certain components re-        Rami Al-Rfou. 2020. Knowledge graph based syn-
+      placed by smaller fine-tuned models — previ-         thetic corpus generation for knowledge-enhanced
+                                                           language model pre-training.     arXiv preprint
+      ous works have shown smaller language mod-           arXiv:2010.12688.
+      els can be fine-tuned for OIE (Wadhwa et al.,
+      2023) and smaller BERT-based classifiers can       Zhen Bi, Jing Chen, Yinuo Jiang, Feiyu Xiong, Wei Guo,
+                                                           Huajun Chen, and Ningyu Zhang. 2024. Codekgc:
+      be trained for schema canonicalization. We           Code language model for generative knowledge
+      also explored the possibility of combining the       graph construction. ACM Transactions on Asian
+      two stages of OIE and Schema Definition in           and Low-Resource Language Information Process-
+      Appendix G.                                          ing, 23(3):1–16.
+                                                         Tom Brown, Benjamin Mann, Nick Ryder, Melanie
+    • We are looking to apply EDC towards embod-           Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind
+      ied AI and robotics. Specifically, KGs can           Neelakantan, Pranav Shyam, Girish Sastry, Amanda
+      form memory sources for VLMs, containing             Askell, et al. 2020. Language models are few-shot
+                                                     9828
+
+
+===== PDF PAGE 10 =====
+  learners. Advances in neural information processing         corpus to support the automatic extraction of drug-
+  systems, 33:1877–1901.                                      related adverse effects from medical case reports.
+                                                              Journal of biomedical informatics, 45(5):885–892.
+Pere-Lluís Huguet Cabot and Roberto Navigli. 2021.
+  Rebel: Relation extraction by end-to-end language        Ridong Han, Tao Peng, Chaohao Yang, Benyou Wang,
+  generation. In Findings of the Association for Com-        Lu Liu, and Xiang Wan. 2023. Is information extrac-
+  putational Linguistics: EMNLP 2021, pages 2370–            tion solved by chatgpt? an analysis of performance,
+  2381.                                                      evaluation criteria, robustness and errors. arXiv
+                                                             preprint arXiv:2305.14450.
+Eunsol Choi, Omer Levy, Yejin Choi, and Luke Zettle-
+  moyer. 2018. Ultra-fine entity typing. arXiv preprint    Xiao Huang, Jingyuan Zhang, Dingcheng Li, and Ping
+  arXiv:1807.04905.                                          Li. 2019. Knowledge graph embedding based ques-
+                                                             tion answering. In Proceedings of the twelfth ACM
+Sarthak Dash, Gaetano Rossiello, Nandana Mihin-              international conference on web search and data min-
+  dukulasooriya, Sugato Bagchi, and Alfio Gliozzo.           ing, pages 105–113.
+  2020. Open knowledge graphs canonicalization
+  using variational autoencoders. arXiv preprint           Shaoxiong Ji, Shirui Pan, Erik Cambria, Pekka Martti-
+  arXiv:2012.04780.                                          nen, and S Yu Philip. 2021. A survey on knowledge
+                                                             graphs: Representation, acquisition, and applications.
+Bayu Distiawan, Gerhard Weikum, Jianzhong Qi, and            IEEE transactions on neural networks and learning
+  Rui Zhang. 2019. Neural relation extraction for            systems, 33(2):494–514.
+  knowledge base enrichment. In Proceedings of the
+  57th Annual Meeting of the Association for Compu-        Albert Q Jiang, Alexandre Sablayrolles, Arthur Men-
+  tational Linguistics, pages 229–240.                       sch, Chris Bamford, Devendra Singh Chaplot, Diego
+                                                             de las Casas, Florian Bressand, Gianna Lengyel, Guil-
+Pierre L Dognin, Inkit Padhi, Igor Melnyk, and Payel         laume Lample, Lucile Saulnier, et al. 2023. Mistral
+   Das. 2021. Regen: Reinforcement learning for text         7b. arXiv preprint arXiv:2310.06825.
+   and knowledge base generation using pretrained lan-
+   guage models. arXiv preprint arXiv:2108.12472.          Martin Josifoski, Nicola De Cao, Maxime Peyrard,
+                                                            Fabio Petroni, and Robert West. 2022. GenIE: Gen-
+Thiago Castro Ferreira, Claire Gardent, Nikolai Ilinykh,    erative information extraction. In Proceedings of
+  Chris Van Der Lee, Simon Mille, Diego Moussallem,         the 2022 Conference of the North American Chap-
+  and Anastasia Shimorina. 2020. The 2020 bilingual,        ter of the Association for Computational Linguistics:
+  bi-directional webnlg+ shared task overview and eval-     Human Language Technologies, pages 4626–4643,
+  uation results (webnlg+ 2020). In Proceedings of the      Seattle, United States. Association for Computational
+  3rd International Workshop on Natural Language            Linguistics.
+  Generation from the Semantic Web (WebNLG+).
+                                                           Serafina Kamp, Morteza Fayazi, Zineb Benameur-El,
+Debasis Ganguly, Dwaipayan Roy, Mandar Mitra, and            Shuyan Yu, and Ronald Dreslinski. 2023. Open
+  Gareth JF Jones. 2015. Word embedding based gen-           information extraction: A review of baseline tech-
+  eralized language model for information retrieval. In      niques, approaches, and applications. arXiv preprint
+  Proceedings of the 38th international ACM SIGIR            arXiv:2310.11644.
+  conference on research and development in informa-
+  tion retrieval, pages 795–798.                           Keshav Kolluru, Vaibhav Adlakha, Samarth Aggarwal,
+                                                             Soumen Chakrabarti, et al. 2020. Openie6: Iterative
+Juri Ganitkevitch, Benjamin Van Durme, and Chris             grid labeling and coordination analysis for open infor-
+   Callison-Burch. 2013. Ppdb: The paraphrase                mation extraction. arXiv preprint arXiv:2010.03147.
+   database. In Proceedings of the 2013 conference
+   of the north american chapter of the association for    Luong Thi Hong Lan, Tran Manh Tuan, Tran Thi Ngan,
+   computational linguistics: Human language tech-           Nguyen Long Giang, Vo Truong Nhu Ngoc, Pham
+   nologies, pages 758–764.                                  Van Hai, et al. 2020. A new complex fuzzy inference
+                                                             system with fuzzy knowledge graph and extensions
+Liang Guo, Fu Yan, Yuqian Lu, Ming Zhou, and                 in decision making. Ieee Access, 8:164899–164921.
+  Tao Yang. 2021. An automatic machining process
+  decision-making system based on knowledge graph.         Mike Lewis, Yinhan Liu, Naman Goyal, Marjan
+  International journal of computer integrated manu-         Ghazvininejad, Abdelrahman Mohamed, Omer Levy,
+  facturing, 34(12):1348–1369.                               Ves Stoyanov, and Luke Zettlemoyer. 2019. Bart: De-
+                                                             noising sequence-to-sequence pre-training for natural
+Qingyu Guo, Fuzhen Zhuang, Chuan Qin, Hengshu                language generation, translation, and comprehension.
+  Zhu, Xing Xie, Hui Xiong, and Qing He. 2020. A             arXiv preprint arXiv:1910.13461.
+  survey on knowledge graph-based recommender sys-
+  tems. IEEE Transactions on Knowledge and Data            Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio
+  Engineering, 34(8):3549–3568.                              Petroni, Vladimir Karpukhin, Naman Goyal, Hein-
+                                                             rich Küttler, Mike Lewis, Wen-tau Yih, Tim Rock-
+Harsha Gurulingappa, Abdul Mateen Rajput, Angus              täschel, et al. 2020. Retrieval-augmented generation
+  Roberts, Juliane Fluck, Martin Hofmann-Apitius, and        for knowledge-intensive nlp tasks. Advances in Neu-
+  Luca Toldo. 2012. Development of a benchmark               ral Information Processing Systems, 33:9459–9474.
+                                                       9829
+
+
+===== PDF PAGE 11 =====
+Bo Li, Gexiang Fang, Yang Yang, Quansen Wang, Wei             on computational natural language learning (CoNLL-
+  Ye, Wen Zhao, and Shikun Zhang. 2023. Evaluating            2004) at HLT-NAACL 2004, pages 1–8.
+  chatgpt’s information extraction capabilities: An as-
+  sessment of performance, explainability, calibration,    Alisa Smirnova and Philippe Cudré-Mauroux. 2018. Re-
+  and faithfulness. arXiv preprint arXiv:2304.11633.         lation extraction using distant supervision: A survey.
+                                                             ACM Computing Surveys (CSUR), 51(5):1–35.
+Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paran-
+  jape, Michele Bevilacqua, Fabio Petroni, and Percy       Rhea Sukthanker, Soujanya Poria, Erik Cambria, and
+  Liang. 2024. Lost in the middle: How language mod-         Ramkumar Thirunavukarasu. 2020. Anaphora and
+  els use long contexts. Transactions of the Association     coreference resolution: A review. Information Fu-
+  for Computational Linguistics, 12:157–173.                 sion, 59:139–162.
+
+Pai Liu, Wenyang Gao, Wenjie Dong, Songfang Huang,         Qingyu Tan, Lu Xu, Lidong Bing, Hwee Tou Ng, and
+  and Yue Zhang. 2022. Open information extrac-              Sharifah Mahani Aljunied. 2022. Revisiting docred
+  tion from 2007 to 2022–a survey. arXiv preprint            – addressing the false negative problem in relation
+  arXiv:2208.08690.                                          extraction. In Proceedings of EMNLP.
+
+Yi Luan, Luheng He, Mari Ostendorf, and Han-               Shikhar Vashishth, Prince Jain, and Partha Talukdar.
+  naneh Hajishirzi. 2018. Multi-task identification          2018. Cesi: Canonicalizing open knowledge bases
+  of entities, relations, and coreference for scien-         using embeddings and side information. In Proceed-
+  tific knowledge graph construction. arXiv preprint         ings of the 2018 World Wide Web Conference, pages
+  arXiv:1808.09602.                                          1317–1327.
+
+Pedro Henrique Martins, Zita Marinho, and André FT         Denny Vrandečić and Markus Krötzsch. 2014. Wiki-
+  Martins. 2019. Joint learning of named entity              data: a free collaborative knowledgebase. Communi-
+  recognition and entity linking. arXiv preprint             cations of the ACM, 57(10):78–85.
+  arXiv:1907.08243.
+                                                           Somin Wadhwa, Silvio Amir, and Byron C Wallace.
+Igor Melnyk, Pierre Dognin, and Payel Das. 2022.             2023. Revisiting relation extraction in the era of large
+  Knowledge graph generation from text. arXiv                language models. In Proceedings of the conference.
+  preprint arXiv:2211.10511.                                 Association for Computational Linguistics. Meeting,
+                                                             volume 2023, page 15566. NIH Public Access.
+George A Miller. 1995. Wordnet: a lexical database for
+  english. Communications of the ACM, 38(11):39–41.        Hongwei Wang, Miao Zhao, Xing Xie, Wenjie Li, and
+                                                             Minyi Guo. 2019. Knowledge graph convolutional
+Yasumasa Onoe and Greg Durrett. 2020. Fine-grained           networks for recommender systems. In The world
+  entity typing for domain independent entity linking.       wide web conference, pages 3307–3313.
+  In Proceedings of the AAAI Conference on Artificial
+  Intelligence, volume 34, pages 8576–8583.                Liang Wang, Nan Yang, Xiaolong Huang, Linjun Yang,
+                                                             Rangan Majumder, and Furu Wei. 2023. Improving
+Shon Otmazgin, Arie Cattan, and Yoav Goldberg. 2023.         text embeddings with large language models. arXiv
+  LingMess: Linguistically informed multi expert scor-       preprint arXiv:2401.00368.
+  ers for coreference resolution. In Proceedings of the
+  17th Conference of the European Chapter of the As-       Xiang Wei, Xingyu Cui, Ning Cheng, Xiaobin Wang,
+  sociation for Computational Linguistics, pages 2752–       Xin Zhang, Shen Huang, Pengjun Xie, Jinan Xu,
+  2760, Dubrovnik, Croatia. Association for Computa-         Yufeng Chen, Meishan Zhang, et al. 2023. Zero-
+  tional Linguistics.                                        shot information extraction via chatting with chatgpt.
+                                                             arXiv preprint arXiv:2302.10205.
+Rifki Afina Putri, Giwon Hong, and Sung-Hyon
+  Myaeng. 2019. Aligning open ie relations and kb          Yaqi Xie, Chen Yu, Tongyao Zhu, Jinbin Bai, Ze Gong,
+  relations using a siamese network based on word em-        and Harold Soh. 2023. Translating natural language
+  bedding. In Proceedings of the 13th International          to planning goals with large-language models. arXiv
+  Conference on Computational Semantics-Long Pa-             preprint arXiv:2302.05128.
+  pers, pages 142–153.
+                                                           Ziwei Xu, Sanjay Jain, and Mohan Kankanhalli.
+Colin Raffel, Noam Shazeer, Adam Roberts, Katherine          2024. Hallucination is inevitable: An innate lim-
+  Lee, Sharan Narang, Michael Matena, Yanqi Zhou,            itation of large language models. arXiv preprint
+  Wei Li, and Peter J Liu. 2020. Exploring the lim-          arXiv:2401.11817.
+  its of transfer learning with a unified text-to-text
+  transformer. Journal of machine learning research,       Yifan Yao, Jinhao Duan, Kaidi Xu, Yuanfang Cai, Zhibo
+  21(140):1–67.                                               Sun, and Yue Zhang. 2024. A survey on large lan-
+                                                              guage model (llm) security and privacy: The good,
+Dan Roth and Wen-tau Yih. 2004. A linear program-
+                                                              the bad, and the ugly. High-Confidence Computing,
+  ming formulation for global inference in natural lan-
+                                                              page 100211.
+  guage tasks. In Proceedings of the eighth conference
+
+
+                                                       9830
+
+
+===== PDF PAGE 12 =====
+Michihiro Yasunaga, Hongyu Ren, Antoine Bosse-
+  lut, Percy Liang, and Jure Leskovec. 2021. Qa-
+  gnn: Reasoning with language models and knowl-
+  edge graphs for question answering. arXiv preprint
+  arXiv:2104.06378.
+Hongbin Ye, Ningyu Zhang, Hui Chen, and Huajun
+  Chen. 2022. Generative knowledge graph construc-
+  tion: A review. arXiv preprint arXiv:2210.12714.
+Daojian Zeng, Kang Liu, Yubo Chen, and Jun Zhao.
+  2015. Distant supervision for relation extraction via
+  piecewise convolutional neural networks. In Proceed-
+  ings of the 2015 conference on empirical methods in
+  natural language processing, pages 1753–1762.
+Daojian Zeng, Kang Liu, Siwei Lai, Guangyou Zhou,
+  and Jun Zhao. 2014. Relation classification via con-
+  volutional deep neural network. In Proceedings of
+  COLING 2014, the 25th international conference on
+  computational linguistics: technical papers, pages
+  2335–2344.
+Bowen Zhang and Harold Soh. 2023. Large language
+  models as zero-shot human models for human-robot
+  interaction. In 2023 IEEE/RSJ International Confer-
+  ence on Intelligent Robots and Systems (IROS), pages
+  7961–7968. IEEE.
+Lingfeng Zhong, Jia Wu, Qian Li, Hao Peng, and Xin-
+  dong Wu. 2023. A comprehensive survey on auto-
+  matic knowledge graph construction. ACM Comput-
+  ing Surveys, 56(4):1–62.
+Shaowen Zhou, Bowen Yu, Aixin Sun, Cheng Long,
+  Jingyang Li, Haiyang Yu, Jian Sun, and Yongbin
+  Li. 2022. A survey on neural open information ex-
+  traction: Current status and future directions. arXiv
+  preprint arXiv:2205.11725.
+
+Andrej Žukov-Gregorič, Yoram Bachrach, and Sam
+  Coope. 2018. Named entity recognition with parallel
+  recurrent neural networks. In Proceedings of the 56th
+  Annual Meeting of the Association for Computational
+  Linguistics (Volume 2: Short Papers), pages 69–74.
+
+
+
+
+                                                      9831
+
+
+===== PDF PAGE 13 =====
+A    Implementation Details                                adopted an online open-source implementation and
+                                                           hyperparameter configurations for training.
+A.1 Models and Infrastructures Details
+                                                              The performance of the fine-tuned schema re-
+We use two OpenAI models, GPT-3.5-turbo and                triever was assessed on the test splits of WebNLG,
+GPT-4 (sizes currently unknown), and an open-              REBEL, and Wiki-NRE datasets. The recall@10
+source model, Mistral-7b (7 billion parameters).           scores on these datasets were 0.823, 0.663, and
+The training and inference of open-source mod-             0.818, respectively, indicating the effectiveness of
+els are done with a single machine with an AMD             the retriever across different knowledge graph con-
+EPYC 7543P 32-Core Processor and 252GB of                  texts.
+RAM, equipped with 4 NVIDIA RTX A6000
+(48GB) GPUs. We accessed GPT-3.5-turbo and                 A.4     Details of Refinement Hint
+GPT-4 via the OpenAI API. Code for EDC is avail-           The refinement hint consists of candidate entities
+able at https://github.com/clear-nus/edc.                  and candidate relations. This section details the
+A.2 Prompting-related hyperparameters                      obtainment of them and how they are used to im-
+                                                           prove the OIE performance. We will carry on using
+We use few-shot prompting for all modules of
+                                                           the example used in Section 3: “Alan Shepard was
+EDC, we empirically choose 6-shot examples from
+                                                           born on Nov 18, 1923 and selected by NASA in
+the respective datasets. For the MCQ used in the
+                                                           1959. He was a member of the Apollo 14 crew”
+Schema Canonicalization phase, we retrieve top-5
+                                                           and the triplets extracted by EDC in the first iter-
+semantically similar relations from the schema as
+                                                           ation are [’Alan Shepard’, ‘birthDate’, ‘Nov 18,
+candidates. For refinement, the schema retriever
+                                                           1923’], [’Alan Shepard’, ’mission’, ’Apollo 14’].
+retrieves top-10 most relevant relations from the
+schema as candidate relations. These hyperparame-          A.4.1    Obtaining Candidate Entities
+ters are empirically chosen to balance performance         The candidate entities come from two sources:
+and inference costs.
+                                                              • Entities extracted by EDC from the previous
+A.3 Schema Retriever Training
+                                                                iteration, i.e. [‘Alan Shepard’, ‘Nov 18,
+We follow the original training methodology de-                 1923’, ‘Apollo 14’]
+tailed in the original paper (Wang et al., 2023),
+which involves utilizing pairs of text and their cor-         • Entities extracted from the text by prompting
+responding defined relations. For a given positive              the LLM to perform an entity extraction task,
+text-relation pair (t+ , r+ ), we employ an instruc-            similar to the triplet extraction task.
+tion template on t+ to generate a new text t+ inst =
+“Instruct: retrieve relations that are present in the                Entity Extraction Prompt
+given text \n Query: {t+ }”.
+                                                                     Given a piece of text, extract a list of enti-
+   We then finetune the embedding model to distin-                   ties from it.
+guish between the correct relation associated with                   Here are some examples:
+                                                                     Example 1:
+a given text and other non-relevant relations using                  Text: The 17068.8 millimeter long ALCO
+the InfoNCE loss,                                                    RS-3 has a diesel-electric transmission.
+                                                                     Entities: [’ALCO RS-3’, ’Diesel-electric
+                                                                     transmission’, ’17068.8 (millimetres)’]
+                              ϕ(t+       +
+                                 inst , r )
+                                                                     ...
+min L = − log                    P                                   Now please extract entities from the follow-
+                 ϕ(t+       +
+                    inst , r ) +
+                                             +
+                                    ni ∈N ϕ(tinst , ni )
+                                                                     ing text: Alan Shepard was born on Nov 18,
+   Here, N denotes the set of negative samples, and                  1923 and selected by NASA in 1959. He
+ϕ represents the cosine similarity function. Please                  was a member of the Apollo 14 crew.
+see the appendix for additional training details.
+   For training, we synthesized a dataset of text-               and the resultant entities are [‘Alan Shepard’,
+relation pairs using the TEKGEN dataset (Agarwal                 ‘Nov 18, 1923’, ‘NASA’, ‘1959’, ‘Apollo
+et al., 2020), a large-scale text-triplets dataset cre-          14’]
+ated by aligning Wikidata triplets to Wikipedia text.
+The training dataset comprised 37,500 pairs, evenly          The entities are then merged together as the can-
+divided between positive and negative samples. We          didate entities.
+                                                       9832
+
+
+===== PDF PAGE 14 =====
+A.4.2    Obtaining Candidate Relations
+The candidate relations also come from two
+sources:
+
+   • Relations extracted by EDC from the previous
+     iteration, i.e. [‘birthDate’, ‘mission’]
+
+   • Relations extracted by the schema retriever,
+     by calculating the relevance score between
+     the input text and the relations in the schema.
+     The top 5 retrieved relations in this case are
+     [‘birthDate’, , ‘selectedByNasa’, ‘mission’,
+     ‘draftPick’, ‘occupation’].
+
+   The relations and their corresponding definitions
+                                                              Figure 3: An example screenshot of the questionnaire
+are then merged together as the candidate relations.
+                                                              including the instructions given to the annotators.
+It is to be noted that, similar to other RAG-based
+methods, there is a chance that the retriever may
+retrieve irrelevant information. In this case, the re-           The extracted triplets by the refined OIE
+lation definitions can come in handy as it provides           are:[’Alan Shepard’, ‘birthDate’, ‘Nov 18,
+more information for the LLMs to decide whether               1923’], [’Alan Shepard’, ’mission’, ’Apollo 14’],
+the relation is a valid one with respect to the text or       [’Alan Shepard’, ’selectedByNasa’, ’1959’]. It
+not.                                                          successfully recovers the subtle and fine-grained
+                                                              relation ‘selectedByNasa’ that would have been
+A.4.3    Usage of Hint for Refined OIE                        missed without using the hint. Also, the semanti-
+The refinement hint is then included in the prompt            cally rich descriptions help the LLM avoid exces-
+appropriately to instruct the LLMs to consider (but           sively extracting noisy relations retrieved by the
+is not limited to) the candidate entities and candi-          schema retriever.
+date relations:                                                  We found it important to include the entities
+                                                              from both sources, i.e. extractions from the last
+   Refined OIE Prompt
+                                                              round and discovered by a separate module (entity
+   Given a piece of text, extract relational triplets in      extraction or schema retriever). The significance
+   the form of [Subject, Relation, Object] from it.           of the schema retriever is already shown in the
+   Here are some examples:
+   Example 1:                                                 ablation study in Sec 4.2.1.
+   Text: The 17068.8 millimeter long ALCO RS-3
+   has a diesel-electric transmission.                        B     Annotation Instruction
+   Entities: [’ALCO RS-3’, ’Diesel-electric transmis-
+   sion’, ’17068.8 (millimetres)’]                            An example screenshot is provided in Figure 3
+   Triplets: [[’ALCO RS-3’, ’powerType’, ’Diesel-
+   electric transmission’], [’ALCO RS-3’, ’length’,           to illustrate the format of questionnaires and in-
+   ’17068.8 (millimetres)’]]                                  structions the annotators are given. The purpose
+   ...                                                        of collection of the data was communicated to the
+   Now please extract triplets from the following
+   text: Alan Shepard was born on Nov 18, 1923                annotators verbally.
+   and selected by NASA in 1959. He was a member
+   of the Apollo 14 crew. Entities: [‘Alan Shepard’,          C     Detailed Results of Target Alignment
+   ‘Nov 18, 1923’, ‘NASA’, ‘1959’, ‘Apollo 14’]
+   Here are some potential relations and their de-            C.1    Complete Results
+   scriptions you may look out for during extraction:
+   1. birthDate: The subject entity was born on the           The complete results of EDC and EDC+R on
+   date specified by the object entity.
+   2. mission: The subject entity participated in the         WebNLG, REBEL and Wiki-NRE are summarized
+   event or operation specified by the object entity.         in Table 3, Table 4 and Table 5 respectively. EDC
+   3. selectedByNasa: The subject entity was se-              performs better than or comparable to state-of-the-
+   lected by NASA in the year specified by the object
+   entity.                                                    art baseline models in terms of all metrics (Preci-
+   ...                                                        sion, Recall, and F1) in all criteria (Partial, Strict,
+                                                              and Exact) and EDC+R is able to consistently im-
+                                                           9833
+
+
+===== PDF PAGE 15 =====
+Table 3: Complete results of EDC and EDC+R on WebNLG dataset against the baseline REGEN (Precision, Recall,
+F1 with ‘Partial’, ‘Strict’ and ‘Exact’ criteria). EDC+R only performs 1 iteration of refinement. The best results are
+bolded.
+
+                                             Partial                          Strict                         Exact
+   Method     LLM for OIE        Precision   Recall     F1        Precision   Recall    F1       Precision   Recall     F1
+              GPT-4                0.776     0.796     0.783        0.729     0.741    0.733       0.751     0.765     0.756
+   EDC        GPT-3.5              0.739     0.760     0.746        0.684     0.697    0.688       0.708     0.722     0.713
+              Mistral-7b           0.723     0.739     0.728        0.668     0.679    0.672       0.692     0.703     0.696
+              GPT-4                0.814     0.831     0.820        0.782     0.794    0.786       0.796     0.808     0.800
+   EDC+R      GPT-3.5              0.788     0.806     0.794        0.749     0.761    0.753       0.768     0.781     0.772
+              Mistral-7b           0.756     0.775     0.762        0.716     0.727    0.720       0.735     0.747     0.739
+   Baseline   REGEN                0.755     0.788     0.767        0.713     0.735    0.720       0.714     0.738     0.723
+
+
+Table 4: Complete results of EDC and EDC+R on REBEL dataset against the baseline REGEN (Precision, Recall,
+F1 with ‘Partial’, ‘Strict’, and ‘Exact’ criteria). EDC+R only performs 1 iteration of refinement. The best results are
+bolded.
+
+                                             Partial                          Strict                         Exact
+   Method     LLM for OIE        Precision   Recall     F1        Precision   Recall    F1       Precision   Recall     F1
+              GPT-4                0.543     0.552     0.546        0.498     0.503    0.500       0.511     0.517     0.514
+   EDC        GPT-3.5              0.503     0.512     0.506        0.448     0.453    0.449       0.471     0.476     0.473
+              Mistral-7b           0.512     0.523     0.516        0.450     0.457    0.453       0.481     0.488     0.483
+              GPT-4                0.599     0.606     0.601        0.557     0.561    0.559       0.572     0.576     0.574
+   EDC+R      GPT-3.5              0.556     0.565     0.559        0.513     0.519    0.516       0.527     0.533     0.529
+              Mistral-7b           0.525     0.550     0.531        0.461     0.462    0.462       0.506     0.511     0.505
+   Baseline   GENIE                0.381     0.391     0.385        0.353     0.361    0.356       0.362     0.369     0.364
+
+
+Table 5: Complete results of EDC and EDC+R on Wiki-NRE dataset against the baseline REGEN (Precision, Recall,
+F1 with ‘Partial’, ‘Strict’, and ‘Exact’ criteria). EDC+R only performs 1 iteration of refinement. The best results are
+bolded.
+
+                                             Partial                          Strict                         Exact
+   Method     LLM for OIE        Precision   Recall     F1        Precision   Recall    F1       Precision   Recall     F1
+              GPT-4                0.682     0.686     0.683        0.675     0.679    0.677       0.676     0.680     0.678
+   EDC        GPT-3.5              0.645     0.651     0.647        0.636     0.640    0.638       0.638     0.643     0.640
+              Mistral-7b           0.644     0.650     0.647        0.636     0.640    0.637       0.637     0.641     0.639
+              GPT-4                0.712     0.715     0.713        0.708     0.710    0.709       0.708     0.711     0.709
+   EDC+R      GPT-3.5              0.691     0.696     0.693        0.684     0.688    0.685       0.685     0.689     0.687
+              Mistral-7b           0.661     0.667     0.663        0.647     0.652    0.649       0.656     0.661     0.658
+   Baseline   GENIE                0.482     0.486     0.484        0.462     0.464    0.463       0.477     0.479     0.478
+
+
+Table 6: Results (F1 scores with all criteria) of further iterative refinement, the LLM used for OIE is GPT-3.5-turbo.
+EDC+2xR is EDC with 2 iterations of refinement.
+
+                                  WebNLG                            REBEL                         Wiki-NRE
+          Method       Partial     Strict      Exact    Partial      Strict   Exact    Partial      Strict     Exact
+          EDC+2xR      0.797       0.761       0.775    0.564        0.521    0.535    0.697       0.689       0.660
+          EDC+R        0.794       0.753       0.772    0.559        0.516    0.529    0.693       0.685       0.657
+          EDC          0.746       0.688       0.713    0.506        0.449    0.473    0.644       0.634       0.637
+
+
+Table 7: Results (F1 scores with all criteria) of ablating the entities and relations extracted from the last round from
+the refinement hint, the LLM used for OIE is GPT-3.5-turbo. EDC+R-lastround is EDC with refinement but entities
+and relations extracted from the last round are removed from the refinement hint.
+
+                                      WebNLG                           REBEL                         Wiki-NRE
+      Method               Partial     Strict      Exact    Partial     Strict    Exact    Partial     Strict     Exact
+      EDC+R                0.794       0.753       0.772    0.559       0.516     0.529    0.693      0.685       0.657
+      EDC+R-lastround      0.748       0.698       0.720    0.534       0.485     0.505    0.634      0.622       0.625
+      EDC                  0.746       0.688       0.713    0.506       0.449     0.473    0.644      0.634       0.637
+
+
+                                                               9834
+
+
+===== PDF PAGE 16 =====
+Table 8: The average number of triplets extracted per sentence on all three datasets. The baseline model for WebNLG
+is REGEN while the baseline for Rebel and Wiki-NRE is GENIE. Numbers in the brackets are the difference from
+the reference annotations.
+
+                              LLM for OIE      WebNLG         REBEL       Wiki-NRE
+                              GPT-4           3.47(+0.04)   5.11(+1.11)   3.49(+0.63)
+                              GPT-3.5         3.44(+0.01)   5.01(+1.01)   3.49(+0.63)
+                              Mistral7b       3.45+(0.02)   4.68(+0.68)   3.75(+0.89)
+                              Baseline             -        2.20(-1.80)   3.08(+0.22)
+                              Reference          3.43          4.00          2.86
+
+
+
+prove upon this in all aspects as well. These re-           D    Experiments on a Novel Dataset
+sults more comprehensively demonstrate the per-
+formance of EDC and EDC+R.                                  Since the tested datasets were created several years
+                                                            ago and the training set of the LLMs used are un-
+                                                            known, there is a risk the LLMs have already been
+C.2 Effect of More Refinement Iterations
+                                                            trained on these datasets. To address this concern,
+Table 6 shows the result of an extra iteration of           we create a novel small-scale dataset (50 entries) of
+refinement with EDC on all datasets. Although               fictional entities and information, e.g. “Evergreen
+further refinement improves the results in a stable         University was where Emily Johnson received her
+manner, we observe diminishing returns and hence,           degree in Biology” and annotated them using the
+only report one iteration in the main results.              schema of Wiki-NRE. Table 9 shows that EDC and
+                                                            EDC+R still obtain performance superior to the
+C.3 Ablation Study on Last-Round                            baseline GenIE model.
+    Extractions
+                                                            E   Comparison against previous
+Table 7 shows the result of ablating the relations              LLM-based approaches
+and entities from the last round’s extractions from
+the refinement hint. It shows the importance of             Although this is not the intended use scenario for
+performing the refinement in an iterative manner.           EDC, we include these experimental results for a
+Merging the two sources led to better coverage of           more comprehensive evaluation to compare against
+the entities and relations in the text, resulting in        existing LLM-based methods. We conduct exper-
+better KGC.                                                 iments on three datasets, CoNLL04 (4 relation
+                                                            types) (Roth and Yih, 2004), SciERC (7 relation
+                                                            types) (Luan et al., 2018) and our sub-sampled ver-
+C.4 Discussion on KGC Dataset Annotations
+                                                            sion of Wiki-NRE (45 relation types), which is
+As stated in Section 4.2, we observe that EDC               the only dataset we use in our main experiments
+is penalized by the scorer on Rebel and Wiki-               that can fit in the context window. To ensure com-
+NRE datasets due to incomplete annotations. This            parison fairness, we use GPT-3.5-turbo for all the
+echoes the previous finding in (Wadhwa et al.,              compared methods.
+2023; Han et al., 2023) that LLMs can often extract            As shown in Table 10, when the relation num-
+correct results that are missing in the annotations,        ber is small (CONLL and SciERC), EDC alone
+which results in overly pessimistic evaluations. As         may not be superior to the baseline methods due
+shown by Table 8, EDC tends to extract signif-              to excluding the schema in the prompt. However,
+icantly more triplets compared to the reference             through refinement, EDC+R is able to achieve sig-
+annotations and the baseline GenIE. Furthermore,            nificantly better results. This may be attributed
+as shown from the manual evaluation in Table 2,             to the usage of the semantically rich relation de-
+many of these triplets are indeed meaningful and            scriptions in the refinement step. Specifically, it
+correct with respect to the input text. Regardless,         helps correct two types of errors that may occur
+despite the automatic evaluation result on EDC              during extraction: 1. the Definition step helps dis-
+being overly pessimistic, it still exceeds the base-        ambiguate homonyms, e.g., the word "follows" has
+line by a large margin and the actual performance           two different meanings for "John follows Taoism"
+may be even larger considering the difference in            v.s. "John follows Mary". EDC changes the "fol-
+the number of triplets extracted.                           lows" in "John follows Taoism" to "adheres to". 2.
+                                                       9835
+
+
+===== PDF PAGE 17 =====
+Table 9: Complete results of EDC and EDC+R on the novel fictional dataset against the baseline GenIE (Precision,
+Recall, F1 with ‘Partial’, ‘Strict’ and ‘Exact’ criteria). EDC+R only performs 1 iteration of refinement. The best
+results are bolded. The LLM used for OIE is GPT-3.5-turbo.
+
+                                   Partial                            Strict                        Exact
+              Method   Precision   Recall      F1      Precision      Recall     F1     Precision   Recall     F1
+              EDC        0.731     0.771      0.751      0.687        0.704     0.691     0.702     0.720     0.707
+              EDC+R      0.761     0.782      0.767      0.733        0.750     0.738     0.733     0.750     0.738
+              GenIE      0.521     0.547      0.530      0.426        0.443     0.432     0.467     0.483     0.472
+
+Table 10: Complete results of EDC, EDC+R on CONLL, SciERC and Wiki-NRE datasets against the previous
+LLM-based approaches, CodeKGC and ChatIE. The LLMs used here are GPT-3.5-turbo to ensure comparison
+fairness. The best results are bolded.
+
+                                             Partial                           Strict                        Exact
+    Dataset       Method       Precision     Recall     F1      Precision      Recall    F1     Precision    Recall    F1
+                  EDC            0.536       0.552     0.543      0.481        0.491    0.485     0.503      0.515    0.509
+    CONLL         EDC+R          0.580       0.593     0.585      0.514        0.522    0.517     0.549      0.558    0.552
+                  CodeKGC        0.542        0.55     0.545      0.503        0.506    0.504     0.542      0.546    0.543
+                  ChatIE         0.463       0.477     0.468      0.360        0.366    0.363     0.418      0.427    0.421
+                  EDC            0.389       0.408     0.395      0.288        0.301    0.292     0.352      0.365    0.357
+    SciERC        EDC+R          0.447       0.461     0.451      0.340        0.349    0.343     0.406      0.416    0.410
+                  CodeKGC        0.389       0.398     0.392      0.277        0.283    0.279     0.346      0.353    0.349
+                  ChatIE         0.351       0.367     0.357      0.212        0.221    0.215     0.294      0.302    0.297
+                  EDC            0.645       0.651     0.647      0.636        0.640    0.638     0.638      0.643    0.640
+    Wiki-NRE      EDC+R          0.691       0.696     0.693      0.684        0.688    0.685     0.685      0.689    0.687
+                  CodeKGC        0.611       0.614     0.612      0.605        0.607    0.606     0.607      0.609    0.608
+                  ChatIE         0.569       0.574     0.571      0.541        0.545    0.543     0.553      0.557    0.555
+
+
+
+Using the relation definitions, we find the Refine-                directly prompting the LLMs only achieves 0.060.
+ment step corrects head-tail relation errors, e.g., for               We also explored the effect of entity dedu-
+a relation "father", it is unclear if the subject or               plication in combination with EDC. We used
+the object is the father, and the definition prevents              CESI (Vashishth et al., 2018), a SOTA post-hoc
+inconsistent use. This error-correcting effect was                 canonicalization method to deduplicate the entities
+not possible in previous methods.                                  in the resulting KGs from EDC. And we observe a
+   When tested on Wiki-NRE, which has a                            slightly improved F1 score from 0.516 to 0.520 on
+moderately-sized schema, EDC already signifi-                      the REBEL dataset under the ‘Partial’ criteria.
+cantly outperforms the baseline methods, poten-
+tially due to the confusion of the LLMs when deal-                 G Combining OIE and Schema Definition
+ing with long context (Liu et al., 2024). Further-                 As an attempt to reduce the cost of EDC, we ex-
+more, we observe that ChatIE and CodeKGC may                       plored combining the OIE and Schema Definition
+still output out-of-schema relation words although                 steps. We previously separated these two steps be-
+the entire schema is provided in the prompt, echo-                 cause our preliminary experiments showed OIE to
+ing the previous findings (Wadhwa et al., 2023).                   be more challenging and separating the two sub-
+                                                                   tasks allowed us to use a more expensive model
+F    Combine EDC with other IE tools                               for OIE and a smaller, cheaper model for schema
+                                                                   definition. However, separate LLM calls increases
+EDC can be integrated with other IE tools, in-                     latency of the pipeline (and cost if the same LLM
+cluding chunking, coreference, and entity de-                      is used). Also, making the LLMs output the defi-
+duplication. This is beneficial in scenarios such                  nitions along with the extracted triples might im-
+as processing long documents that exceed the con-                  prove consistency. In a further experiment combin-
+text window length of LLMs. We ran experiments                     ing EDC and Schema Definition on REBEL using
+on Re-DOCRED (Tan et al., 2022) by combining                       GPT-3.5-turbo, we observed slight performance
+EDC with LingMess (Otmazgin et al., 2023), a                       gains (0.516 to 0.518 under the ‘Partial’ criteria)
+SOTA coreference resolution method and simple                      and token cost reduction (≈ 3k to 2k tokens per
+sentence-level chunking. We observed an increase                   example).
+of strict micro F1 score from 0.132 to 0.234, while
+                                                               9836

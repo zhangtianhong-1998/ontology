@@ -1,0 +1,163 @@
+[
+  {
+    "id": "E01_Text2Onto",
+    "url": "https://publikationen.bibliothek.kit.edu/1000018084",
+    "resolved_url": "https://publikationen.bibliothek.kit.edu/1000018084",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E01_Text2Onto.html",
+    "sha256": "30bc9ba0728a2e7943fd6e3dc3289e446d0cc0c9a1a47f4177c83d086cf2ce71",
+    "bytes": 34777,
+    "retrieved": "2026-09-20"
+  },
+  {
+    "id": "E02_OntoLearn_Reloaded",
+    "url": "https://aclanthology.org/J13-3007.pdf",
+    "resolved_url": "https://aclanthology.org/J13-3007.pdf",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E02_OntoLearn_Reloaded.pdf",
+    "sha256": "0f1c6e93f05140f747b6ca3d8d8cce13a96aba41bf43bec84b35728984aa05e3",
+    "bytes": 1021897,
+    "retrieved": "2026-09-20",
+    "pages": 43
+  },
+  {
+    "id": "E03_DL_Learner",
+    "url": "https://jens-lehmann.org/files/2016/jws_dllearner.pdf",
+    "resolved_url": "https://jens-lehmann.org/files/2016/jws_dllearner.pdf",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E03_DL_Learner.pdf",
+    "sha256": "007389b9978ece6118fd51fddbdb88765b2331490a5696d742af54357a53e3c1",
+    "bytes": 725033,
+    "retrieved": "2026-09-20",
+    "pages": 11
+  },
+  {
+    "id": "E04_EDC",
+    "url": "https://aclanthology.org/2024.emnlp-main.548.pdf",
+    "resolved_url": "https://aclanthology.org/2024.emnlp-main.548.pdf",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E04_EDC.pdf",
+    "sha256": "6968df564a5c3f431c8c7c2f48b165ccc60592897729343be972d4b55e1b1dd1",
+    "bytes": 507639,
+    "retrieved": "2026-09-20",
+    "pages": 17
+  },
+  {
+    "id": "E05_iText2KG",
+    "url": "https://arxiv.org/pdf/2409.03284v1",
+    "resolved_url": "https://arxiv.org/pdf/2409.03284v1",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E05_iText2KG.pdf",
+    "sha256": "25569156081a7e7ef1dcd6d421a29e0d5c2b64ffb7b7bfef12ea6004ef62f3e3",
+    "bytes": 2622938,
+    "retrieved": "2026-09-20",
+    "pages": 15
+  },
+  {
+    "id": "E06_AutoSchemaKG",
+    "url": "https://arxiv.org/pdf/2505.23628v1",
+    "resolved_url": "https://arxiv.org/pdf/2505.23628v1",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E06_AutoSchemaKG.pdf",
+    "sha256": "b72b81eb7541cd66f0a204bfdbb59615e3f0e9499e047b7ed71eb86b1f5c991a",
+    "bytes": 670922,
+    "retrieved": "2026-09-20",
+    "pages": 25
+  },
+  {
+    "id": "E07_KGGen",
+    "url": "https://proceedings.neurips.cc/paper_files/paper/2025/file/2b368455e832d2b1a60bcad8c4c6481f-Paper-Conference.pdf",
+    "resolved_url": "https://proceedings.neurips.cc/paper_files/paper/2025/file/2b368455e832d2b1a60bcad8c4c6481f-Paper-Conference.pdf",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E07_KGGen.pdf",
+    "sha256": "1d10e3209a59b6445e63f078b5239b05c91b0faf217f9a8454353abe093baeac",
+    "bytes": 1360395,
+    "retrieved": "2026-09-20",
+    "pages": 24
+  },
+  {
+    "id": "E08_SPIRES",
+    "url": "https://arxiv.org/pdf/2304.02711",
+    "resolved_url": "https://arxiv.org/pdf/2304.02711",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E08_SPIRES.pdf",
+    "sha256": "2de0afde5b966174ca52909332681422507d9c6559bc25f9186e26d5940bd685",
+    "bytes": 2743015,
+    "retrieved": "2026-09-20",
+    "pages": 21
+  },
+  {
+    "id": "E09_AutoG",
+    "url": "https://proceedings.iclr.cc/paper_files/paper/2025/file/c01dfe01b97aadc10fc16a201faa80d8-Paper-Conference.pdf",
+    "resolved_url": "https://proceedings.iclr.cc/paper_files/paper/2025/file/c01dfe01b97aadc10fc16a201faa80d8-Paper-Conference.pdf",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E09_AutoG.pdf",
+    "sha256": "b779d3e23836ec6c0e8c6835ce300ef68f1b812658fb5bc0655e8c5a85f346a5",
+    "bytes": 699047,
+    "retrieved": "2026-09-20",
+    "pages": 34
+  },
+  {
+    "id": "E10_OntoLearner",
+    "url": "https://arxiv.org/pdf/2607.01977v1",
+    "resolved_url": "https://arxiv.org/pdf/2607.01977v1",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E10_OntoLearner.pdf",
+    "sha256": "32f128fc00dec4022e2e184e7f9cffbee3c4a40a54836cee5af96f364bf18fed",
+    "bytes": 5335467,
+    "retrieved": "2026-09-20",
+    "pages": 30
+  },
+  {
+    "id": "E11_DL_Survey",
+    "url": "https://arxiv.org/pdf/2104.01193",
+    "resolved_url": "https://arxiv.org/pdf/2104.01193",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E11_DL_Survey.pdf",
+    "sha256": "555b341be15322e610de284250bde5344fabff8455a10bb3d3a9685dcc01f687",
+    "bytes": 271786,
+    "retrieved": "2026-09-20",
+    "pages": 19
+  },
+  {
+    "id": "E12_RDB_RAG_Comparison",
+    "url": "https://arxiv.org/pdf/2511.05991",
+    "resolved_url": "https://arxiv.org/pdf/2511.05991",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E12_RDB_RAG_Comparison.pdf",
+    "sha256": "5a8f51dc47139169eaccd7993d0c8a9f24964767857f22b0b55f9eb0c0ffe5ad",
+    "bytes": 3111226,
+    "retrieved": "2026-09-20",
+    "pages": 12
+  },
+  {
+    "id": "E13_Self_Demonstrations",
+    "url": "https://arxiv.org/pdf/2609.13776",
+    "resolved_url": "https://arxiv.org/pdf/2609.13776",
+    "file": "/Users/sanjiuganmaoling/Desktop/ontology/研究分析/证据/扩展文献/E13_Self_Demonstrations.pdf",
+    "sha256": "52a0f84facaeb4e7db57040ed1022f37f2087127508f14fc11b8c4541ab21b4a",
+    "bytes": 711406,
+    "retrieved": "2026-09-20",
+    "pages": 17
+  },
+  {
+    "id": "E14_QSE",
+    "url": "https://vldb.org/pvldb/vol16/p1023-rabbani.pdf",
+    "file": "研究分析/证据/扩展文献/E14_QSE.pdf",
+    "pages": 10,
+    "sha256": "b87e7abf118f23c56e378d42cd5f8c793b43a061a8b295c907df62f268bb0908",
+    "retrieved": "2026-09-20"
+  },
+  {
+    "id": "E15_AMIE3",
+    "url": "https://luisgalarraga.de/docs/amie3.pdf",
+    "file": "研究分析/证据/扩展文献/E15_AMIE3.pdf",
+    "pages": 16,
+    "sha256": "6c0f4748ee97f03bd914de44f2de4949d5e4600f403f16519fb60bd5945f0d08",
+    "retrieved": "2026-09-20"
+  },
+  {
+    "id": "E16_FCA_RAG",
+    "url": "https://arxiv.org/pdf/2607.01773v1",
+    "file": "研究分析/证据/扩展文献/E16_FCA_RAG.pdf",
+    "pages": 8,
+    "sha256": "6662a81b00a6c049035857d86f2ecadd36281d1f2652a41aa97a031874f99e33",
+    "retrieved": "2026-09-20"
+  },
+  {
+    "id": "E06_AutoSchemaKG_2026ACL",
+    "url": "https://aclanthology.org/2026.acl-long.942.pdf",
+    "file": "研究分析/证据/扩展文献/E06_AutoSchemaKG_2026ACL.pdf",
+    "pages": 28,
+    "sha256": "a244a0ed38fd4dbe29f7e7ec6a8951a1310df2d1b9bf93cda10614581ca11597",
+    "retrieved": "2026-09-20"
+  }
+]

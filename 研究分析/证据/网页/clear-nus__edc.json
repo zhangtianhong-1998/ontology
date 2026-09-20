@@ -1,0 +1,15 @@
+{
+  "full_name": "clear-nus/edc",
+  "html_url": "https://github.com/clear-nus/edc",
+  "default_branch": "main",
+  "license": {
+    "key": "mit",
+    "name": "MIT License",
+    "spdx_id": "MIT",
+    "url": "https://api.github.com/licenses/mit",
+    "node_id": "MDc6TGljZW5zZTEz"
+  },
+  "archived": false,
+  "pushed_at": "2024-08-13T06:56:01Z",
+  "retrieved": "2026-09-20"
+}

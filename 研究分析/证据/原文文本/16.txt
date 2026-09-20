@@ -1,0 +1,97 @@
+===== PDF PAGE 1 =====
+LLMs4OL 2025: The 2nd Large Language Models for Ontology Learning Challenge at the 24th ISWC
+Preface
+https://doi.org/10.52825/ocp.v6i.2909
+© Authors. This work is licensed under a Creative Commons Attribution 4.0 International License
+Published: 01 Oct. 2025
+
+
+
+
+                     Preface for
+   LLMs4OL 2025: The 2nd Large Language Models for
+     Ontology Learning Challenge at the 24th ISWC
+                Hamed Babaei Giglou1,* , Jennifer D’Souza1 , Andrei C. Aioanei1                   ,
+                      Nandana Mihindukulasooriya3 , and Sören Auer1,2
+
+            1
+                TIB Leibniz Information Centre for Science and Technology, Hannover, Germany
+                      2
+                          L3S Research Center, Leibniz University of Hannover, Germany
+                                        3
+                                            IBM Research, New York, USA
+                           *Correspondence: {hamed.babaei, jennifer.dsouza}@tib.eu
+
+
+We are pleased to present the proceedings of the “The 2nd Large Language Models for
+Ontology Learning Challenge (LLMs4OL 2025)”, held at the 24th International Semantic
+Web Conference (ISWC 2025), Nara, Japan. This challenge represents a significant
+advancement in utilizing Large Language Models (LLMs) for Ontology Learning (OL)—a
+crucial Semantic Web component that enables the automatic extraction of structured
+knowledge from unstructured data. The challenge features four main tasks: Text2Onto
+(extracting ontological terminologies and types from a raw text), Term Typing (identifying
+categories for terms), Taxonomy Discovery (uncovering hierarchical relationships),
+and Non-Taxonomic Relation Extraction (identifying other meaningful relationships
+between terms). Each task is designed to test different facets of ontology construction
+and to encourage the exploration of innovative techniques. This challenge seeks to
+foster collaboration, inspire innovation, and expand the capabilities of LLMs in OL.
+The proceedings include a collection of innovative solutions and insights from global
+participants, highlighting the crucial role of LLMs in enhancing the web with structured
+knowledge. We believe the outcomes of this challenge will propel further advancements
+in OL and its applications on the semantic web.
+     In summary, the second round of the challenge brought together 11 teams,
+showcasing a diverse range of methodological approaches and LLM perspectives.
+Further details are available on the challenge website (https://sites.google.com/v
+iew/llms4ol2025). The datasets are maintained in a dedicated GitHub repository
+(https://github.com/sciknoworg/LLMs4OL-Challenge).
+    We want to extend our gratitude to all the participants for their invaluable
+contributions, whose solutions and dedication have greatly enriched this challenge.
+Our sincere thanks also go to the conference organizers and committee for their efforts
+in hosting this event. We are deeply appreciative of the reviewers for their evaluations
+and feedback. Their reviews have been instrumental in enhancing the quality of the
+submissions. We want to acknowledge specifically:
+
+
+                                                        1
+
+
+===== PDF PAGE 2 =====
+Babaei Giglou et al. | Open Conf Proc 6 (2025) ”LLMs4OL 2025: The 2nd Large Language Models for Ontology Learning Challenge
+                                                      at the 24th ISWC”
+
+
+
+    • Maryam Najafi (University of Limerick, Ireland)
+    • Rashin Rahnamoun (Shahid Beheshti University, Iran)
+    • Xinyi Zhao (Laboro.AI Inc., Japan)
+    • Insan-Aleksandr Latipov (Eindhoven Technical University, Netherlands)
+    • Ryan Roche (Sandia National Laboratories, United States)
+    • Miquel Canal (Universidad de Alicante, Spain)
+    • Aleksandra Beliaeva (Skolkovo Institute of Science and Technology, Russia)
+    • Patipon Wiangnak (Japan Advanced Institute of Science and Technology, Japan)
+    • Chavakan Yimmark (Japan Advanced Institute of Science and Technology, Japan)
+    • Mehreen Rahman (Chittagong University of Engineering and Technology,
+      Bangladesh)
+    Lastly, we would like to express our gratitude to ”Xenia Felice van Edig” and ”Marco
+Gronewold” from the TIB Open Publishing, for their support in bringing these proceedings
+online.
+      We also would like to acknowledge that the 2nd LLMs4OL Challenge @ ISWC 2025
+was jointly supported by the SCINEXT project (BMFTR, German Federal Ministry of
+Research, Technology and Space, Grant ID: 01lS22070) and the NFDI4DataScience
+initiative (DFG, German Research Foundation, Grant ID: 460234259).
+
+
+
+
+Hamed Babaei Giglou
+Jennifer D’Souza
+Andrei C. Aioanei
+Nandana Mihindukulasooriya
+Sören Auer
+
+The 2nd LLMs4OL 2025 Challenge Organization Team
+
+
+
+
+                                                            2

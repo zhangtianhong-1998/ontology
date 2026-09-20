@@ -1,0 +1,742 @@
+===== PDF PAGE 1 =====
+                       Extraction of Validating Shapes from very large
+                                     Knowledge Graphs
+                  Kashif Rabbani                                        Matteo Lissandrini                                         Katja Hose
+         Aalborg University, Denmark                               Aalborg University, Denmark                           Aalborg University, Denmark
+           kashifrabbani@cs.aau.dk                                      matteo@cs.aau.dk                                      khose@cs.aau.dk
+ABSTRACT
+Knowledge Graphs (KGs) represent heterogeneous domain knowl-
+edge on the Web and within organizations. There exist shapes con-
+straint languages to define validating shapes to ensure the quality
+of the data in KGs. Existing techniques to extract validating shapes
+often fail to extract complete shapes, are not scalable, and are prone
+to produce spurious shapes. To address these shortcomings, we pro-
+pose the Quality Shapes Extraction (QSE) approach to extract
+validating shapes in very large graphs, for which we devise both an                                                      (a) RDF Graph
+exact and an approximate solution. QSE provides information about
+the reliability of shape constraints by computing their confidence
+and support within a KG and in doing so allows to identify shapes
+that are most informative and less likely to be affected by incom-
+plete or incorrect data. To the best of our knowledge, QSE is the
+first approach to extract a complete set of validating shapes from
+WikiData. Moreover, QSE provides a 12x reduction in extraction
+time compared to existing approaches, while managing to filter out
+up to 93% of the invalid and spurious shapes, resulting in a reduc-                                                  (b) Validating Shapes
+tion of up to 2 orders of magnitude in the number of constraints
+                                                                                                Figure 1: An example RDF Graph and Validating Shapes
+presented to the user, e.g., from 11,916 to 809 on DBpedia.
+                                                                                              and should be enrolled in some courses; and that these attributes
+PVLDB Reference Format:
+Kashif Rabbani, Matteo Lissandrini, and Katja Hose. Extraction of
+                                                                                              should be of type string, integer, and Course, respectively – see
+Validating Shapes from very large Knowledge Graphs. PVLDB, 16(5): 1023 -                      Figures 1a and 1b for an example KG and corresponding shapes.
+1032, 2023.                                                                                      Often, validating shapes are manually specified by domain ex-
+doi:10.14778/3579075.3579078                                                                  perts. Yet, when trying to specify validating shapes for already-
+                                                                                              existing large-scale KGs, data scientists are in need of tools that can
+PVLDB Artifact Availability:                                                                  speed up this process [38]. Thus, various tools have been proposed
+The source code, data, and/or other artifacts have been made available at                     to automatically [9, 12, 20, 26] or semi-automatically [5, 32, 36] pro-
+https://github.com/dkw-aau/qse.                                                               duce a set of validating shapes for a target KG. Unfortunately, these
+                                                                                              methods suffer from 3 important limitations: (1) they are not able
+1    INTRODUCTION                                                                             to produce complete shapes, e.g., they can identify that a student
+Knowledge Graphs (KGs), stored as collections of triples of the                               should have a property of type takesCourse but they do not extract
+form ⟨𝑠𝑢𝑏 𝑗𝑒𝑐𝑡, 𝑟𝑒𝑙𝑎𝑡𝑖𝑜𝑛, 𝑜𝑏 𝑗𝑒𝑐𝑡⟩ using the Resource Description                             the fact that the object should be of type Course; (2) the shapes
+Framework (RDF) [10], are in widespread use both within compa-                                they produce are easily affected by errors and inconsistencies in
+nies [29, 43, 44] and on the Web [46, 49]. Nonetheless, as KGs quickly                        the KG, e.g., if some departments, by mistake, are attached the
+accrue more data, practical applications impose further demands                               property hasAdvisor, a corresponding spurious shape is extracted;
+in terms of quality assessment and validation [34, 38, 52]. Hence,                            and (3) they do not scale to large KGs, e.g., they cannot process the
+shapes constraint languages, e.g., SHACL [23], and ShEx [35], have                            full English WikiData, and they take days to process a subset of it.
+been proposed to validate KGs by enforcing constraints represented                            Therefore, in this work, we present the first techniques for efficient
+in the form of validating shapes. For instance, we can express that                           extraction of validating shapes from very large existing KGs that also
+an entity of type Student requires a name, a registration number,                             ensures robustness against the effects of spuriousness.
+                                                                                                 Spuriousness poses important challenges to automatic shape
+This work is licensed under the Creative Commons BY-NC-ND 4.0 International                   extraction methods. For instance, in DBpedia [4], some of the enti-
+License. Visit https://creativecommons.org/licenses/by-nc-nd/4.0/ to view a copy of
+this license. For any use beyond those covered by this license, obtain permission by
+                                                                                              ties representing musical bands are wrongly assigned to the class
+emailing info@vldb.org. Copyright is held by the owner/author(s). Publication rights          dbo:City. As a consequence, when shapes are extracted from its
+licensed to the VLDB Endowment.                                                               instance data using existing approaches, the resulting node shape
+Proceedings of the VLDB Endowment, Vol. 16, No. 5 ISSN 2150-8097.
+doi:10.14778/3579075.3579078                                                                  for dbo:City specifies that cities are allowed optional properties like
+                                                                                              dbo:genre and dbo:formerBandMember. Hence, due to the effect
+
+
+
+
+                                                                                       1023
+
+
+===== PDF PAGE 2 =====
+of spuriousness, existing approaches generate tens of thousands of                    Given a KG G, a set of validating shapes represents integrity
+shapes (our experiments show that standard extraction processes                    constraints in the form of a shape schema S over G. Since the
+produce more than 2 million property shapes for WikiData [49]).                    shape schema describes shapes associated with node types and
+Thus, it becomes unmanageable for domain experts to manually                       their connections to other attributes and node types, we can also
+identify valid shapes. SheXer [12] is the only existing approach                   visualize the shape schema S as a particular type of graph (see
+that attempts to tackle this issue by filtering shapes based on a                  Figures 1a and 1b). Therefore, in the following, we refer to two
+“trustworthiness” score. Unfortunately, this score does not directly               concepts: the data graph G and the shape graph derived from S. The
+translate into how frequently a shape is satisfied in a dataset, so it             data graph is the RDF graph G to be validated, while the shape graph
+is still prone to generate spurious shapes, and it is also hard to tune.           consists of constraints in the form of the shape schema S against
+Furthermore, SheXer is not able to efficiently process large KGs.                  which entities of the data graph are validated. These constraints are
+    Therefore, to tackle the issue of spuriousness, we study and for-              defined using node and property shapes. In the following, we adopt
+malize the problem of support-based shapes extraction and propose                  the previously defined syntax [42] to refer to the set S according to
+the Quality Shapes Extraction (QSE) approach as a solution                         the SHACL core constraint components [50]. Finally, while validating
+to this problem. To tackle the issue of scalability, we devise two                 shapes can also be expressed in ShEx [34], our approach can be
+efficient algorithms, QSE-Exact and QSE-Approximate. Hence, QSE                    trivially extended to output ShEx directly, or it can exploit existing
+can filter out shapes affected by spurious or erroneous data based                 SHACL to ShEx converters [53]. Thus, without loss of generality, we
+on robust and easily understandable measures. QSE allows shapes                    focus on the current standard for SHACL shapes in the following.
+extraction both from KGs available as files as well as SPARQL end-
+                                                                                      Definition 2.2 (Shape Schema). A SHACL shape schema consists
+points. Moreover, our efficient approximation algorithm enables
+                                                                                   of a set of node shapes S, with ⟨𝑠, 𝜏𝑠 , Φ𝑠 ⟩∈S, where 𝑠 is the shape
+shape extraction even on a commodity machine by sampling the KG
+                                                                                   name, 𝜏𝑠 ∈C is the target class, and Φ𝑠 is a set of property shapes of
+entities via a dynamic multi-tiered reservoir sampling technique.
+                                                                                   the form 𝜙𝑠 :⟨𝜏p, Tp, Cp ⟩, where 𝜏p ∈P is called the target property,
+    We perform a thorough experimental evaluation using both
+                                                                                   Tp ⊂I contains either an IRI defining a literal type, e.g., xsd:string,
+synthetic (LUBM [18]) and real (DBpedia [4], YAGO-4 [46], Wiki-
+                                                                                   or a set of IRIs – called class type constraint, and Cp is a pair (𝑛, 𝑚) ∈
+Data [49]) KGs demonstrating the benefits of our approach. The
+                                                                                   N × (N∪{∞}). 𝑛≤𝑚 – called min and max cardinality constraints.
+shapes produced by our approach are of high quality and instru-
+mental for easily finding errors in real KGs. The results show that                Therefore, given a node shape 𝑠∈S for the target class 𝜏𝑠 ∈C, Φ𝑠
+QSE-Exact can extract shapes from the entire WikiData’s 2015 dump                  defines which properties each instance of 𝜏𝑠 can or should be associ-
+in 16 minutes and from 2021’s dump (1.9B triples) in 2.5 hours. Sim-               ated with. For instance, the shape ⟨sh:Student, :Student, {𝜙𝑠1 , 𝜙𝑠2 }⟩
+ilarly, QSE-Approximate can extract shapes from WikiData’s 2021                    from Figure 1b, contains a node shape for target class :Student and
+dump in 90 minutes on a 32GB machine while still achieving 100%                    enforces two property shapes 𝜙 1 and 𝜙 2 . The property shape 𝜙 1 has
+precision and 95% recall in the set of shapes produced. Hence, our                 a target property 𝜏p = :name, a literal type constraint Tp = xsd:string,
+sampling strategy is accurate and efficient both when extracting                   and the cardinality constraints Cp =(1, 1). Similarly, the property
+shapes from a file as well as when using an endpoint.                              shape 𝜙 2 has a target property 𝜏p =:takesCourse, a class type con-
+                                                                                   straint Tp = :Course, and the cardinality constraint Cp = (1, ∞).
+2     RDF SHAPES AND THE QSE PROBLEM                                                  When validating a graph G against a shape schema S having a
+In the following, we first introduce the KG data model and the                     node shape ⟨𝑠, 𝜏𝑠 , Φ𝑠 ⟩∈S, we verify that each entity 𝑒∈G that is an
+concepts of validating shapes, their support, and confidence, then                 instance of 𝜏𝑠 satisfies all the constraints Φ𝑠 . Note that we use the
+we define our focus: the Quality Shapes Extraction problem.                        term entity and node interchangeably throughout the paper. Thus,
+                                                                                   we define the semantics of S as follows:
+2.1    Preliminaries                                                                   Definition 2.3 (Validating Shape Semantics). Given a node shape
+The standard model for encoding KGs is the Resource Description                    ⟨𝑠, 𝜏𝑠 , Φ𝑠 ⟩∈S, a graph G, and an entity 𝑒 s.t. ⟨𝑒, a, 𝜏𝑠 ⟩∈G, we have
+Framework (RDF [10]), which describes data as a set of ⟨𝑠, 𝑝, 𝑜⟩                   that 𝑠 validates 𝑒, and we write 𝑒 |= G 𝜙, if for every property shape
+triples stating that a subject 𝑠 is in a relationship with an object 𝑜             𝜙𝑠 :⟨𝜏p, Tp, Cp ⟩∈Φ𝑠 the following conditions hold:
+through predicate 𝑝. Therefore, we define an RDF graph as follows:                 • If Tp is a literal type constraint, then for every triple (𝑒, 𝜏𝑝 , 𝑙) ∈ G,
+   Definition 2.1 (RDF graph). Given pairwise disjoint sets of IRIs I,                𝑙 is a literal of type Tp .
+blank nodes B, and literals L, an RDF Graph G:⟨𝑁 , 𝐸⟩ is a graph                   • If Tp is a set of class type constraints Tp ={𝑡 1, 𝑡 2, ...𝑡𝑛 }, then for
+with a finite set of nodes 𝑁 ⊂(I∪B∪L) and a finite set of edges                       every triple (𝑒, 𝜏𝑝 , 𝑜)∈G, it holds that ∀𝑡 ∈Tp , 𝑜 is an instance of 𝑡
+𝐸⊂{⟨𝑠, 𝑝, 𝑜⟩∈(I∪B) × I × (I∪B∪L)}.                                                    (or of a subclass of 𝑡) and if ∃𝑆𝑡 ∈S, 𝑜 |= G 𝑆𝑡 .
+                                                                                   • 𝑛 ≤ |{(𝑠, 𝑝, 𝑜) ∈ G : 𝑠 = 𝑒 ∧ 𝑝 = 𝜏𝑝 }| ≤ 𝑚, where Cp =(𝑛, 𝑚).
+   Moreover, we distinguish two special subsets of the IRIs I: pred-
+icates P and classes C. The set of predicates P⊂I is the subset                       Here we study the case where G is given, and we want to extract
+of IRIs that appear in the predicate position 𝑝 in any ⟨𝑠, 𝑝, 𝑜⟩∈G.                the set of validating shapes S that validates every class in C from G.
+Among predicates P, we identify the type predicate a∈P, which                      This is the shapes extraction problem. In this case, existing automatic
+corresponds to IRI rdf:type [51] or wdt:P31 WikiData [49], as the                  approaches [38] assume the graph to be correct, then iterate over
+predicate that connects all entities that are instances of a class to the          all entities in it, and extract for each entity 𝑒 all necessary shapes
+node representing the class itself, i.e., their type. Thus, all the IRIs           that validate 𝑒. The union of all such shapes is assumed to be the
+that are classes in G form the subset C:{𝑐∈I|∃𝑠∈I s.t. ⟨𝑠, a, 𝑐⟩∈G}.               final schema S. This is useful when we want to validate new data
+
+
+
+
+                                                                            1024
+
+
+===== PDF PAGE 3 =====
+that will be added in the future to the KG so that it will conform                   Problem 1 (Quality Shapes Extraction). Given an RDF graph
+to the data already in the graph. Unfortunately, this approach will               G, a threshold 𝜔 for support, and 𝜀 for confidence, the problem of
+produce spurious shapes. For instance, in Figure 1, since :alice has              quality shapes extraction over G is to find the set of shapes S such that
+both type Full Professor and Chair, when parsing the triple (:alice,              for all node shapes ⟨𝑠, 𝜏𝑠 , Φ𝑠 ⟩∈S it holds that supp(𝑠)>𝜔 and for all
+:headOf, :CS_Faculty), the property shape headOf (the red dotted                  property shapes 𝜙𝑠 :⟨𝜏p, Tp, Cp ⟩∈Φ𝑠 , supp(𝜙𝑠 )>𝜔 and conf (𝜙𝑠 )>𝜀.
+arrow in Figure 1b) is assigned to both node shapes, instead of
+assigning it to the Chair node shape only.                                        In the following, we provide both, an exact and an approximate
+                                                                                  solution to the problem of quality shape extraction.
+2.2    Shapes Support and Confidence
+                                                                                  3    QSE-EXACT
+To contrast the effect of spuriousness, we want to exploit statistics
+on how often properties are applied to entities of a given type.                  Extracting shapes S from an RDF graph G requires processing its
+Therefore, we introduce the notion of support and confidence for                  triples and analyzing the types of nodes involved both as subjects
+shape constraints to study the reliability of extracted shapes. These             and objects in those triples. At a high level, we need to know for
+concepts are inspired by the well-known theory developed for                      each entity all its types, these will become node shapes, and then for
+the task of frequent patterns mining [19] and the concept of MNI                  each entity type, identify property shapes, which requires, in turn,
+support for graph patterns [7]. The MNI support of a graph pattern                knowing the types of the objects as well. Furthermore, we need
+is the minimum cardinality of the set of all nodes of G that are                  to keep frequency counts to know how often a specific property
+mapped to a specific pattern node by some isomorphism across all the              connects nodes of two given types compared to how many entities
+nodes of the pattern. In our approach, a property shape corresponds               exist of those types. In our solution, this is done in four steps: (1)
+to a node- and edge-labeled graph pattern. Thus, given the shape                  entity extraction, (2) entity constraints extraction, (3) support and
+𝑠:⟨𝑠, 𝜏𝑠 , Φ𝑠 ⟩∈S its support is the number of entities that are of type          Confidence computation, and (4) shapes extraction. Here we first
+𝜏𝑠 , while the support of a property shape 𝜙𝑠 :⟨𝜏p, Tp, Cp ⟩∈Φ𝑠 is the            consider the case where the graph is stored as a complete dump
+cardinality of entities conforming to it.                                         on a single file. Later, we also consider the case for a graph stored
+                                                                                  within a triplestore [41] for which the KG is not available as a file.
+   Definition 2.4 (Support of 𝜙𝑠 ). Given a shape ⟨𝑠, 𝜏𝑠 , Φ𝑠 ⟩∈S with               QSE-Exact (file-based). One of the most common ways to store
+shape constraint 𝜙𝑠 :⟨𝜏p, Tp, Cp ⟩∈Φ𝑠 , the support of 𝜙𝑠 is defined as           an RDF graph G on a file F is to represent it as a sequence of triples.
+the number of entities 𝑒 satisfying 𝜙𝑠 , denoted as 𝑒 |=𝜙𝑠 , hence:               Therefore, QSE reads F line by line and processes it as a stream
+                                                                                  of ⟨𝑠, 𝑝, 𝑜⟩ triples. Algorithm 1 and Figure 2 present the four main
+                      supp(𝜙𝑠 )=|{𝑒∈I | 𝑒 |=𝜙𝑠 }|                   (1)
+                                                                                  steps of QSE to extract shapes for graph G stored in F. In the
+Finally, the confidence of a constraint 𝜙𝑠 measures the ratio between             entity extraction phase, the algorithm parses each ⟨𝑠, 𝑝, 𝑜⟩ triple
+how many entities conform to 𝜙𝑠 and the total number of entities                  containing a type declaration (e.g., rdf:type or wdt:P31 – this can be
+that are instances of the target class of the shape 𝑠.                            configured) and for each entity, it stores the set of its entity types
+                                                                                  and the global count of their frequencies, i.e., the number of in-
+   Definition 2.5 (Confidence of 𝜙𝑠 ). Given a shape ⟨𝑠, 𝜏𝑠 , Φ𝑠 ⟩∈S              stances for each class (Lines 4-8) in maps Ψetd (Entity-to-Data) and
+having shape constraint 𝜙𝑠 :⟨𝜏p, Tp, Cp ⟩∈Φ𝑠 , the confidence of 𝜙𝑠               Ψcec (Class-to-Entity-Count), respectively. For example, Figure 2
+is defined as the proportion of entities for which 𝑒 |=𝜙𝑠 among the               (phase 1) presents two example entities :bob and :alice (from the
+entities that are instances of the target class 𝜏𝑠 of 𝑠∈S, hence:                 example graph of Figure 1a) having entity types :Student, :FullPro-
+                                        supp(𝜙𝑠 )                                 fessor, and :Chair, respectively. Figure 2 also presents the structure
+                 conf (𝜙𝑠 ) =                                       (2)           of the Entity-to-Data Ψetd dictionary map to help understand the
+                                |{𝑒 |(𝑒, 𝑡𝑦𝑝𝑒, 𝜏𝑠 ) ∈ G}|
+                                                                                  captured entities and their information. In the second phase, i.e.,
+   As it happens in the case of frequent pattern mining [19], when                entity constraints extraction, the algorithm performs a second pass
+extracting validating shapes, the support provides insights on how                over F (Lines 9-19) to collect the constraints and the meta-data
+frequently a constraint is matched in the graph, i.e., the number                 required to compute support and confidence of each candidate
+of entities 𝑒 satisfying a constraint 𝜙𝑠 . While similar to the task              property shape. Specifically, it parses all triples except triples con-
+of itemset mining [6], the confidence can tell us how strong is the               taining type declarations (which can be skipped now) to obtain for
+association between a node type and a specific constraint, i.e., the              each predicate the subject and object types from the map Ψetd that
+proportion of entities 𝑒 satisfying a constraint 𝜙𝑠 among all the                 was populated in the previous step. The type of a literal object is
+entities that are instances of the node type 𝜏𝑠 of 𝑠∈S. For instance,             inferred from the value, and for a non-literal object is obtained from
+the confidence for property shape headOf (Figure 1b) in our snap-                 Ψetd (Lines 11-16). For example, Ψetd records that the types of :al-
+shot of LUBM is 10% for the Full Professor node shape and 100% for                ice are :FullProfessor and :Chair. Then, the Entity-to-Property-Data
+Chair, which indicates a strong association of the headOf property                map Ψetpd is updated to add the candidate property constraints
+shape to latter and a weak association to the former.                             associated with each subject entity (Line 17). Figure 2 (phase 2)
+                                                                                  shows the meta-data captured for the properties of :bob and :alice.
+2.3    The Quality Shapes Extraction Problem                                         In the third phase, i.e., for support and confidence computation,
+Given the need to extract shapes from a large existing graph G                    the constraints’ information stored in maps (Ψetd , Ψcec ) is used
+while limiting the effect of spuriousness, we formally define the                 to compute support and confidence for specific constraints. The
+problem of extracting high-quality shapes from KGs as follows:                    algorithm iterates over the map Ψetd to get the inner map Ψetpd
+
+
+
+
+                                                                           1025
+
+
+===== PDF PAGE 4 =====
+                                                                                    assumption, all shape constraints are initially assigned a minimum
+                                                                                    cardinality of 0, making them optional. However, there are cases
+                                                                                    where we can infer that some properties are mandatory (i.e., should
+                                                                                    be assigned a min count of 1), and some other properties should ap-
+                                                                                    pear exactly once for each entity (i.e., should be assigned both a min
+                                                                                    and a max count equal to 1). Trivially one can assign minimum car-
+                                                                                    dinality 1 to property shapes having confidence 100%, i.e., for those
+                                                                                    cases in which all entities have that property. In case of incomplete
+                                                                                    KGs, QSE allows users to provide a different confidence threshold
+                                                                                    value for adding the min cardinality constraints. To achieve this,
+                                                                                    we extend the fourth phase and add a min cardinality constraint in
+                                                                                    property shapes on line 35 based on the min-confidence provided
+Figure 2: Overview of the four phases of QSE: ○
+                                              1 entity ex-
+                                                                                    by the user. QSE also keeps track of properties having maximum
+traction, ○
+          2 entity constraints extraction, ○
+                                           3 support and
+                                                                                    cardinality equal to 1 in a second phase and assigns sh:maxCount=1
+confidence computation, and ○  4 shapes extraction. QSE-
+                                                                                    to those property shapes in the fourth phase of shapes extraction.
+Approximate uses Dynamic Reservoir Sampling (DRS) in 1 ○.
+                                                                                        Complexity Analysis. The time complexity of QSE-Exact (Al-
+mapping entities to candidate property shapes 𝜙𝑠 :⟨𝜏p, Tp, Cp ⟩∈Φ𝑠 ,                gorithm 1) is O (2·|𝐹 | + |𝐸|·|Φ𝑠 | + |𝑆 |·|Φ𝑠 |). Where 2 ∗ |𝐹 | refers to the
+and retrieves the type of each entity using types information stored                first and second phases having to parse all the triples twice, 𝐸 is the
+in Ψetd to build triplets of the form ⟨𝜏𝑒 , 𝜏𝑝 , 𝜏𝑝𝑜 ⟩ and compute their            set of entities (i.e., the set of distinct IRIs that appear as a subject for
+support and confidence (Line 25). Figure 2 (phase 3) highlights some                some triple), 𝑆 is the set of Node Shapes, and lastly, Φ𝑠 represents
+of these triplets for 𝜏𝑒 =:Student. The value of support and confi-                 a set of all property shape constraints, i.e., Φ𝑠 = {𝜙 1, 𝜙 2, ...., 𝜙𝑛 }.
+dence for each distinct triplet is incremented in each iteration and                Therefore, our algorithm scales linearly in the number of edges and
+stored in ΨSupp and ΨConf maps. Additionally, a map ΨPTT (Prop-                     nodes in the graph and in the size of the final set of shapes.
+erty to Types) is populated with distinct properties’ frequencies and
+their object types in order to, later on, establish the corresponding
+min/max cardinality constraints (Line 26).                                          Algorithm 1 Shapes Extraction
+    Finally, in the shapes extraction phase, the algorithm iterates                     Input: Graph G from File F, 𝜔 : min-support, 𝜀 : min-confidence
+                                                                                        Output: Output: S ⟨𝑠, 𝜏𝑠 , Φ𝑠 ⟩
+over the values of the Ψctp map and defines the shape name of 𝑠,                     1: 𝐸𝑑𝑎𝑡𝑎 ← {T: SetTypes , ΨETPD = Map ⟨Iri, 𝑃𝑑𝑎𝑡𝑎 ⟩ }
+the shape’s target definition 𝜏𝑠 , and the set of shape constraints 𝜙𝑠 for           2: 𝑃𝑑𝑎𝑡𝑎 ← {T′ : SetObjTypes , Count :Int }
+each candidate class (Lines 27-29). The set of property shapes 𝑃 for a               3: Ψetd = Map ⟨Iri, 𝐸𝑑𝑎𝑡𝑎 ⟩ , Ψcec = Map ⟨Iri, Int ⟩ , Ψctp = Map ⟨Iri, Map ⟨Iri, Set ⟩ ⟩
+given Node Shape are then extracted from the map Map⟨Property,                       4: for 𝑡 ∈ G ∧ t.p = Type Predicate do                         ⊲○ 1 Entity extraction
+                                                                                     5:    entity 𝑒 : t.s ; entityType 𝑒𝑡 = t.o                         ⊲ s: subject, o: object
+Set⟩ (Lines 30-36). An example shapes graph for our running exam-                    6:    if 𝑒 ∉ Ψetd then Ψetd .insert(𝑒 , ... ))
+ple is shown in Figure 1. The Cp constraint can possibly have three                  7:    Ψetd .insert(𝑒 , Ψetd .get(𝑒 ).T.add (𝑒𝑡 ) )                      ⊲ T : entity types
+types of values: sh:Literal, sh:IRI, and sh:BlankNode. In the case of                8:    increment entity count for current 𝑒𝑡 in Ψcec
+                                                                                     9: for 𝑡 ∈ G ∧ t.p != Type Predicate do            ⊲○ 2 Entity constraints extraction
+literal types, the literal object types such as xsd:string, xsd:integer,            10:    SetObjTypes ← ∅ , SetTuple ← ∅ ⊲ init a type and property to type tuple set
+or xsd:date are used. However, in the case of non-literal object types,             11:    if object 𝑡 .𝑜 is Literal then
+the constraint sh:class is used to declare the type of object to define             12:        SetObjTypes .add(getLiteralType(t.o))
+                                                                                    13:        SetTuple .add(new Tuple ⟨ 𝑡 .𝑝, getLiteralType (𝑡 .𝑜) ⟩)
+the type of value for the candidate property. It is possible to have                14:    else                                                      ⊲ for non-literal objects
+more than one value for the sh:class and sh:datatype constraints                    15:        for objtype ∈ Ψetd .get(𝑡 .𝑜 ).T do
+of a candidate property shape, e.g., to state that a property can                   16:            SetObjTypes .add(objtype ) ; SetTuple .add(new Tuple ⟨𝑡 .𝑝, objtype ⟩ )
+accept both integers and floats as values, in such cases, we use sh:or              17:    addPropertyConstraints (𝑡 .𝑠 , SetTuple , Ψetd )
+                                                                                    18:    for Iri ∈ Ψetd .get(𝑡 .𝑠 .T) do                                      ⊲ if 𝑡 .𝑠 ∈ Ψetd
+constraint to encapsulate multiple values. A detailed explanation                   19:         update Ψctp with class Iri, 𝑡 .𝑝 , and object types using SetObjTypes
+of each phase is available in the extended version of the paper1 .                                                         ⊲○   3 Support and Confidence computation
+    QSE-Exact (query-based). To support shapes extraction from                      20: ΨSupp = Map ⟨Tuple3 , Int ⟩ , ΨConf = Map ⟨Tuple3 , Int ⟩ , Ψptt
+a triplestore, we propose QSE-Exact query-based that uses a set                     21: for (𝑒, 𝐸𝑑𝑎𝑡𝑎 ) ∈ Ψetd do
+                                                                                    22:    for (𝑇 , ΨETPD ) ∈ 𝐸𝑑𝑎𝑡𝑎 do
+of SPARQL queries [40] to extract all the necessary information                     23:         for 𝑒𝑡 ∈ 𝑇 ∧ (𝑝, 𝑝𝑜 , 𝑐) ∈ 𝑃𝑑𝑎𝑡𝑎 do
+that we collect across the four phases. In practice, we pose queries                24:              𝜒 ← createTriplets( ⟨𝜏𝑒 , 𝜏𝑝 , 𝜏𝑝𝑜 ⟩ )
+to extract all the distinct classes C, then, for each class 𝑐∈C, its                25:              computeSupportAndConfidence ( ΨSupp , 𝜒 , Ψcec )
+                                                                                    26:              computeMaxCardinality (ΨPTT , 𝑝 , 𝑐 )
+properties 𝑝∈P along with object types are extracted as triplets,                   27: for ( class, Map ⟨Property, SetObjTypes ⟩) ∈ Ψctp do       ⊲○  4 Shapes extraction
+and support is computed for each triplet by a count query. This                     28:    Φ𝑠 ← ∅ ⊲ Property shapes Φ𝑠 = {𝜙𝑠1 , 𝜙𝑠2 , ..., 𝜙𝑠𝑛 } where 𝜙𝑠 : ⟨𝜏p , Tp , Cp ⟩
+method is based on the standard procedure also implemented in                       29:    𝑠 = class.buildShapeName() , 𝜏𝑠 = class
+                                                                                    30:    for (𝑝, SetObjTypes ) ∈ Map ⟨Property, Set ⟩ do 𝜙𝑠 .𝜏p = 𝑝
+other existing, query-based tools [12, 20].                                         31:         𝑝.𝜔 = ΨSupp .get (𝑝, SetObjTypes ) , 𝑝.𝜀 = ΨConf .get (𝑝, SetObjTypes )
+    Cardinality Constraints. QSE supports assigning cardinality                     32:         if 𝑝.𝜔 > 𝜔 ∧ 𝑝.𝜀 > 𝜀 then
+constraints (sh:minCount and sh:maxCount) to Cp to each prop-                       33:              build(sh:nodeKind, sh:maxCount, Ψptt )
+erty shape constraint 𝜙𝑠 :⟨𝜏p, Tp, Cp ⟩. Following the open-world                   34:         𝜙𝑠 .Cp .𝑎𝑑𝑑 ( sh:minCount : 1)                                   ⊲ 𝑖 𝑓 𝑝.𝜀 > 𝜀 ′
+                                                                                    35:         Φ𝑠 .𝑎𝑑𝑑 (𝜙𝑠 )
+1 https://relweb.cs.aau.dk/qse/                                                     36:     S.𝑎𝑑𝑑 (𝑠, 𝜏𝑠 , Φ𝑠 )                                         ⊲ if s.𝜔 > 𝜔 ∧ 𝜙𝑠 !∅
+
+
+
+
+                                                                             1026
+
+
+===== PDF PAGE 5 =====
+4    QSE-APPROXIMATE                                                               Algorithm 2 QSE-Approximate Reservoir Sampling
+QSE-Exact keeps type and property information for each entity                          Input: Graph G from File F, maximum entity threshold 𝜏max , Sampling%
+in memory while extracting shapes. As a result, its memory re-                         Output: Ψetd , Ψcec
+                                                                                    1: init maps Ψetd , Ψsepc , Ψrcpc , Ψcec , Ψpc
+quirements are prohibitively large when dealing with large KGs.                     2: 𝜏min = 1 (minimum entity threshold) ; lineCounter = 0
+Therefore, we propose QSE-Approximate to enable shape extrac-                       3: for t ∈ G do                                                   ⊲ parse s,p,o of the triple 𝑡
+tion from very large KGs with reduced memory requirements. Our                      4:     if t.p = Type Predicate then
+                                                                                    5:          entity 𝑒 : t.s ; entityType 𝑒𝑡 = t.o                        ⊲ s: subject, o: object
+goal is to solve the scalability issue in shapes extraction approaches              6:          Ψsepc .putIfAbsent(𝑒𝑡 , [ ] )                                       ⊲ if 𝑒𝑡 ∉ Ψsepc
+by using only the resources available to a commodity machine. QSE-                  7:          Ψrcpc .putIfAbsent(𝑒𝑡 , 𝜏min )                                      ⊲ if 𝑒𝑡 ∉ Ψrcpc
+                                                                                    8:          if | Ψsepc .get (𝑒𝑡 ) | < Ψrcpc .get (𝑒𝑡 ) then      ⊲ Add entity 𝑒 in reservoir
+Approximate is based on a multi-tiered dynamic reservoir-sampling                   9:              if Ψetd .get(𝑒 ).T is ∅ then Ψetd .insert(𝑒 , ... ))         ⊲ T : entity types
+(DRS) algorithm that we introduce. We maintain as many reservoirs                  10:              Ψetd .insert(𝑒 , Ψetd .get(𝑒 ).T.add ( t.𝑜) )
+as types in the graph, and we dynamically resize each reservoir as                 11:              Ψsepc .get(𝑒𝑡 ).insert(𝑒 )
+new triples are parsed. Moreover, the replacement of nodes in the                  12:          else              ⊲ Replace random entity in reservoir with current entity 𝑒
+                                                                                   13:              𝑟 = generateRandomNumber(0, lineCounter)
+reservoir is performed based on the number of node types across                    14:              if 𝑟 < |Ψsepc .get(𝑒𝑡 ) | then
+reservoirs. The resulting algorithm replaces the first phase of QSE.               15:                      𝑛, 𝑛⃗ = Ψsepc .get(𝑒𝑡 ).nodeAtIndex(𝑟 − 1, 𝑟, 𝑟 + 1))
+                                                                                                        𝑛⃗, ˆ︁
+                                                                                   16:                  n = getNodeWithMinimumScope(𝑛⃗, ˆ︁        𝑛, 𝑛⃗ )
+After sampling, the information about the sampled entities is used                 17:                  replace node at index 𝑛 with current 𝑒 & 𝑒𝑡 in Ψetd
+in the same way as before in the remaining phases of Algorithm 1.                  18:                   Ψsepc .get(𝑒𝑡 ).add (𝑒 )
+Hence, we maintain information only for a small representative                     19:          increment entity count for current 𝑒𝑡 in Ψcec
+sample of entities in memory but enough to detect all shapes.                      20:                                                                         ⊲ Resize reservoir
+                                                                                   21:          ratio = (Ψsepc .𝑔𝑒𝑡 (𝑒𝑡 ).𝑠𝑖𝑧𝑒 ()/Ψcec .𝑔𝑒𝑡 (𝑒𝑡 ) ) × 100
+    Algorithm 2 receives as input a graph file F, sampling percentage              22:          capacity = Sampling% × Ψsepc .get(𝑒𝑡 ).size()
+(Sampling% ), and maximum size of the reservoir per class (𝜏𝑚𝑎𝑥 ).                 23:          if capacity < 𝜏𝑚𝑎𝑥 ∧ ratio ≤ Sampling% then Ψrcpc .insert(𝑒𝑡 , capacity)
+After initialization, triples 𝑡 of F are parsed (Line 3) and filtered              24:     else→ increment property count for current 𝑡 .𝑝 in Ψpc
+                                                                                   25:     lineCounter + +
+based on whether they contain a type declaration. From these, we
+extract the entities to populate the Entity-to-Data map Ψetd (Lines
+                                                                                   and confidence 𝜀 𝜙 of a property shape 𝜙 from the current values
+4-24), while non-type triples are parsed on Line 24 to keep count
+                                                                                   𝜔 and 𝜀 computed from the sampled data. Thus, it estimates with
+of distinct properties in the Property-Count map Ψpc . For instance,
+                                                                                   𝜔 𝜙 =𝜔𝜙 /𝑚𝑖𝑛(|𝑃𝑟∗ |/|𝑃 |, |𝑇𝑟 |/|𝑇 |) the effective support for a property
+:alice is an entity of type :FullProfessor and :Chair in Ψetd shown in
+                                                                                   shape 𝜙, where 𝜔𝜙 is the support computed for 𝜙 in the current
+Figure 2. QSE-Approximate maintains a reservoir for each distinct
+                                                                                   sample, 𝑃 represents all triples in G having property 𝜏𝑝 , 𝑃𝑟∗ repre-
+entity type 𝑒𝑡 , e.g., maintaining a distinct reservoir of entities of
+                                                                                   sents triples having property 𝜏𝑝 across all entities in all reservoirs,
+type :Student (𝑅1 ), :FullProfessor (𝑅2 ), and :Chair (𝑅3 ) shown in
+                                                                                   𝑇 represents all entities of type 𝑒𝑡 in G, and 𝑇𝑟 represents all entities
+Figure 2, using a map of sampled entities per class (Ψsepc ). The
+                                                                                   of type 𝑒𝑡 in the reservoir. Similarly, the confidence 𝜀 𝜙 of a property
+reservoir capacity map (Ψrcpc ) stores the current max capacities
+                                                                                   shape is estimated by replacing denominator in eq. (2) with |𝑇𝑟 |.
+for the reservoir for each 𝑒𝑡 . If 𝑒𝑡 does not exist in Ψsepc and Ψrcpc ,
+                                                                                       QSE-Approximate (query-based). We apply the same sam-
+i.e., if it has not a reservoir, one is created (lines 6-7). Then, 𝑒 is
+                                                                                   pling technique in the query-based shapes extraction approach
+inserted in the reservoir for 𝑒𝑡 (Lines 8-11), e.g., :alice is inserted
+                                                                                   where in Algorithm 2 entities and their meta-data are retrieved via
+into both reservoirs 𝑅2 and 𝑅3 shown in Figure 2. If the reservoir
+                                                                                   SPARQL queries, resulting in query-based QSE-Approximate.
+has reached its current capacity limit, we may have to replace an
+                                                                                       Space Analysis. The space requirement of QSE-Approximate
+entity in the reservoir with the current one. Hence, neighbor-based
+                                                                                   depends on the values of target Sampling% , the maximum reservoir
+dynamic reservoir sampling is performed (Lines 13-18), i.e., a ran-
+                                                                                   size 𝜏𝑚𝑎𝑥 , and the number of entity types |T| in G. In the worst case,
+dom number 𝑟 is generated between zero and the current number
+                                                                                   it requires 𝑂 (2·|𝑇 |·𝜏𝑚𝑎𝑥 ), therefore while G can contain hundreds
+of type declarations read from F. If 𝑟 falls within the reservoir size,
+                                                                                   of millions of entities, we can still easily estimate how many distinct
+then a node in the reservoir is replaced with 𝑒. To select which
+                                                                                   types are in the graph and select 𝜏𝑚𝑎𝑥 to fit the available memory.
+node to replace, we identify as 𝑛    ˆ︁ the target node at index 𝑟 , and
+with 𝑛⃗ and 𝑛⃗ its neighbors at indexes 𝑟 −1 and 𝑟 +1, respectively.
+                                                                                   5     EVALUATION
+Among these, the node having minimum scope (i.e., the minimum
+number of types that are known at this point in time) is selected to               In the following, we evaluate our QSE solutions and their effective-
+be replaced by the current 𝑒 (Line 17). Additionally, the algorithm                ness in tackling the problem of spuriousness along with a compari-
+keeps track of actual Class-to-Entity-Count in Ψcec (Line 19), i.e.,               son to existing state-of-the-art approaches.
+the exact count of how many entities of each type we have seen.                       Datasets. We selected a synthetic dataset, LUBM-500 [18], and
+Once the reservoir for 𝑒𝑡 is updated, the sampling ratio for this type             three real-world datasets: DBpedia [4] downloaded on 01.10.2020;
+is computed, i.e., the proportion of entities kept so far with type                YAGO-4 [46], for which we use the subset containing instances
+𝑒𝑡 over the total number of entities of that type seen up to now.                  from the English Wikipedia, downloaded on 01.12.2020; and Wiki-
+Given the current and target sampling ratio (Sampling% ) provided                  Data [49], in two variants, i.e., a dump from 2015 [54] (Wdt15), used
+as input, the algorithm evaluates whether to resize the reservoir                  in the original evaluation of SheXer [12], and the truthy dump from
+for 𝑒𝑡 , if it has not already reached the limit 𝜏𝑚𝑎𝑥 (Lines 21-23).               September 2021 (Wdt21) filtered by removing non-English strings.
+    While performing shapes pruning using counts over sampled                      Table 1 provides a comparison of their contents.
+entities, QSE-Approximate requires to estimate actual support 𝜔 𝜙                     Experimental Setup. We have implemented QSE algorithms
+                                                                                   in JAVA-11. All experiments are performed on a single machine
+
+
+
+
+                                                                            1027
+
+
+===== PDF PAGE 6 =====
+with Ubuntu 18.04, having 16 cores and 256 GB RAM. We have used                          Table 3: Running Time (T) in minutes (m) and hours (h)
+GraphDB [16] 9.9.0 to experiment with query-based variants of QSE                        along with Memory (M) consumption in GB.
+with a maximum memory usage limit of 16 GB. The source code                                           DBpedia LUBM YAGO-4 Wdt15          Wdt21
+of QSE is available as open-source [37] along with experimental                                         T M T       M   T M T        M  T    M
+settings and datasets. We have also published the extracted SHACL                          SheXer     26 m 18 58 m 33 1.9 h 24 3.2 h 59  - OutM
+shapes of all our datasets on Zenodo [39]. For SheXer, we cloned its                     F QSE-Exact  3 m 16 8 m 16 23 m 16 16 m 50 2.5 h 235
+original code from GitHub and used the same settings as the original                       QSE-Approx 1 m 10 2 m 10 13 m 10 13 m 16 1.3 h 32
+paper, i.e., default tuned parameters for the sheXing process and                          SheXer      9 h 65 15 h 140 OutT - 13 h 180 OutT  -
+                                                                                         Q QSE-Exact 34 m 16 47 m 16 2.4 h 16 1.2 h 16 OutT  -
+customized tuned parameters to output shapes equivalent to QSE.
+                                                                                           QSE-Approx 16 m 6 3 m 7 39 m 16 49 m 16 5.7 h 64
+    Metrics. We measure the running time, and maximum mem-
+ory usage (defined using Java -Xmx) during QSE shapes extraction
+process, and Shape Statistics of the output shapes.                                      and Wdt15, whereas SheXer goes out of memory (OutM ) for Wdt21.
+    QSE-Exact. We use QSE-Exact to extract shapes from LUBM (L),                         Similarly, among the query-based approaches, QSE-Exact is 1 order
+DBpedia (D), YAGO-4 (Y), and WikiData (W). The statistics of the                         of magnitude faster and consumes less than 50% memory to extract
+shapes extracted from these datasets using QSE-Exact (file-based)                        shapes from D, Y, L, and Wdt15. SheXer timed out (OutT – 24 hours)
+are shown in Table 2. It shows the count of Node Shapes (NS), Prop-                      for Y and Wdt21, while QSE-Exact timed out for Wdt21 only.
+erty Shapes (PS), and Property Shape Constraints (PSc), i.e., literal                        Taming spuriousness. To deal with the issue of spuriousness,
+and non-literal node types constraints. We refer to these statis-                        we analyze the shapes extracted and kept after pruning. QSE per-
+tics as default shape statistics. We initially considered SheXer [12],                   forms support-based shapes extraction by producing only the shapes
+ShapeDesigner [5], and SHACLGEN [20] as state-of-the-art ap-                             with support and confidence greater than or equal to a threshold
+proaches [38] to compare against QSE. Among these, both Sha-                             specified by the user. For instance, given a minimum support thresh-
+peDesigner and SHACLGEN load the whole graph into a triplestore                          old of 100 and minimum confidence value 25%, for every PS, QSE
+similar to our QSE-Exact (query-based). Yet, their current imple-                        prunes all the PSc that do not appear with at least 100 entities or
+mentations cannot handle large KGs with more than a few million                          if not at least for 25% of entities for that type. We remind that the
+triples and do not manage to extract shapes of KGs having more                           pruning of PSc has a cascading effect that also affects the pruning
+than some hundreds of classes. In our experiments, either they                           of PS, and the pruning of PS can, in turn, cause the pruning of NS.
+crashed because they tried to load the graph into an in-memory                           To study the impact of various confidence and support thresholds
+triplestore or required multiple hours to generate shapes for large                      on the number of PSc, PS, and NS, we analyze the effect of pruning
+KGs such as YAGO-4 (with 8,897 classes). Therefore, in the follow-                       by specifying various values for confidence and support. Figure 3
+ing, we focus our comparison on SheXer, which supports both the                          shows the result of pruning PSc (3a,b), PS and NS (3c,d) for con-
+file-based and the query-based methods. Table 3 shows the running                        fidence >(25, 50, 75,90)% and support (≥1, >100) on DBpedia and
+time and memory consumption to extract shapes for all datasets us-                       Wdt21. Experimental results on LUBM, YAGO-4, and Wdt15 are
+ing File (F) and Query-based (Q) variants of SheXer, QSE-Exact, and                      comparable to the results presented for DBpedia and Wdt21, and
+QSE-Approximate. Among the file-based approaches, QSE-Exact is                           are reported in the extended version of the paper1 . In general, as
+1 order of magnitude faster than SheXer for all datasets. It consumes                    expected, the results show that the higher we set the threshold
+up to 50% less memory than SheXer to extract shapes from D, L, Y,                        for support and confidence, the higher the percentage of PSc and
+                                                                                         PS to be pruned. Precisely, DBpedia contains 11𝐾 PS, 38𝐾 non-
+       Table 1: Size and characteristics of the datasets                                 literal, and 5𝐾 literal PSc (Table 2), when QSE performs pruning
+                                                                                         with confidence >25% and support ≥ 1, it prunes out 99% PSc and
+                    DBpedia     LUBM          YAGO-4       Wdt15     Wdt21
+                                                                                         PS (Figure 3a,b). Similarly for Wdt21, QSE prunes 85% non-literal
+# of triples           52 M         91 M         210 M      290 M    1.926 B             and 97% literal constraints, and 66% PS for confidence >25% and
+# of objects           19 M         12 M         126 M       64 M     617 M              support ≥1 (Figure 3b). In comparison to the default shape statistics
+# of subjects          15 M         10 M           5M        40 M     196 M              (Table 2), increasing confidence to >50%, 75%, and 90%, pruning
+# of literals          15 M         5.5 M        111 M       40 M     904 M
+# of instances          5M            1M          17 M        3M       91 M              Table 4: QSE-Approximate: Effect of Sampling% (S%) and
+# of classes             427            22        8,902     13,227    82,693             reservoir size (𝜏𝑚𝑎𝑥 ) on Precision (P), Recall (R), and Relative
+# of properties        1,323            20          153      4,906     9,017             Error (Δ) with min. support 1 and confidence 25% on Wdt21
+Size in GBs              6.6        15.66         28.59         42       234                                 Property Shapes (PS)             Time Mem
+                                                                                          S% 𝜏𝑚𝑎𝑥
+          Table 2: Shapes Statistics using QSE-Exact.                                                  Real Sample          P/R         Δ     (Min) (GB)
+
+               NS              PS            Non-Literal PSc     Literal PSc                     20 698,825 470,562 1.00 / 0.61 228,263         81      16
+                                                                                         10%
+           COUNT       COUNT/AVG              COUNT/AVG         COUNT/AVG
+                                                                                                200 698,825 497,035 0.92 / 0.65 201,790         81      16
+ LUBM           23         164 / 7.1             323 / 3.0           57 /1.0                     500 698,825 548,381 0.96 / 0.79 150,444        82      24
+                                                                                         50%
+DBpedia         426      11,916 / 27.9         38,454 / 6.9        5,335 /1.0                   5000 698,825 605,785 0.96 / 0.83 93,040         95      24
+YAGO-4         8,897     76,765 / 8.6         315,413 / 14.5      50,708 / 1.0
+ Wdt15        13,227    202,085 / 15.2         114,890 / 3.0     106,599 / 1.0                   500 698,825 617,349 1.00 / 0.88 81,476         87      32
+                                                                                         100%
+ Wdt21        82,651   2,051,538 / 24.8       3,765,953 / 5.6   1,113,856 / 1.0                 5000 698,825 645,810 1.00 / 0.92 53,015         98      32
+
+
+
+
+                                                                                  1028
+
+
+===== PDF PAGE 7 =====
+resulted in a drastic decrease in the number of PSc and PS. In DB-
+pedia, the majority of non-literal PSc are pruned out, and in Wdt21,
+the majority of literal constraints are pruned out. Pruning of NS is
+lower compared to PS and PSc for all combinations of support and
+confidence, showing that almost all types are associated at least
+with some very common PSc, e.g., the fact to have a :name.
+   QSE-Approximate. The QSE-Approximate approach reduces
+the memory requirements of the exact approach by allowing users
+to specify the sampling percentage ( Sampling% , S% for short) and
+maximum limit of the reservoir size (𝜏𝑚𝑎𝑥 ), i.e., the maximum num-
+ber of entities to be sampled per class, to reduce the number of
+entities to keep in memory. Table 3 shows that among the file-
+based approaches, QSE-Approximate is the most efficient approach                               Figure 3: QSE-Exact on DBpedia and Wdt21
+compared to QSE-Exact and SheXer. For example, to extract shapes
+from Wdt21, QSE-Approximate (with 𝜏𝑚𝑎𝑥 = 1000 and S%=100%) re-                     We further study the effect of pruning on shapes extracted from
+quired almost half the time with 1 order of magnitude less memory               Wdt21 using QSE-Approximate with confidence >25% and >75%
+than QSE-Exact, while SheXer could not complete the computa-                    having support 1, 10, and 100 (shown in Table 5). We see that with
+tion. Similarly, among query-based approaches, QSE-Approximate                  support ≥1 and confidence >25%, QSE-approximate is able to get
+proved to be the only approach to extract shapes from the Wdt21                 almost all the PS extracted by QSE-Exact for Wdt21 (Figure 3d) hav-
+endpoint in 5.7 hours with 64 GB memory consumption. In contrast,               ing 89% recall and 100% precision. Additionally, upon increasing the
+QSE-Exact and SheXer timed out (24 hours). Analogously to Wdt21,                support to 10 and 100, we notice a constant recall of around 88-99%
+QSE-Approximate remains 1 order of magnitude faster with 50%                    and a slight reduction in precision, i.e., 98% and 96% with decreas-
+less memory consumption than SheXer (for both query and file-                   ing relative error (i.e., Δ). Similarly, we notice the same trend with
+based variants) to extract shapes from D, L, Y, and Wdt15. Overall,             confidence=75%. Therefore, while we very rarely overestimate the
+these results show that our proposals have solved scalability is-               support and confidence of the shapes produced, we underestimate
+sues in shape extraction approaches regardless of the type of input             some of these values, although still in a few cases only.
+data source (file or endpoint). The choice of using a query-based                  Practical Implications of QSE. We show the practical utility
+or file-based version depends on the given setting. For instance,               of QSE by evaluating the correctness of extracted shapes and their
+querying an endpoint to extract shapes can impose excessive stress              effect when used to validate the KG. We extracted shapes from
+on a production DBMS serving other applications. On the other                   DBpedia using QSE with confidence >25% and support >100. Then,
+hand, the file-based approach is less resource-intensive and can be             we randomly selected 10 shapes and manually inspected them to
+used if the user can afford the cost of dumping the graph into a file.          evaluate their correctness, i.e., whether these shapes describe valid
+   QSE Sampling Parameters. We further evaluate the quality of                  constraints. This allows us to measure precision and recall based
+the output of QSE-Approximate using multiple combinations of val-               on the pruning parameters. The results of this analysis showed that
+ues for S% and 𝜏𝑚𝑎𝑥 on Wdt21 with a fixed confidence and support                QSE extracts shapes with 100% precision in terms of correct shapes
+threshold. This analysis helps the user to choose the best values for           constraints that should be part of the final set of shapes (qualified
+S% and 𝜏𝑚𝑎𝑥 parameters given some memory constraints. We show                   as quality shapes) by removing spurious shape constraints. Further,
+the results in Table 4, where the values shown in columns Real and              we used these 10 shapes, extracted by QSE, to validate DBpedia
+Sampled are extracted by QSE-Exact and QSE-Approximate, respec-                 using a SHACL validator and found 20,916 missing triples and 155
+tively. Here we skip listing values for NS as they are not affected             erroneous triples. The detailed results of this analysis are contained
+by the values of S%, 𝜏𝑚𝑎𝑥 , confidence, and support. The results                in the extended version1 . Overall, this experiment shows that by
+show that S%=10 and 𝜏𝑚𝑎𝑥 up to 200 provide a 92% precision for PS               using our technique the user is provided with a refined set of valid
+extracted using QSE-Approximate and pruned with support ≥1 and                  shapes that can effectively identify errors in the KG.
+confidence >25%. This requires only 16 GB RAM and 81 minutes. If
+a machine up to 24 GB RAM is available, then S%=50% and 𝜏𝑚𝑎𝑥 =5K
+                                                                                Table 5: Output quality of QSE-Approximate on Wdt21 with
+provide 96% precision with Δ = 93K in 95 minutes. Similarly, on a
+                                                                                S% = 100% and 𝜏𝑚𝑎𝑥 = 500 as # of real and sampled NS, PS, and
+machine having 32 GB RAM, S%=100% and 𝜏𝑚𝑎𝑥 =5K provide 100%
+                                                                                corresponding Precision (P), Recall (R), and Relative Error Δ.
+precision with Δ = 53K in 98 minutes. The non-perfect precision
+translates into some shapes being produced despite their support                  Conf           Node Shapes (NS)             Property Shapes (PS)
+and confidence is slightly lower than required. We also see that, for             Supp        Real Sample P / R Δ Real Sample              P/R        Δ
+very small values of 𝜏𝑚𝑎𝑥 we achieve a lower recall, meaning that
+some shapes that should have been produced are instead wrongly                            ≥ 1 82,651 82,651 1.0 / 1.0 0 698,825 620,622 1.00 / 0.89 78,203
+
+                                                                                 > 25 %
+                                                                                           10 23,640 23,640 1.0 / 1.0 0 158,283 141,040 0.99 / 0.88 17,243
+pruned. We note though that min support 1 and confidence 25%
+                                                                                          100 6,596 6,596 1.0 / 1.0 0 39,877 36,362 0.96 / 0.88 3,515
+are still quite low values and the shapes produced are thus more
+affected by spuriousness. Nonetheless, on a standard commodity                            ≥ 1 82,651 82,651 1.0 / 1.0 0 405,344 362,717 1.00 / 0.89 42,627
+
+                                                                                 > 75 %
+machine with 32GB we see we can easily achieve perfect precision                           10 23,640 23,640 1.0 / 1.0 0 91,947 83,329 0.99 / 0.90 8,618
+                                                                                          100 6,596 6,596 1.0 / 1.0 0 23,944 22,193 0.97 / 0.90 1,751
+(100%) and very high recall (92%).
+
+
+
+
+                                                                         1029
+
+
+===== PDF PAGE 8 =====
+   Constraints Coverage. Comparing the constraints supported                    large existing KGs. Note that there exist approaches for schema ex-
+by QSE and existing approaches (i.e., SheXer [12], SHACLGEN [20],               traction from property graphs as well [24]. Such approaches are not
+and ShapeDesigner [5]), we report that QSE is able to extract the               directly applicable to RDF KGs since their schema is more complex,
+widest range of constraints (i.e., 15 out of 16 specific core con-              moreover they focus on identifying sub-types based on node labels
+straints). Amongst those that are usually not supported, we support             (which do not exist in RDF data, since types are nodes in the graph),
+sh:in, sh:Literal, sh:class, sh:not, and sh:node. We currently do not           and finally are not designed to handle the issue of spuriousness.
+support sh:inverse but we plan to support it in the future. More                Once shapes are extracted, they can be used to validate KGs using
+details are available in the extended version of our paper1 .                   validation approaches like MagicShapes [2] and Trav-SHACL [13].
+   Optimal Pruning Thresholds. For each class in the KG, QSE                       Rules, Patterns, and Summaries. There exist various ap-
+computes its frequency. Thus, this information can be used as a                 proaches for rule discovery in graphs [25]. These systems [1, 14, 31]
+reference for the support and confidence thresholds. Further, QSE               derive rules from large KGs using structural information by explor-
+also supports the extraction of shapes for specific classes only.               ing the frequently occurring graph patterns. In contrast to vali-
+Therefore, the user can make use of frequency information and set               dating shapes, rules are mainly used to derive new facts from an
+class-specific pruning thresholds.                                              incomplete KG or identify specific sets of wrong connections. Fre-
+                                                                                quent subgraph mining (FPM) approaches, instead, are designed to
+6     RELATED WORK                                                              find frequently recurring structures in a large graph. In FPM, the
+KG Data Validation. Integrity constraints for KGs were initially                occurrence of subgraphs (the number of times a subgraph appears)
+defined with the RDF schema vocabulary [11] and then with the                   cannot be taken as the support of subgraphs since it does not satisfy
+OWL language [27, 28, 47]. Later, the SPARQL Inferencing Nota-                  the non-monotonic property [7]. The most practical measurement
+tion (SPIN) [22] was proposed. SHACL [23] (a W3C standard since                 for measuring this support is, instead, the minimum image-based
+2017) is known as the next generation of SPIN. Similar to SHACL,                support (MNI [7]). Our proposed definition of support for shape
+ShEX [35] is a constraint language that is built on regular bag ex-             constraints is inspired by the concept of MNI support and its use in
+pressions inspired by schema languages for XML. While ShEx is                   FPM [19]. Yet, different than FPM, we do not extract patterns of arbi-
+not a standard, it is used within the WikiData project [48]. Even               trary shape and size, thus we are able to provide better performance
+though SHACL and ShEx are not completely equivalent [15], their                 guarantees as we solve a simpler problem. Finally, our approach
+core mechanism revolves around the same concept of enforcing for                is also related to the techniques of graph summarization [8] and
+each node to satisfy specific constraints on the combination of its             can be seen as a special form of structural summarization [33].
+types and predicates [12]. In this work, we support the extraction              Additionally, QSE provides a scalable solution for understanding
+of validating shapes that can be represented in both languages.                 the content of large KGs (by extracting their shapes) like ABSTAT-
+   Shape Extraction. Given the abundance of large-scale KGs,                    HD [3], which is based on exploring semantic profiles of large KGs.
+various applications have been created to assist the process of
+extracting information about its implicit or explicit schema [21].              7   CONCLUSION
+Among these, shapes construction or extraction approaches, i.e., to             In this paper, we propose an automatic shape extraction approach
+generate a set of shapes given information from an existing KG, are             that addresses the two common limitations in other existing tech-
+used in order to obtain validating schema to ensure the quality of              niques, i.e., scalability and spuriousness. We addressed these lim-
+a KG’s content. We have classified existing approaches in Table 6               itations by introducing the Quality Shapes Extraction (QSE)
+based on their features, i.e., support for shapes extraction from data          problem. We devised an exact and approximate solution for QSE to
+or ontologies, support for automatic extraction of shapes, support              enable the efficient extraction of shapes on commodity machines.
+for shapes extraction from a SPARQL triplestore, and whether they               Our method is based on the well-understood concepts of support
+extract SHACL, ShEx, or both types of validating shapes. In our                 and confidence, hence it allows a data scientist to focus on the
+recent community survey [38] on extraction and adoption of validat-             shapes providing the highest reliability first when addressing is-
+ing shapes, we show that there is a growing need among practitioners            sues of data quality. By setting even low pruning thresholds, QSE
+for techniques for efficient extraction of validating shapes from very          can prune up to 93% of the shapes that a trivial extraction would
+    Table 6: State-of-the-art to extract validating shapes [38]                 produce (i.e., a reduction of 2 orders of magnitude), shapes that
+                                                                                hence have little support from the data and are thus likely spurious.
+                    Extracted from Auto- Triple-                                Furthermore, we show that our approximate technique introduces
+Approach                                         Type
+                    data ontology matic store                                   only negligible loss in the quality and completeness of the pro-
+Shape Induction [26] ✔       ✗      ✔      ✔     SHACL,ShEx
+                                                                                duced shapes. In the future, we will extend the scope of constraints
+SheXer [12]          ✔       ✗      ✔      ✔     SHACL,ShEx
+                                                                                covered by QSE and a solution to automatically learn the optimal
+Spahiu et al. [45]   ✔       ✗      ✔      ✔     SHACL
+                                                                                configurations for pruning thresholds for QSE.
+ShapeDesigner. [5]   ✔       ✗      ✔      ✔     SHACL,ShEx
+SHACLGEN [20]        ✔       ✔      ✔      ✔     SHACL
+TopBraid [36]        ✔       ✔      ✔      ✔     SHACL
+                                                                                ACKNOWLEDGMENTS
+Pandit et al. [32]   ✗       ✔       ✗     ✔     SHACL                          This research was partially funded by the Danish Council for In-
+Astrea [9]           ✗       ✔      ✔       ✗    SHACL                          dependent Research (DFF) under grant agreement no. DFF-8048-
+SHACLearner [30]     ✔       ✗      ✔       ✗    SHACL                          00051B, the EU’s H2020 research and innovation programme under
+Groz et al. [17]     ✔       ✗      ✔       ✗    ShEx                           grant agreement No 838216, and the Poul Due Jensen Foundation.
+
+
+
+
+                                                                         1030
+
+
+===== PDF PAGE 9 =====
+REFERENCES                                                                                          [26] Nandana Mihindukulasooriya, Mohammad Rifat Ahmmad Rashid, Giuseppe
+ [1] Naser Ahmadi, Thi-Thuy-Duyen Truong, Le-Hong-Mai Dao, Stefano Ortona, and                           Rizzo, Raúl García-Castro, Óscar Corcho, and Marco Torchiano. 2018. RDF shape
+     Paolo Papotti. 2020. Rulehub: A public corpus of rules for knowledge graphs.                        induction using knowledge base profiling. In Proceedings of the 33rd Annual ACM
+     Journal of Data and Information Quality (JDIQ) 12, 4 (2020), 1–22.                                  Symposium on Applied Computing, SAC. ACM, Pau, France, 1952–1959.
+ [2] Shqiponja Ahmetaj, Bianca Löhnert, Magdalena Ortiz, and Mantas Šimkus. 2022.                   [27] Boris Motik, Ian Horrocks, and Ulrike Sattler. 2007. Adding Integrity Constraints
+     Magic shapes for SHACL validation. Proceedings of the VLDB Endowment 15, 10                         to OWL. In Proceedings of the OWLED 2007 Workshop on OWL: Experiences and
+     (2022), 2284–2296.                                                                                  Directions (CEUR Workshop Proceedings), Vol. 258. CEUR-WS.org, Austria.
+ [3] Renzo Arturo Alva Principe, Andrea Maurino, Matteo Palmonari, Michele                          [28] Boris Motik, Ian Horrocks, and Ulrike Sattler. 2009. Bridging the gap between
+     Ciavotta, and Blerina Spahiu. 2022. ABSTAT-HD: a scalable tool for profiling                        OWL and relational databases. Journal of Web Semantics 7, 2 (2009), 74–89.
+     very large knowledge graphs. The VLDB Journal 31, 5 (2022), 851–876.                           [29] Natasha Noy, Yuqing Gao, Anshu Jain, Anant Narayanan, Alan Patterson, and
+ [4] Sören Auer, Christian Bizer, Georgi Kobilarov, Jens Lehmann, Richard Cyganiak,                      Jamie Taylor. 2019. Industry-scale knowledge graphs: lessons and challenges.
+     and Zachary G. Ives. 2007. DBpedia: A Nucleus for a Web of Open Data. In                            Commun. ACM 62, 8 (2019), 36–43.
+     The Semantic Web, 6th International Semantic Web Conference (Lecture Notes in                  [30] Pouya Ghiasnezhad Omran, Kerry Taylor, Sergio José Rodríguez Méndez, and
+     Computer Science), Vol. 4825. Springer, Busan, Korea, 722–735.                                      Armin Haller. 2020. Towards SHACL Learning from Knowledge Graphs. In
+ [5] Iovka Boneva, Jérémie Dusart, Daniel Fernández-Álvarez, and José Emilio Labra                       Proceedings of the ISWC 2020 Demos and Industry Tracks (CEUR Workshop Pro-
+     Gayo. 2019. Shape Designer for ShEx and SHACL constraints. In Proceedings of the                    ceedings), Vol. 2721. CEUR-WS.org, Globally online, 94–99.
+     ISWC 2019 Satellite Tracks (CEUR Workshop Proceedings), Vol. 2456. CEUR-WS.org,                [31] Stefano Ortona, Venkata Vamsikrishna Meduri, and Paolo Papotti. 2018. Robust
+     Auckland, New Zealand, 269–272.                                                                     Discovery of Positive and Negative Rules in Knowledge Bases. In 34th IEEE
+ [6] Christian Borgelt. 2012. Frequent item set mining. Wiley interdisciplinary reviews:                 International Conference on Data Engineering, ICDE 2018, Paris, France, April 16-19,
+     data mining and knowledge discovery 2, 6 (2012), 437–456.                                           2018. IEEE Computer Society, Paris, France, 1168–1179. https://doi.org/10.1109/
+ [7] Björn Bringmann and Siegfried Nijssen. 2008. What Is Frequent in a Single                           ICDE.2018.00108
+     Graph?. In PAKDD (Lecture Notes in Computer Science), Vol. 5012. Springer, Osaka,              [32] Harshvardhan J. Pandit, Declan O’Sullivan, and Dave Lewis. 2018. Using Ontology
+     Japan, 858–863.                                                                                     Design Patterns To Define SHACL Shapes. In Proceedings of the 9th Workshop
+ [8] Šejla Čebirić, François Goasdoué, Haridimos Kondylakis, Dimitris Kotzinos, Ioana                    on Ontology Design and Patterns (CEUR Workshop Proceedings), Vol. 2195. CEUR-
+     Manolescu, Georgia Troullinou, and Mussab Zneika. 2019. Summarizing semantic                        WS.org, Monterey, USA, 67–71.
+     graphs: a survey. The VLDB journal 28, 3 (2019), 295–327.                                      [33] Minh-Duc Pham, Linnea Passing, Orri Erling, and Peter A. Boncz. 2015. Deriving
+ [9] Andrea Cimmino, Alba Fernández-Izquierdo, and Raúl García-Castro. 2020. As-                         an Emergent Relational Schema from RDF Data. In Proceedings of the 24th Inter-
+     trea: Automatic Generation of SHACL Shapes from Ontologies. In ESWC (Lecture                        national Conference on World Wide Web, WWW 2015, Florence, Italy, May 18-22,
+     Notes in Computer Science), Vol. 12123. Springer, Heraklion, Crete, Greece, 497.                    2015. ACM, Florence, Italy, 864–874. https://doi.org/10.1145/2736277.2741121
+[10] WWW Consortium. 2014. RDF 1.1. https://w3.org/RDF/. Accessed 17th January,                     [34] Eric Prud’hommeaux, José Emilio Labra Gayo, and Harold R. Solbrig. 2014. Shape
+     2023.                                                                                               expressions: an RDF validation and transformation language. In Proceedings of
+[11] WWW Consortium. 2014. RDF Schema 1.1. https://www.w3.org/TR/rdf-schema/.                            the 10th International Conference on Semantic Systems, SEMANTiCS 2014, Leipzig,
+     Accessed 17th January, 2023.                                                                        Germany, September 4-5, 2014. ACM, Leipzig, Germany, 32–40. https://doi.org/
+                                                                                                         10.1145/2660517.2660523
+[12] Daniel Fernandez-Álvarez, Jose Emilio Labra-Gayo, and Daniel Gayo-Avello.
+                                                                                                    [35] Eric Prud’hommeaux, José Emilio Labra Gayo, and Harold R. Solbrig. 2014. Shape
+     2022. Automatic extraction of shapes using sheXer. Knowledge-Based Systems
+                                                                                                         expressions: an RDF validation and transformation language. In Proceedings of the
+     238 (2022), 107975.
+                                                                                                         10th International Conference on Semantic Systems, SEMANTiCS. ACM, Leipzig,
+[13] Mónica Figuera, Philipp D. Rohde, and Maria-Esther Vidal. 2021. Trav-SHACL:
+                                                                                                         Germany, 32–40.
+     Efficiently Validating Networks of SHACL Constraints. In WWW ’21: The Web
+                                                                                                    [36] Top Quadrant. 2023. TopBraid. https://www.topquadrant.com/products/topbraid-
+     Conference 2021, Virtual Event / Ljubljana, Slovenia, April 19-23, 2021. ACM /
+                                                                                                         composer/. Accessed 17th January, 2023.
+     IW3C2, Ljubljana, Slovenia, 3337–3348. https://doi.org/10.1145/3442381.3449877
+                                                                                                    [37] Kashif Rabbani. 2023. Quality Shape Extraction - resources and source code.
+[14] Luis Galárraga, Christina Teflioudi, Katja Hose, and Fabian M Suchanek. 2015.
+                                                                                                         https://github.com/dkw-aau/qse. Accessed 17th January, 2023.
+     Fast rule mining in ontological knowledge bases with AMIE+. The VLDB Journal
+                                                                                                    [38] Kashif Rabbani, Matteo Lissandrini, and Katja Hose. 2022. SHACL and ShEx in
+     24, 6 (2015), 707–730.
+                                                                                                         the Wild: A Community Survey on Validating Shapes Generation and Adoption.
+[15] Jose Emilio Labra Gayo, Eric Prud’Hommeaux, Iovka Boneva, and Dimitris Kon-
+                                                                                                         In Proceedings of the ACM Web Conference 2022. ACM, Online, Lyon, France,
+     tokostas. 2017. Validating RDF data. Synthesis Lectures on Semantic Web: Theory
+                                                                                                         260–263. https://www2022.thewebconf.org/PaperFiles/65.pdf
+     and Technology 7, 1 (2017), 1–328.
+                                                                                                    [39] Kashif Rabbani, Matteo Lissandrini, and Katja Hose. 2022. SHACL shapes for
+[16] GraphDB. 2023. GraphDB. https://graphdb.ontotext.com. Accessed 17th January,
+                                                                                                         DBpedia, LUBM, YAGO-4, and WikiData published on Zenodo. https://doi.org/
+     2023.
+                                                                                                         10.5281/zenodo.5958985.
+[17] Benoît Groz, Aurélien Lemay, Slawek Staworko, and Piotr Wieczorek. 2022.
+                                                                                                    [40] Kashif Rabbani, Matteo Lissandrini, and Katja Hose. 2023. SPARQL queries used
+     Inference of Shape Graphs for Graph Databases. In 25th International Conference
+                                                                                                         for shape extraction in QSE-Exact (query-based) approach. https://github.com/
+     on Database Theory, ICDT 2022, March 29 to April 1, 2022, Edinburgh, UK (Virtual
+                                                                                                         dkw-aau/qse/tree/main/src/main/resources/queries. Accessed 17th January,
+     Conference) (LIPIcs), Vol. 220. Schloss Dagstuhl - Leibniz-Zentrum für Informatik,
+                                                                                                         2023.
+     Edinburgh, UK, 14:1–14:20. https://doi.org/10.4230/LIPIcs.ICDT.2022.14
+                                                                                                    [41] Tomer Sagi, Matteo Lissandrini, Torben Bach Pedersen, and Katja Hose. 2022.
+[18] Y. Guo, Z. Pan, and J. Heflin. 2005. LUBM: A benchmark for OWL knowledge
+                                                                                                         A design space for RDF data representations. VLDB J. 31, 2 (2022), 347–373.
+     base systems. Journal of Web Semantics 3 (2005), 158–182.
+                                                                                                         https://doi.org/10.1007/s00778-021-00725-x
+[19] Jiawei Han, Hong Cheng, Dong Xin, and Xifeng Yan. 2007. Frequent pattern
+                                                                                                    [42] Ognjen Savkovic, Evgeny Kharlamov, and Steffen Lamparter. 2019. Validation of
+     mining: current status and future directions. Data mining and knowledge discovery
+                                                                                                         SHACL Constraints over KGs with OWL 2 QL Ontologies via Rewriting. In The
+     15, 1 (2007), 55–86.
+                                                                                                         Semantic Web - 16th International Conference, ESWC 2019, Portorož (Lecture Notes
+[20] Alexis Keely. 2023. SHACLGEN. https://pypi.org/project/shaclgen/. Accessed
+                                                                                                         in Computer Science), Vol. 11503. Springer, Slovenia, 314–329.
+     17th January, 2023.
+                                                                                                    [43] Stefan Schmid, Cory Henson, and Tuan Tran. 2019. Using Knowledge Graphs
+[21] Kenza Kellou-Menouer, Nikolaos Kardoulakis, Georgia Troullinou, Zoubida
+                                                                                                         to Search an Enterprise Data Lake. In The Semantic Web: ESWC 2019 Satellite
+     Kedad, Dimitris Plexousakis, and Haridimos Kondylakis. 2022. A survey on
+                                                                                                         Events - ESWC (Lecture Notes in Computer Science), Vol. 11762. Springer, Portorož,
+     semantic schema discovery. VLDB J. 31, 4 (2022), 675–710. https://doi.org/10.
+                                                                                                         Slovenia, 262–266. https://doi.org/10.1007/978-3-030-32327-1_46
+     1007/s00778-021-00717-x
+                                                                                                    [44] Juan Sequeda and Ora Lassila. 2021. Designing and Building Enterprise Knowl-
+[22] Holger Knublauch, James A Hendler, and Kingsley Idehen. 2011. SPIN-overview
+                                                                                                         edge Graphs. Synthesis Lectures on Data, Semantics, and Knowledge 11, 1 (2021),
+     and motivation. W3C Member Submission 22 (2011), W3C.
+                                                                                                         1–165.
+[23] Holger Knublauch and Dimitris Kontokostas. 2017. Shapes constraint language
+                                                                                                    [45] Blerina Spahiu, Andrea Maurino, and Matteo Palmonari. 2018. Towards Improv-
+     (SHACL). W3C Candidate Recommendation 11, 8 (2017).
+                                                                                                         ing the Quality of Knowledge Graphs with Data-driven Ontology Patterns and
+[24] Hanâ Lbath, Angela Bonifati, and Russ Harmer. 2021. Schema Inference for
+                                                                                                         SHACL. In Emerging Topics in Semantic Technologies - ISWC 2018 Satellite Events
+     Property Graphs. In Proceedings of the 24th International Conference on Extending
+                                                                                                         (Studies on the Semantic Web), Vol. 36. IOS Press, Satellite, USA, 103–117.
+     Database Technology, EDBT 2021, Nicosia, Cyprus, March 23 - 26, 2021. OpenPro-
+                                                                                                    [46] Thomas Pellissier Tanon, Gerhard Weikum, and Fabian M. Suchanek. 2020. YAGO
+     ceedings.org, Nicosia, Cyprus, 499–504. https://doi.org/10.5441/002/edbt.2021.58
+                                                                                                         4: A Reason-able Knowledge Base. In The Semantic Web - 17th International Con-
+[25] Michael Loster, Davide Mottin, Paolo Papotti, Jan Ehmüller, Benjamin Feldmann,
+                                                                                                         ference, ESWC (Lecture Notes in Computer Science), Vol. 12123. Springer, Heraklion,
+     and Felix Naumann. 2021. Few-Shot Knowledge Validation using Rules. In WWW
+                                                                                                         Crete, Greece, 583–596.
+     ’21: The Web Conference 2021, Virtual Event / Ljubljana, Slovenia, April 19-23, 2021.
+                                                                                                    [47] Jiao Tao, Evren Sirin, Jie Bao, and Deborah L. McGuinness. 2010. Integrity
+     ACM / IW3C2, Ljubljana, Slovenia, 3314–3324. https://doi.org/10.1145/3442381.
+                                                                                                         Constraints in OWL. In Proceedings of the Twenty-Fourth AAAI Conference on
+     3450040
+                                                                                                         Artificial Intelligence, AAAI. AAAI Press, Atlanta, Georgia, USA.
+
+
+
+
+                                                                                             1031
+
+
+===== PDF PAGE 10 =====
+[48] Katherine Thornton, Harold Solbrig, Gregory S Stupp, Jose Emilio Labra Gayo,          [51] W3C. 2023. W3C: RDF Type. http://www.w3.org/1999/02/22-rdf-syntax-ns#type.
+     Daniel Mietchen, Eric Prud’Hommeaux, and Andra Waagmeester. 2019. Using                    Accessed 17th January, 2023.
+     shape expressions (ShEx) to share RDF data models and to guide curation with          [52] WESO. 2023. RDFShape. http://rdfshape.weso.es. Accessed 17th January, 2023.
+     rigorous validation. In ESWC. Springer, Cham, 606–620.                                [53] WesoShaclConvert. 2023. SHACL to ShEx converter. https://rdfshape.weso.es/
+[49] Denny Vrandečić and Markus Krötzsch. 2014. Wikidata: a free collaborative                  shaclConvert. Accessed 17th January, 2023.
+     knowledgebase. Commun. ACM 57, 10 (2014), 78–85.                                      [54] WikiData. 2023. WikiData-2015. https://archive.org/details/wikidata-json-
+[50] W3C. 2023. SHACL- core constraint components. https://www.w3.org/TR/shacl/                 20150518. Accessed 17th January, 2023.
+     #core-components. Accessed 17th January, 2023.
+
+
+
+
+                                                                                    1032

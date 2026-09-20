@@ -1,0 +1,15 @@
+{
+  "full_name": "dice-group/Ontolearn",
+  "html_url": "https://github.com/dice-group/Ontolearn",
+  "default_branch": "develop",
+  "license": {
+    "key": "mit",
+    "name": "MIT License",
+    "spdx_id": "MIT",
+    "url": "https://api.github.com/licenses/mit",
+    "node_id": "MDc6TGljZW5zZTEz"
+  },
+  "archived": false,
+  "pushed_at": "2026-09-18T15:08:54Z",
+  "retrieved": "2026-09-20"
+}

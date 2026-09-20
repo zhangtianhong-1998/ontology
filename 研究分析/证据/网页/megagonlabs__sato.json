@@ -1,0 +1,15 @@
+{
+  "full_name": "megagonlabs/sato",
+  "html_url": "https://github.com/megagonlabs/sato",
+  "default_branch": "master",
+  "license": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "spdx_id": "Apache-2.0",
+    "url": "https://api.github.com/licenses/apache-2.0",
+    "node_id": "MDc6TGljZW5zZTI="
+  },
+  "archived": false,
+  "pushed_at": "2024-02-23T19:37:53Z",
+  "retrieved": "2026-09-20"
+}

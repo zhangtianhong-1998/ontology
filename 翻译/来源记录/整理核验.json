@@ -1,0 +1,786 @@
+[
+  {
+    "number": 1,
+    "title": "LLMs4OL: Large Language Models for Ontology Learning",
+    "conversation_id": "6aa26a4f-093c-83ea-a6c0-0ea402e9312a",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aa26a4f-093c-83ea-a6c0-0ea402e9312a",
+    "pdf_pages": 27,
+    "assistant_messages": 13,
+    "characters": 46494,
+    "sha256": "5025f9cbc499cd3e7000746d89bab004e8bce8dcada3856c761845bfe735a9e2",
+    "messages": [
+      {
+        "message_id": "0b40cbbf-6964-4617-af55-07ab713ce9f4",
+        "tables": 0,
+        "code_blocks": 0,
+        "formulas": 0,
+        "chinese_text_preserved": true,
+        "characters": 2282,
+        "page_headings": [
+          "1"
+        ],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "e0b4a2b1-cbf9-49d7-955f-0e7ec93eb401",
+        "tables": 0,
+        "code_blocks": 16,
+        "formulas": 6,
+        "chinese_text_preserved": true,
+        "characters": 3520,
+        "page_headings": [
+          "2",
+          "3"
+        ],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "64c17229-349a-42c4-b05a-760a50b89cf0",
+        "tables": 0,
+        "code_blocks": 6,
+        "formulas": 6,
+        "chinese_text_preserved": true,
+        "characters": 3858,
+        "page_headings": [
+          "4",
+          "5"
+        ],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "2098735f-a9b4-4c94-916d-14ac5bf0c2cc",
+        "tables": 0,
+        "code_blocks": 10,
+        "formulas": 6,
+        "chinese_text_preserved": true,
+        "characters": 2966,
+        "page_headings": [
+          "6"
+        ],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "c7aeec26-bfc0-445d-a8b8-cf6411afe658",
+        "tables": 0,
+        "code_blocks": 22,
+        "formulas": 4,
+        "chinese_text_preserved": true,
+        "characters": 2690,
+        "page_headings": [
+          "7"
+        ],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "36fd44f2-b111-46a4-9653-7c07634c30eb",
+        "tables": 0,
+        "code_blocks": 14,
+        "formulas": 18,
+        "chinese_text_preserved": true,
+        "characters": 3702,
+        "page_headings": [
+          "8"
+        ],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "6097e979-8272-4919-b098-4bdb8fd3a23c",
+        "tables": 1,
+        "code_blocks": 2,
+        "formulas": 7,
+        "chinese_text_preserved": true,
+        "characters": 4173,
+        "page_headings": [
+          "9",
+          "10"
+        ],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "090a6581-ee16-43e8-befc-0e5981eb0496",
+        "tables": 1,
+        "code_blocks": 4,
+        "formulas": 4,
+        "chinese_text_preserved": true,
+        "characters": 3350,
+        "page_headings": [
+          "11"
+        ],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "ea870b41-57d4-47a5-8cad-b925e8614aaa",
+        "tables": 2,
+        "code_blocks": 0,
+        "formulas": 3,
+        "chinese_text_preserved": true,
+        "characters": 3738,
+        "page_headings": [
+          "13",
+          "14"
+        ],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "18049808-5a4e-498a-8d43-774750717ad4",
+        "tables": 0,
+        "code_blocks": 52,
+        "formulas": 6,
+        "chinese_text_preserved": true,
+        "characters": 3861,
+        "page_headings": [],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "dd38c34a-660a-4770-8b76-a9a9732a5fa3",
+        "tables": 1,
+        "code_blocks": 26,
+        "formulas": 6,
+        "chinese_text_preserved": true,
+        "characters": 2384,
+        "page_headings": [],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "d01ac041-005d-4398-ab48-f9975e189ebc",
+        "tables": 1,
+        "code_blocks": 60,
+        "formulas": 37,
+        "chinese_text_preserved": true,
+        "characters": 3895,
+        "page_headings": [],
+        "visible_source_chinese_text_preserved": true
+      },
+      {
+        "message_id": "fc54c5d1-12f9-47c9-bb78-c92fb00f3077",
+        "tables": 3,
+        "code_blocks": 52,
+        "formulas": 15,
+        "chinese_text_preserved": true,
+        "characters": 4758,
+        "page_headings": [],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 2,
+    "title": "End-to-End Ontology Learning with Large Language Models",
+    "conversation_id": "6aae66ba-022c-83ea-a39e-54c846b32efc",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae66ba-022c-83ea-a39e-54c846b32efc",
+    "pdf_pages": 42,
+    "assistant_messages": 1,
+    "characters": 34325,
+    "sha256": "70c6b91ca5ea63af69a7fcf5dc0035c16e8e9015d8d657d495b49259f65744c8",
+    "messages": [
+      {
+        "message_id": "70084eaf-0c28-4417-bf1b-672075f08768",
+        "tables": 5,
+        "code_blocks": 12,
+        "formulas": 110,
+        "chinese_text_preserved": true,
+        "characters": 34032,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "31",
+          "32",
+          "33",
+          "34",
+          "35",
+          "36",
+          "37",
+          "38",
+          "39",
+          "40",
+          "41",
+          "42"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 3,
+    "title": "LLMs4OL 2024 Overview: The 1st Large Language Models for Ontology Learning Challenge",
+    "conversation_id": "6aae5d46-d93c-83e9-ba56-334e5cfc42db",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5d46-d93c-83e9-ba56-334e5cfc42db",
+    "pdf_pages": 14,
+    "assistant_messages": 1,
+    "characters": 17741,
+    "sha256": "d9c6ffd826632aa6bd0e7dff229cf2dde34c172e4edd0daf31aafd9beb4b37fd",
+    "messages": [
+      {
+        "message_id": "a0c5132e-3d59-4357-9bab-f49079722f08",
+        "tables": 5,
+        "code_blocks": 0,
+        "formulas": 28,
+        "chinese_text_preserved": true,
+        "characters": 17419,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 4,
+    "title": "LLMs4OL 2024 Datasets: Toward Ontology Learning with Large Language Models",
+    "conversation_id": "6aae5d36-835c-83ea-8d49-32ae93eb6537",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5d36-835c-83ea-8d49-32ae93eb6537",
+    "pdf_pages": 14,
+    "assistant_messages": 1,
+    "characters": 16369,
+    "sha256": "9aa9c171c06e71b4b2bf45835576b28da33fb768fd503fc422bdb649825df32f",
+    "messages": [
+      {
+        "message_id": "92aac248-9a9c-419c-8e53-ac105bcc69bd",
+        "tables": 4,
+        "code_blocks": 12,
+        "formulas": 30,
+        "chinese_text_preserved": true,
+        "characters": 16057,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 5,
+    "title": "SBU-NLP at LLMs4OL 2025 Tasks A, B, and C: Stage-Wise Ontology Construction Through LLMs Without any Training Procedure",
+    "conversation_id": "6aae5d21-7ea0-83ea-bf89-437e061e7898",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5d21-7ea0-83ea-bf89-437e061e7898",
+    "pdf_pages": 15,
+    "assistant_messages": 1,
+    "characters": 17608,
+    "sha256": "c4b29b775f5c141134c657e9f74cef59773cb63ae9fe691b47a93a3a2df0b61d",
+    "messages": [
+      {
+        "message_id": "6235c2b5-8d02-4bf8-a0db-7b82cf031715",
+        "tables": 4,
+        "code_blocks": 14,
+        "formulas": 126,
+        "chinese_text_preserved": true,
+        "characters": 17251,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 6,
+    "title": "Phoenixes at LLMs4OL 2025 Task A: Ontology Learning With Large Language Models Reasoning",
+    "conversation_id": "6aae5cb0-0754-83ea-a5cc-17ca78ba2d65",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5cb0-0754-83ea-a5cc-17ca78ba2d65",
+    "pdf_pages": 7,
+    "assistant_messages": 1,
+    "characters": 7554,
+    "sha256": "2947a7d3146ca02840612aca89f4345fbcd56ae612974077cecb7694472385c3",
+    "messages": [
+      {
+        "message_id": "4bb615f2-1508-42de-b55b-2a93838dc120",
+        "tables": 2,
+        "code_blocks": 0,
+        "formulas": 0,
+        "chinese_text_preserved": true,
+        "characters": 7228,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 7,
+    "title": "LABKAG at LLMs4OL 2025 Tasks A and C: Context-Rich Prompting for Ontology Construction",
+    "conversation_id": "6aae596f-9c8c-83ea-ab5b-bc809f03a362",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae596f-9c8c-83ea-ab5b-bc809f03a362",
+    "pdf_pages": 11,
+    "assistant_messages": 1,
+    "characters": 11680,
+    "sha256": "a88c63f0d4923b40ea030107a50fdfa583a758cdd67bb2d669550014f86bde5f",
+    "messages": [
+      {
+        "message_id": "b8a7bf34-154f-44a1-bb7a-d9c875e178a4",
+        "tables": 5,
+        "code_blocks": 2,
+        "formulas": 0,
+        "chinese_text_preserved": true,
+        "characters": 11356,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 8,
+    "title": "DREAM-LLMs at LLMs4OL 2025 Task B: A Deliberation-Based Reasoning Ensemble Approach With Multiple Large Language Models for Term Typing in Low-Resource Domains",
+    "conversation_id": "6aae59b7-ff7c-83ea-a7f8-52041a46df55",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae59b7-ff7c-83ea-a7f8-52041a46df55",
+    "pdf_pages": 9,
+    "assistant_messages": 1,
+    "characters": 13004,
+    "sha256": "366d1cf986a42be9599262c07a75da6c35ab5531b20e25485f602a7d0cd6c557",
+    "messages": [
+      {
+        "message_id": "933f0f97-5542-47bb-bf79-04c5bd65bba8",
+        "tables": 4,
+        "code_blocks": 2,
+        "formulas": 0,
+        "chinese_text_preserved": true,
+        "characters": 12607,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 9,
+    "title": "IRIS at LLMs4OL 2025 Tasks B, C and D: Enhancing Ontology Learning Through Data Enrichment and Type Filtering",
+    "conversation_id": "6aae5a28-27ec-83ea-bc2a-7f57cc4c5520",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5a28-27ec-83ea-bc2a-7f57cc4c5520",
+    "pdf_pages": 15,
+    "assistant_messages": 1,
+    "characters": 19798,
+    "sha256": "a2dfa69645ce376780e001db476812991b290e6537d9b24f78e5feddd6f423ea",
+    "messages": [
+      {
+        "message_id": "0e196a42-cde9-4d74-a1b7-23f494df642e",
+        "tables": 6,
+        "code_blocks": 8,
+        "formulas": 113,
+        "chinese_text_preserved": true,
+        "characters": 19451,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 10,
+    "title": "CUET_Zenith at LLMs4OL 2025 Task C: Hybrid Embedding-LLM Architectures for Taxonomy Discovery",
+    "conversation_id": "6aae5ab8-ad6c-83ea-8bfc-c7417cfd3692",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5ab8-ad6c-83ea-8bfc-c7417cfd3692",
+    "pdf_pages": 12,
+    "assistant_messages": 1,
+    "characters": 12347,
+    "sha256": "d5619c2151374cbfa2d7b267a8243e0a83bb18b9c0eb3ca0dd540bf8497f78be",
+    "messages": [
+      {
+        "message_id": "3926c09e-2633-4331-9a92-c591fc95a6c4",
+        "tables": 5,
+        "code_blocks": 20,
+        "formulas": 23,
+        "chinese_text_preserved": true,
+        "characters": 12013,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 11,
+    "title": "ELLMO at LLMs4OL 2025 Tasks A and D: LLM-Based Term, Type, and Relationship Extraction",
+    "conversation_id": "6aae5b1b-46b4-83ea-8473-8c43bb6511fc",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5b1b-46b4-83ea-8473-8c43bb6511fc",
+    "pdf_pages": 17,
+    "assistant_messages": 1,
+    "characters": 17105,
+    "sha256": "3cefaa4c406d4d76ea6f6e315b8617b32069a08977f4ebe032327f7ef22fb21c",
+    "messages": [
+      {
+        "message_id": "78213d36-63ea-46a8-94e7-6006f9bfe14f",
+        "tables": 13,
+        "code_blocks": 0,
+        "formulas": 14,
+        "chinese_text_preserved": true,
+        "characters": 16778,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 12,
+    "title": "T-GreC at LLMs4OL 2025 Task B: A Report on Term-Typing Task of OBI Dataset Using LLM With k-Nearest Neighbors",
+    "conversation_id": "6aae5b28-24f0-83ea-acca-668662ed098d",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5b28-24f0-83ea-acca-668662ed098d",
+    "pdf_pages": 7,
+    "assistant_messages": 1,
+    "characters": 7573,
+    "sha256": "6b9ce98f80ec177c329ae6843a7bea6373e571b90c41a3da8191a31da231b007",
+    "messages": [
+      {
+        "message_id": "7583ce62-97a5-46d7-962f-2012a342eabd",
+        "tables": 2,
+        "code_blocks": 0,
+        "formulas": 7,
+        "chinese_text_preserved": true,
+        "characters": 7223,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 13,
+    "title": "Alexbek at LLMs4OL 2025 Tasks A, B, and C: Heterogeneous LLM Methods for Ontology Learning (Few-Shot Prompting, Ensemble Typing, and Attention-Based Taxonomies)",
+    "conversation_id": "6aae5b47-9a30-83ea-a35b-1d658deb16cd",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5b47-9a30-83ea-a35b-1d658deb16cd",
+    "pdf_pages": 16,
+    "assistant_messages": 1,
+    "characters": 22771,
+    "sha256": "1b9543aa3af58c1237e7bebe7efa3c089025a01747357f66e7e2c51533fa69d7",
+    "messages": [
+      {
+        "message_id": "8257297e-ee8f-47fc-9833-c76257053e34",
+        "tables": 29,
+        "code_blocks": 0,
+        "formulas": 47,
+        "chinese_text_preserved": true,
+        "characters": 22370,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 14,
+    "title": "silp_nlp at LLMs4OL 2025 Tasks A, B, C, and D: Clustering-Based Ontology Learning Using LLMs",
+    "conversation_id": "6aae5b37-3714-83ea-aeab-9945b8ecd2d6",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5b37-3714-83ea-aeab-9945b8ecd2d6",
+    "pdf_pages": 11,
+    "assistant_messages": 1,
+    "characters": 10622,
+    "sha256": "20fde6275b3d8ff1ff6f436bd89f4568857ed40d7f476ed8bb7694cb8fc541a5",
+    "messages": [
+      {
+        "message_id": "3582b525-3e68-4746-bb59-9dffb1210f2b",
+        "tables": 1,
+        "code_blocks": 0,
+        "formulas": 3,
+        "chinese_text_preserved": true,
+        "characters": 10289,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 15,
+    "title": "SEMA at LLMs4OL 2025 Task C: Prompt-Decoupled Fine-Tuning on MatOnto with LLaMA",
+    "conversation_id": "6aae5b55-b378-83e9-b78f-af90947d91c2",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5b55-b378-83e9-b78f-af90947d91c2",
+    "pdf_pages": 9,
+    "assistant_messages": 1,
+    "characters": 9444,
+    "sha256": "56645c201dd4ffddcf461a2f56847aa475a9a31b99d587e161a1d338236732cd",
+    "messages": [
+      {
+        "message_id": "8f26352f-2004-498e-b1de-584646acab9e",
+        "tables": 3,
+        "code_blocks": 4,
+        "formulas": 8,
+        "chinese_text_preserved": true,
+        "characters": 9124,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 16,
+    "title": "Preface for LLMs4OL 2025: The 2nd Large Language Models for Ontology Learning Challenge at the 24th ISWC",
+    "conversation_id": "6aae5b78-96a0-83e9-90a5-67218795f19e",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5b78-96a0-83e9-90a5-67218795f19e",
+    "pdf_pages": 2,
+    "assistant_messages": 1,
+    "characters": 1962,
+    "sha256": "ff2bbfed008bc5455c6424ca9ea0556786261b9a2e1ba4709f638ae49b698eb0",
+    "messages": [
+      {
+        "message_id": "0047a419-04e1-48f6-acdb-ea96b8ebe286",
+        "tables": 0,
+        "code_blocks": 0,
+        "formulas": 0,
+        "chinese_text_preserved": true,
+        "characters": 1617,
+        "page_headings": [
+          "1",
+          "2"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 17,
+    "title": "LLMs4OL 2025 Overview: The 2nd Large Language Models for Ontology Learning Challenge",
+    "conversation_id": "6aae5b91-955c-83e9-951d-decc0970d3c8",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5b91-955c-83e9-951d-decc0970d3c8",
+    "pdf_pages": 17,
+    "assistant_messages": 1,
+    "characters": 24152,
+    "sha256": "f0cacb3bdc5f0509ef471df5a11dc43e9a4291be66f58e115f09ae8dc0a13122",
+    "messages": [
+      {
+        "message_id": "f27e64a2-d531-4a62-bb8f-e3c3336960c8",
+        "tables": 9,
+        "code_blocks": 0,
+        "formulas": 22,
+        "chinese_text_preserved": true,
+        "characters": 23827,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  },
+  {
+    "number": 18,
+    "title": "Ontology Engineering with Large Language Models: Unveiling the potential of human-LLM collaboration in the ontology extension process",
+    "conversation_id": "6aae5afd-7f6c-83ea-a52c-dd07db8d3bc1",
+    "source": "https://chatgpt.com/g/g-p-6aa26a1f131c819194513835dca8a7c2-lun-wen-yue-du/c/6aae5afd-7f6c-83ea-a52c-dd07db8d3bc1",
+    "pdf_pages": 25,
+    "assistant_messages": 1,
+    "characters": 33281,
+    "sha256": "676ae5ff7e67baeb467c33ea6716308150a76f8c8b86699bab56ff6bb1dadf1a",
+    "messages": [
+      {
+        "message_id": "ed0dd338-37b7-4327-9ffb-8a25881516b3",
+        "tables": 18,
+        "code_blocks": 2,
+        "formulas": 0,
+        "chinese_text_preserved": true,
+        "characters": 32907,
+        "page_headings": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "21",
+          "22",
+          "23",
+          "24",
+          "25"
+        ],
+        "visible_source_chinese_text_preserved": true
+      }
+    ]
+  }
+]

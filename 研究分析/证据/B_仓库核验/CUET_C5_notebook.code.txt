@@ -1,0 +1,561 @@
+!pip install -q sentence-transformers scikit-learn imbalanced-learn pandas tqdm transformers openai torch accelerate
+!pip install optimum
+!pip install unsloth
+
+#F1 = 0.0848400556
+import os
+import json
+import numpy as np
+import pandas as pd
+import torch
+import random
+from tqdm import tqdm
+from sklearn.neural_network import MLPClassifier
+from sklearn.model_selection import train_test_split
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import classification_report
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from imblearn.over_sampling import SMOTE
+import openai
+
+class BestTaxonomyClassifier:
+    def __init__(self):
+        self.train_types_path = "schemaorg_train_types.txt"
+        self.train_pairs_path = "schemaorg_train_pairs.json"
+        self.test_types_path = "schemaorg_test_types.txt"
+
+        self.embedder = SentenceTransformer("all-mpnet-base-v2")
+        self.classifier = MLPClassifier(hidden_layer_sizes=(768, 256), max_iter=500, early_stopping=True)
+
+        model_name = "mistralai/Mistral-7B-Instruct-v0.1"
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, device_map="auto")
+        self.mistral_llm = pipeline("text-generation", model=model, tokenizer=tokenizer, pad_token_id=tokenizer.eos_token_id)
+
+        self.sim_threshold = 0.4
+        self.ml_threshold = 0.4
+        self.rag_threshold = (0.4, 0.75)
+        self.gpt_threshold = 0.6
+        self.top_k = 30
+        self.max_validations = 1000
+
+        self.embeddings = {}
+        self.rag_cache = {}
+        self.gpt_cache = {}
+
+        self.shot_examples = [
+            ("CreativeWork", "Movie", "true"),
+            ("Event", "Volcano", "false"),
+            ("Place", "City", "true"),
+            ("Product", "Smartphone", "true"),
+            ("Action", "DanceAction", "true")
+        ]
+
+    def load_data(self):
+        with open(self.train_types_path) as f:
+            self.train_types = [line.strip() for line in f if line.strip()]
+        with open(self.test_types_path) as f:
+            self.test_types = [line.strip() for line in f if line.strip()]
+        with open(self.train_pairs_path) as f:
+            self.train_pairs = json.load(f)
+        print(f"✅ Loaded: {len(self.train_types)} train types, {len(self.test_types)} test types, {len(self.train_pairs)} pairs")
+
+    def compute_embeddings(self):
+        all_types = list(set(self.train_types + self.test_types))
+        print("🔄 Computing embeddings...")
+        embs = self.embedder.encode(all_types, show_progress_bar=True)
+        self.embeddings = dict(zip(all_types, embs))
+
+    def generate_features(self, parent, child):
+        pe, ce = self.embeddings[parent], self.embeddings[child]
+        cs = cosine_similarity([pe], [ce])[0][0]
+        return np.hstack([pe, ce, pe - ce, pe * ce, [cs]])
+
+    def prepare_training_data(self):
+        print("📦 Preparing training data with SMOTE...")
+        positives = [(p['parent'], p['child'], 1) for p in self.train_pairs]
+        pos_set = {(p, c) for p, c, _ in positives}
+        negatives = []
+        for p, c, _ in tqdm(positives):
+            candidates = [t for t in self.train_types if t != p and (p, t) not in pos_set]
+            child_emb = self.embeddings[c]
+            sims = cosine_similarity([child_emb], [self.embeddings[t] for t in candidates])[0]
+            top_negs = [candidates[i] for i in np.argsort(sims)[-5:]]
+            negatives += [(p, neg, 0) for neg in top_negs]
+
+        df = pd.DataFrame(positives + negatives, columns=["parent", "child", "label"])
+        df["features"] = df.apply(lambda r: self.generate_features(r["parent"], r["child"]), axis=1)
+        X = np.vstack(df["features"])
+        y = df["label"]
+        return SMOTE().fit_resample(X, y)
+
+    def train_model(self, X, y):
+        print("🎯 Training MLP classifier...")
+        self.classifier.fit(X, y)
+
+    def generate_candidates(self):
+        print("🔍 Generating candidates...")
+        candidates = []
+        for child in tqdm(self.test_types):
+            sims = [cosine_similarity([self.embeddings[child]], [self.embeddings[p]])[0][0] for p in self.train_types]
+            for idx in np.argsort(sims)[-self.top_k:]:
+                if sims[idx] > self.sim_threshold:
+                    candidates.append((self.train_types[idx], child))
+        return list(set(candidates))
+
+    def mistral_validate(self, parent, child):
+        key = f"{parent}::{child}"
+        if key in self.rag_cache:
+            return self.rag_cache[key]
+
+        few_shots = "\n".join([f"Parent: {p}\nChild: {c}\nAnswer: {a}" for p, c, a in self.shot_examples])
+        prompt = f"""
+Determine whether the child is a subclass of the parent in the Schema.org ontology.
+Answer only "true" or "false".
+
+{few_shots}
+Parent: {parent}
+Child: {child}
+Answer:"""
+
+        try:
+            output = self.mistral_llm(prompt, max_new_tokens=5, temperature=0.0)[0]['generated_text']
+            decision = 'true' in output.lower()
+        except:
+            decision = False
+        self.rag_cache[key] = decision
+        return decision
+
+    def gpt_score(self, parent, child):
+        key = f"{parent}::{child}"
+        if key in self.gpt_cache:
+            return self.gpt_cache[key]
+        prompt = f"On a scale from 0 to 1, how likely is '{child}' a subtype of '{parent}' in Schema.org? Just float."
+
+        try:
+            openai.api_key = os.getenv("OPENAI_API_KEY")
+            response = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            score = float(response['choices'][0]['message']['content'].strip())
+        except:
+            score = 0.0
+        self.gpt_cache[key] = score
+        return score
+
+    def generate_submission(self):
+        X, y = self.prepare_training_data()
+        self.train_model(X, y)
+        candidates = self.generate_candidates()
+        features = [self.generate_features(p, c) for p, c in candidates]
+        probs = self.classifier.predict_proba(features)[:, 1]
+
+        results = []
+        rag_calls = 0
+        for (p, c), prob in tqdm(zip(candidates, probs), total=len(candidates)):
+            if prob >= self.ml_threshold:
+                if self.rag_threshold[0] < prob < self.rag_threshold[1] and rag_calls < self.max_validations:
+                    if self.mistral_validate(p, c):
+                        rag_calls += 1
+                        if prob > 0.9 or self.gpt_score(p, c) >= self.gpt_threshold:
+                            results.append({"parent": p, "child": c})
+                elif prob >= self.rag_threshold[1]:
+                    results.append({"parent": p, "child": c})
+
+        with open("submission_final.json", "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"✅ Final submission written: {len(results)} pairs")
+
+    def evaluate_model(self):
+        X, y = self.prepare_training_data()
+        Xtr, Xval, ytr, yval = train_test_split(X, y, test_size=0.2, random_state=42)
+        self.train_model(Xtr, ytr)
+        ypred = self.classifier.predict(Xval)
+        print("📊 Evaluation:\n", classification_report(yval, ypred, digits=4))
+
+    def run(self):
+        self.load_data()
+        self.compute_embeddings()
+        self.generate_submission()
+        self.evaluate_model()
+
+
+if __name__ == "__main__":
+    os.environ["OPENAI_API_KEY"] = "sk-..."
+    model = BestTaxonomyClassifier()
+    model.run()
+
+
+!pip install bitsandbytes
+
+#F1 = 0.0865979381
+import os
+import json
+import numpy as np
+import pandas as pd
+import torch
+import random
+from tqdm import tqdm
+from sentence_transformers import SentenceTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import classification_report
+from xgboost import XGBClassifier
+from imblearn.over_sampling import SMOTE
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+import openai
+
+class BestTaxonomyClassifier:
+    def __init__(self):
+        self.train_types_path = "schemaorg_train_types.txt"
+        self.train_pairs_path = "schemaorg_train_pairs.json"
+        self.test_types_path = "schemaorg_test_types.txt"
+
+        self.embedder = SentenceTransformer("all-mpnet-base-v2")
+        self.classifier = XGBClassifier(n_estimators=100, max_depth=6, use_label_encoder=False, eval_metric='logloss')
+
+        model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
+        self.mistral_llm = pipeline("text-generation", model=model, tokenizer=tokenizer, pad_token_id=tokenizer.eos_token_id)
+
+        self.sim_threshold = 0.4
+        self.ml_threshold = 0.4
+        self.rag_threshold = (0.4, 0.75)
+        self.gpt_threshold = 0.6
+        self.top_k = 30
+        self.max_validations = 1000
+
+        self.embeddings = {}
+        self.rag_cache = {}
+        self.gpt_cache = {}
+
+        self.shot_examples = [
+            ("CreativeWork", "Movie", "true"),
+            ("Event", "Volcano", "false"),
+            ("Place", "City", "true"),
+            ("Product", "Smartphone", "true"),
+            ("Action", "DanceAction", "true"),
+        ]
+
+    def load_data(self):
+        with open(self.train_types_path) as f:
+            self.train_types = [line.strip() for line in f if line.strip()]
+        with open(self.test_types_path) as f:
+            self.test_types = [line.strip() for line in f if line.strip()]
+        with open(self.train_pairs_path) as f:
+            self.train_pairs = json.load(f)
+
+    def compute_embeddings(self):
+        all_types = list(set(self.train_types + self.test_types))
+        embs = self.embedder.encode(all_types, show_progress_bar=True)
+        self.embeddings = dict(zip(all_types, embs))
+
+    def lexical_features(self, p, c):
+        p_l, c_l = p.lower(), c.lower()
+        shared = len(set(p_l.split()).intersection(set(c_l.split())))
+        return [shared, int(c_l.startswith(p_l)), int(p_l.endswith(c_l))]
+
+    def generate_features(self, p, c):
+        pe, ce = self.embeddings[p], self.embeddings[c]
+        cs = cosine_similarity([pe], [ce])[0][0]
+        return np.hstack([pe, ce, pe - ce, pe * ce, [cs], self.lexical_features(p, c)])
+
+    def prepare_training_data(self):
+        pos = [(p['parent'], p['child'], 1) for p in self.train_pairs]
+        pos_set = {(p, c) for p, c, _ in pos}
+        neg = []
+        for p, c, _ in pos:
+            cands = [t for t in self.train_types if t != p and (p, t) not in pos_set and not t.startswith(p)]
+            sims = cosine_similarity([self.embeddings[c]], [self.embeddings[t] for t in cands])[0]
+            top = [cands[i] for i in np.argsort(sims)[-5:]]
+            neg += [(p, n, 0) for n in top]
+            for r in random.sample(self.test_types, 5):
+                if (p, r) not in pos_set and p != r:
+                    neg.append((p, r, 0))
+        df = pd.DataFrame(pos + neg, columns=["parent", "child", "label"])
+        df["features"] = df.apply(lambda r: self.generate_features(r["parent"], r["child"]), axis=1)
+        X = np.vstack(df["features"])
+        y = df["label"]
+        return SMOTE().fit_resample(X, y)
+
+    def train_model(self, X, y):
+        self.classifier.fit(X, y)
+
+    def generate_candidates(self):
+        candidates = []
+        for c in self.test_types:
+            sims = [cosine_similarity([self.embeddings[c]], [self.embeddings[p]])[0][0] for p in self.train_types]
+            for idx in np.argsort(sims)[-self.top_k:]:
+                if sims[idx] > self.sim_threshold:
+                    candidates.append((self.train_types[idx], c))
+        return list(set(candidates))
+
+    def mistral_validate(self, p, c):
+        key = f"{p}::{c}"
+        if key in self.rag_cache:
+            return self.rag_cache[key]
+        shots = "\n".join([f"Parent: {p0}\nChild: {c0}\nAnswer: {a}" for p0, c0, a in self.shot_examples])
+        prompt = f"""
+Determine whether the child is a subclass of the parent in Schema.org.
+Answer only "true" or "false".
+
+{shots}
+Parent: {p}
+Child: {c}
+Answer:"""
+        try:
+            out = self.mistral_llm(prompt, max_new_tokens=5, temperature=0.0)[0]['generated_text']
+            val = 'true' in out.lower()
+        except:
+            val = False
+        self.rag_cache[key] = val
+        return val
+
+    def gpt_score(self, p, c):
+        key = f"{p}::{c}"
+        if key in self.gpt_cache:
+            return self.gpt_cache[key]
+        prompt = f"On a scale from 0 to 1, how likely is '{c}' a subtype of '{p}' in Schema.org? Just float."
+        try:
+            openai.api_key = os.getenv("OPENAI_API_KEY")
+            resp = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            score = float(resp['choices'][0]['message']['content'].strip())
+        except:
+            score = 0.0
+        self.gpt_cache[key] = score
+        return score
+
+    def generate_submission(self):
+        X, y = self.prepare_training_data()
+        self.train_model(X, y)
+        cands = self.generate_candidates()
+        feats = [self.generate_features(p, c) for p, c in cands]
+        probs = self.classifier.predict_proba(feats)[:, 1]
+
+        results = []
+        rag_calls = 0
+        for (p, c), prob in tqdm(zip(cands, probs)):
+            if prob >= self.rag_threshold[1]:
+                results.append({"parent": p, "child": c})
+            elif self.rag_threshold[0] < prob < self.rag_threshold[1]:
+                if rag_calls < self.max_validations and self.mistral_validate(p, c):
+                    rag_calls += 1
+                    if self.gpt_score(p, c) >= self.gpt_threshold:
+                        results.append({"parent": p, "child": c})
+
+        with open("submission_final_04.json", "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"✅ Final submission written: {len(results)} pairs")
+
+    def evaluate_model(self):
+        X, y = self.prepare_training_data()
+        Xtr, Xval, ytr, yval = train_test_split(X, y, test_size=0.2, random_state=42)
+        self.train_model(Xtr, ytr)
+        ypred = self.classifier.predict(Xval)
+        print("\n📊 Evaluation:\n", classification_report(yval, ypred, digits=4))
+
+    def run(self):
+        self.load_data()
+        self.compute_embeddings()
+        self.generate_submission()
+        self.evaluate_model()
+
+if __name__ == "__main__":
+    os.environ["OPENAI_API_KEY"] = "sk-..."
+    BestTaxonomyClassifier().run()
+
+
+!pip install autoawq
+
+# f1 = 0.0818467996
+import os
+import json
+import numpy as np
+import pandas as pd
+import torch
+import random
+from tqdm import tqdm
+from sentence_transformers import SentenceTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import classification_report
+from xgboost import XGBClassifier
+from imblearn.over_sampling import SMOTE
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+import openai
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from awq import AutoAWQForCausalLM
+
+class BestTaxonomyClassifier:
+    def __init__(self):
+        self.train_types_path = "schemaorg_train_types.txt"
+        self.train_pairs_path = "schemaorg_train_pairs.json"
+        self.test_types_path = "schemaorg_test_types.txt"
+
+        self.embedder = SentenceTransformer("all-mpnet-base-v2")
+        self.classifier = XGBClassifier(n_estimators=100, max_depth=6, use_label_encoder=False, eval_metric='logloss')
+
+        model_name = "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
+        self.mistral_llm = pipeline("text-generation", model=model, tokenizer=tokenizer, pad_token_id=tokenizer.eos_token_id)
+
+        self.sim_threshold = 0.4
+        self.ml_threshold = 0.4
+        self.rag_threshold = (0.4, 0.75)
+        self.gpt_threshold = 0.6
+        self.top_k = 30
+        self.max_validations = 1000
+
+        self.embeddings = {}
+        self.rag_cache = {}
+        self.gpt_cache = {}
+
+        self.shot_examples = [
+            ("CreativeWork", "Movie", "true"),
+            ("Event", "Volcano", "false"),
+            ("Place", "City", "true"),
+            ("Product", "Smartphone", "true"),
+            ("Action", "DanceAction", "true"),
+        ]
+
+    def load_data(self):
+        with open(self.train_types_path) as f:
+            self.train_types = [line.strip() for line in f if line.strip()]
+        with open(self.test_types_path) as f:
+            self.test_types = [line.strip() for line in f if line.strip()]
+        with open(self.train_pairs_path) as f:
+            self.train_pairs = json.load(f)
+
+    def compute_embeddings(self):
+        all_types = list(set(self.train_types + self.test_types))
+        embs = self.embedder.encode(all_types, show_progress_bar=True)
+        self.embeddings = dict(zip(all_types, embs))
+
+    def lexical_features(self, p, c):
+        p_l, c_l = p.lower(), c.lower()
+        shared = len(set(p_l.split()).intersection(set(c_l.split())))
+        return [shared, int(c_l.startswith(p_l)), int(p_l.endswith(c_l))]
+
+    def generate_features(self, p, c):
+        pe, ce = self.embeddings[p], self.embeddings[c]
+        cs = cosine_similarity([pe], [ce])[0][0]
+        return np.hstack([pe, ce, pe - ce, pe * ce, [cs], self.lexical_features(p, c)])
+
+    def prepare_training_data(self):
+        pos = [(p['parent'], p['child'], 1) for p in self.train_pairs]
+        pos_set = {(p, c) for p, c, _ in pos}
+        neg = []
+        for p, c, _ in pos:
+            cands = [t for t in self.train_types if t != p and (p, t) not in pos_set and not t.startswith(p)]
+            sims = cosine_similarity([self.embeddings[c]], [self.embeddings[t] for t in cands])[0]
+            top = [cands[i] for i in np.argsort(sims)[-5:]]
+            neg += [(p, n, 0) for n in top]
+            for r in random.sample(self.test_types, 5):
+                if (p, r) not in pos_set and p != r:
+                    neg.append((p, r, 0))
+        df = pd.DataFrame(pos + neg, columns=["parent", "child", "label"])
+        df["features"] = df.apply(lambda r: self.generate_features(r["parent"], r["child"]), axis=1)
+        X = np.vstack(df["features"])
+        y = df["label"]
+        return SMOTE().fit_resample(X, y)
+
+    def train_model(self, X, y):
+        self.classifier.fit(X, y)
+
+    def generate_candidates(self):
+        candidates = []
+        for c in self.test_types:
+            sims = [cosine_similarity([self.embeddings[c]], [self.embeddings[p]])[0][0] for p in self.train_types]
+            for idx in np.argsort(sims)[-self.top_k:]:
+                if sims[idx] > self.sim_threshold:
+                    candidates.append((self.train_types[idx], c))
+        return list(set(candidates))
+
+    def mistral_validate(self, p, c):
+        key = f"{p}::{c}"
+        if key in self.rag_cache:
+            return self.rag_cache[key]
+        shots = "\n".join([f"Parent: {p0}\nChild: {c0}\nAnswer: {a}" for p0, c0, a in self.shot_examples])
+        prompt = f"""
+Determine whether the child is a subclass of the parent in Schema.org.
+Answer only "true" or "false".
+
+{shots}
+Parent: {p}
+Child: {c}
+Answer:"""
+        try:
+            out = self.mistral_llm(prompt, max_new_tokens=5, temperature=0.0)[0]['generated_text']
+            val = 'true' in out.lower()
+        except:
+            val = False
+        self.rag_cache[key] = val
+        return val
+
+    def gpt_score(self, p, c):
+        key = f"{p}::{c}"
+        if key in self.gpt_cache:
+            return self.gpt_cache[key]
+        prompt = f"On a scale from 0 to 1, how likely is '{c}' a subtype of '{p}' in Schema.org? Just float."
+        try:
+            openai.api_key = os.getenv("OPENAI_API_KEY")
+            resp = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            score = float(resp['choices'][0]['message']['content'].strip())
+        except:
+            score = 0.0
+        self.gpt_cache[key] = score
+        return score
+
+    def generate_submission(self):
+        X, y = self.prepare_training_data()
+        self.train_model(X, y)
+        cands = self.generate_candidates()
+        feats = [self.generate_features(p, c) for p, c in cands]
+        probs = self.classifier.predict_proba(feats)[:, 1]
+
+        results = []
+        rag_calls = 0
+        for (p, c), prob in tqdm(zip(cands, probs)):
+            if prob >= self.rag_threshold[1]:
+                results.append({"parent": p, "child": c})
+            elif self.rag_threshold[0] < prob < self.rag_threshold[1]:
+                if rag_calls < self.max_validations and self.mistral_validate(p, c):
+                    rag_calls += 1
+                    if self.gpt_score(p, c) >= self.gpt_threshold:
+                        results.append({"parent": p, "child": c})
+
+        with open("submission_final_05.json", "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"✅ Final submission written: {len(results)} pairs")
+
+    def evaluate_model(self):
+        X, y = self.prepare_training_data()
+        Xtr, Xval, ytr, yval = train_test_split(X, y, test_size=0.2, random_state=42)
+        self.train_model(Xtr, ytr)
+        ypred = self.classifier.predict(Xval)
+        print("\n📊 Evaluation:\n", classification_report(yval, ypred, digits=4))
+
+    def run(self):
+        self.load_data()
+        self.compute_embeddings()
+        self.generate_submission()
+        self.evaluate_model()
+
+if __name__ == "__main__":
+    os.environ["OPENAI_API_KEY"] = "sk-..."
+    BestTaxonomyClassifier().run()
+
+
+!pip install torch==2.6.0 torchaudio==2.6.0 torchvision==0.17.0
+!pip install sentence-transformers scikit-learn imbalanced-learn pandas tqdm openai accelerate
+!pip install unsloth bitsandbytes optimum

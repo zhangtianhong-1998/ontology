@@ -1,0 +1,16 @@
+{
+  "checked": "2026-09-20",
+  "repo": "chavakan209/T-GreC-at-LLMs4OL-2025-Task-B",
+  "url": "https://github.com/chavakan209/T-GreC-at-LLMs4OL-2025-Task-B",
+  "branch": "main",
+  "license_api": null,
+  "sha": "7f1b1545fb63de7c311f26241c975458039fc06b",
+  "files": [
+    "README.md",
+    "augment.py",
+    "inference_final.py",
+    "robertaTrain_Mat_SWEET.py",
+    "train_final.py"
+  ],
+  "license_files": []
+}

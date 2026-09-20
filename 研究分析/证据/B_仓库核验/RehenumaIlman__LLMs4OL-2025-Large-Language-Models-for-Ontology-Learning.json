@@ -1,0 +1,23 @@
+{
+  "repo": "RehenumaIlman/LLMs4OL-2025-Large-Language-Models-for-Ontology-Learning",
+  "url": "https://github.com/RehenumaIlman/LLMs4OL-2025-Large-Language-Models-for-Ontology-Learning",
+  "default_branch": "main",
+  "updated_at": "2025-07-15T18:59:15Z",
+  "pushed_at": "2025-07-15T18:59:11Z",
+  "license_api": null,
+  "tree_sha": "9f0584a14df12b6d9f4718a529ee1c033801ccac",
+  "paths": [
+    "TASK_C-05",
+    "TASK_C-05/DATA",
+    "TASK_C-05/DATA/SchemaOrg",
+    "TASK_C-05/DATA/SchemaOrg/test",
+    "TASK_C-05/DATA/SchemaOrg/test/schemaorg_test_types.txt",
+    "TASK_C-05/DATA/SchemaOrg/train",
+    "TASK_C-05/DATA/SchemaOrg/train/schemaorg_train_pairs.json",
+    "TASK_C-05/DATA/SchemaOrg/train/schemaorg_train_types.txt",
+    "TASK_C-05/Experiments",
+    "TASK_C-05/Experiments/2_models_for_Subtask_C5.ipynb",
+    "TASK_C-05/Experiments/3_models_on_SubTask_C5(Best f1).ipynb"
+  ],
+  "license_files": []
+}

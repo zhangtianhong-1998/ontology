@@ -1,0 +1,15 @@
+{
+  "full_name": "monarch-initiative/ontogpt",
+  "html_url": "https://github.com/monarch-initiative/ontogpt",
+  "default_branch": "main",
+  "license": {
+    "key": "bsd-3-clause",
+    "name": "BSD 3-Clause \"New\" or \"Revised\" License",
+    "spdx_id": "BSD-3-Clause",
+    "url": "https://api.github.com/licenses/bsd-3-clause",
+    "node_id": "MDc6TGljZW5zZTU="
+  },
+  "archived": false,
+  "pushed_at": "2026-09-10T16:36:04Z",
+  "retrieved": "2026-09-20"
+}

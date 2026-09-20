@@ -1,0 +1,238 @@
+[
+  {
+    "full_name": "AuvaLab/itext2kg",
+    "html_url": "https://github.com/AuvaLab/itext2kg",
+    "default_branch": "main",
+    "license": {
+      "key": "apache-2.0",
+      "name": "Apache License 2.0",
+      "spdx_id": "Apache-2.0",
+      "url": "https://api.github.com/licenses/apache-2.0",
+      "node_id": "MDc6TGljZW5zZTI="
+    },
+    "archived": false,
+    "pushed_at": "2026-09-04T16:26:43Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/AuvaLab__itext2kg.json"
+  },
+  {
+    "full_name": "HKUST-KnowComp/AutoSchemaKG",
+    "html_url": "https://github.com/HKUST-KnowComp/AutoSchemaKG",
+    "default_branch": "main",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "archived": false,
+    "pushed_at": "2026-04-29T16:30:22Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/HKUST-KnowComp__AutoSchemaKG.json"
+  },
+  {
+    "full_name": "RDFLib/pySHACL",
+    "html_url": "https://github.com/RDFLib/pySHACL",
+    "default_branch": "master",
+    "license": {
+      "key": "apache-2.0",
+      "name": "Apache License 2.0",
+      "spdx_id": "Apache-2.0",
+      "url": "https://api.github.com/licenses/apache-2.0",
+      "node_id": "MDc6TGljZW5zZTI="
+    },
+    "archived": false,
+    "pushed_at": "2026-07-28T01:35:01Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/RDFLib__pySHACL.json"
+  },
+  {
+    "full_name": "SmartDataAnalytics/DL-Learner",
+    "html_url": "https://github.com/SmartDataAnalytics/DL-Learner",
+    "default_branch": "develop",
+    "license": {
+      "key": "gpl-3.0",
+      "name": "GNU General Public License v3.0",
+      "spdx_id": "GPL-3.0",
+      "url": "https://api.github.com/licenses/gpl-3.0",
+      "node_id": "MDc6TGljZW5zZTk="
+    },
+    "archived": false,
+    "pushed_at": "2023-07-07T21:46:40Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/SmartDataAnalytics__DL-Learner.json"
+  },
+  {
+    "full_name": "amazon-science/Automatic-Table-to-Graph-Generation",
+    "html_url": "https://github.com/amazon-science/Automatic-Table-to-Graph-Generation",
+    "default_branch": "main",
+    "license": {
+      "key": "apache-2.0",
+      "name": "Apache License 2.0",
+      "spdx_id": "Apache-2.0",
+      "url": "https://api.github.com/licenses/apache-2.0",
+      "node_id": "MDc6TGljZW5zZTI="
+    },
+    "archived": false,
+    "pushed_at": "2026-04-21T20:54:39Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/amazon-science__Automatic-Table-to-Graph-Generation.json"
+  },
+  {
+    "full_name": "clear-nus/edc",
+    "html_url": "https://github.com/clear-nus/edc",
+    "default_branch": "main",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "archived": false,
+    "pushed_at": "2024-08-13T06:56:01Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/clear-nus__edc.json"
+  },
+  {
+    "full_name": "dice-group/Ontolearn",
+    "html_url": "https://github.com/dice-group/Ontolearn",
+    "default_branch": "develop",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "archived": false,
+    "pushed_at": "2026-09-18T15:08:54Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/dice-group__Ontolearn.json"
+  },
+  {
+    "full_name": "dkw-aau/qse",
+    "html_url": "https://github.com/dkw-aau/qse",
+    "default_branch": "main",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "archived": false,
+    "pushed_at": "2025-11-15T21:38:54Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/dkw-aau__qse.json"
+  },
+  {
+    "full_name": "dig-team/AMIE",
+    "html_url": "https://github.com/dig-team/AMIE",
+    "default_branch": "master",
+    "license": {
+      "key": "other",
+      "name": "Other",
+      "spdx_id": "NOASSERTION",
+      "url": null,
+      "node_id": "MDc6TGljZW5zZTA="
+    },
+    "archived": false,
+    "pushed_at": "2026-06-24T16:00:40Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/lajus__amie.json",
+    "manual_note": "README declares CC BY 4.0; API license=NOASSERTION. Current implementation 4.x; 2020 paper experiments concern version 3."
+  },
+  {
+    "full_name": "megagonlabs/doduo",
+    "html_url": "https://github.com/megagonlabs/doduo",
+    "default_branch": "main",
+    "license": {
+      "key": "apache-2.0",
+      "name": "Apache License 2.0",
+      "spdx_id": "Apache-2.0",
+      "url": "https://api.github.com/licenses/apache-2.0",
+      "node_id": "MDc6TGljZW5zZTI="
+    },
+    "archived": false,
+    "pushed_at": "2022-06-10T23:51:17Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/megagonlabs__doduo.json"
+  },
+  {
+    "full_name": "megagonlabs/sato",
+    "html_url": "https://github.com/megagonlabs/sato",
+    "default_branch": "master",
+    "license": {
+      "key": "apache-2.0",
+      "name": "Apache License 2.0",
+      "spdx_id": "Apache-2.0",
+      "url": "https://api.github.com/licenses/apache-2.0",
+      "node_id": "MDc6TGljZW5zZTI="
+    },
+    "archived": false,
+    "pushed_at": "2024-02-23T19:37:53Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/megagonlabs__sato.json"
+  },
+  {
+    "full_name": "monarch-initiative/ontogpt",
+    "html_url": "https://github.com/monarch-initiative/ontogpt",
+    "default_branch": "main",
+    "license": {
+      "key": "bsd-3-clause",
+      "name": "BSD 3-Clause \"New\" or \"Revised\" License",
+      "spdx_id": "BSD-3-Clause",
+      "url": "https://api.github.com/licenses/bsd-3-clause",
+      "node_id": "MDc6TGljZW5zZTU="
+    },
+    "archived": false,
+    "pushed_at": "2026-09-10T16:36:04Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/monarch-initiative__ontogpt.json"
+  },
+  {
+    "full_name": "ontop/ontop",
+    "html_url": "https://github.com/ontop/ontop",
+    "default_branch": "version5",
+    "license": {
+      "key": "apache-2.0",
+      "name": "Apache License 2.0",
+      "spdx_id": "Apache-2.0",
+      "url": "https://api.github.com/licenses/apache-2.0",
+      "node_id": "MDc6TGljZW5zZTI="
+    },
+    "archived": false,
+    "pushed_at": "2026-09-17T07:55:02Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/ontop__ontop.json"
+  },
+  {
+    "full_name": "sciknoworg/OntoLearner",
+    "html_url": "https://github.com/sciknoworg/OntoLearner",
+    "default_branch": "main",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "archived": false,
+    "pushed_at": "2026-09-03T19:15:45Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/sciknoworg__OntoLearner.json"
+  },
+  {
+    "full_name": "stair-lab/kg-gen",
+    "html_url": "https://github.com/stair-lab/kg-gen",
+    "default_branch": "main",
+    "license": null,
+    "archived": false,
+    "pushed_at": "2026-03-24T21:10:16Z",
+    "retrieved": "2026-09-20",
+    "evidence_file": "证据/网页/stair-lab__kg-gen.json",
+    "manual_note": "README declares MIT; GitHub API license=null; no standalone LICENSE visible at repository root."
+  }
+]

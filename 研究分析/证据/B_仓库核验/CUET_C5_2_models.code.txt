@@ -1,0 +1,432 @@
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+# Input data files are available in the read-only "../input/" directory
+# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All"
+# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
+
+!pip install -q numpy pandas tqdm scikit-learn imbalanced-learn xgboost \
+  transformers accelerate sentence-transformers bitsandbytes openai sentencepiece
+!pip install -q xgboost
+!pip install unsloth
+
+# f1 = 0.0761904762
+import os, json, random, numpy as np, pandas as pd, torch
+from tqdm import tqdm
+from sentence_transformers import SentenceTransformer
+from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier
+from imblearn.over_sampling import SMOTE
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+import openai
+
+class BestTaxonomyClassifier:
+    def __init__(self):
+        if not torch.cuda.is_available():
+            print("⚠️ Warning: No GPU detected. LLM inference will likely fail or be extremely slow.")
+
+        self.train_types_path = "/kaggle/input/taskc-5/schemaorg_train_types.txt"
+        self.train_pairs_path = "/kaggle/input/taskc-5/schemaorg_train_pairs.json"
+        self.test_types_path = "/kaggle/input/taskc-5/schemaorg_test_types.txt"
+
+        self.embedder = SentenceTransformer("all-mpnet-base-v2")
+        self.base_clf = XGBClassifier(n_estimators=200, max_depth=6, eval_metric="logloss")
+        self.meta_clf = LogisticRegression(max_iter=500)
+
+        model_name = "unsloth/mistral-7b-instruct-v0.3-bnb-4bit"
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4"
+        )
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            quantization_config=bnb_config,
+            device_map="auto",
+            trust_remote_code=True
+        )
+
+        self.top_k = 100
+        self.sim_threshold = 0.1
+        self.gpt_threshold = 0.5
+        self.max_gpt_calls = 5000
+
+    def hybrid_similarity(self, p, c):
+        cos_sim = np.dot(p, c) / (np.linalg.norm(p) * np.linalg.norm(c))
+        diff_norm = np.linalg.norm(p - c)
+        return cos_sim - 0.1 * diff_norm
+
+    def load_data(self):
+        self.train_types = open(self.train_types_path).read().splitlines()
+        self.test_types = open(self.test_types_path).read().splitlines()
+        self.train_pairs = json.load(open(self.train_pairs_path))
+
+    def compute_embeddings(self):
+        if os.path.exists("/kaggle/working/embeddings.npy"):
+            self.embeddings = np.load("/kaggle/working/embeddings.npy", allow_pickle=True).item()
+        else:
+            all_types = list(set(self.train_types + self.test_types))
+            embs = self.embedder.encode(all_types, show_progress_bar=True)
+            self.embeddings = dict(zip(all_types, embs))
+            np.save("/kaggle/working/embeddings.npy", self.embeddings)
+
+    def lexical_features(self, p, c):
+        pl, cl = p.lower(), c.lower()
+        shared = len(set(pl.split()).intersection(set(cl.split())))
+        return [shared, int(cl.startswith(pl)), int(cl.endswith(pl))]
+
+    def gen_features(self, p, c):
+        pe, ce = self.embeddings[p], self.embeddings[c]
+        sim = self.hybrid_similarity(pe, ce)
+        return np.concatenate([pe, ce, pe - ce, pe * ce, [sim], self.lexical_features(p, c)])
+
+    def prepare_training(self):
+        pos = [(p['parent'], p['child'], 1) for p in self.train_pairs]
+        pos_set = {(p, c) for p, c, _ in pos}
+        all_cands = self.train_types + self.test_types
+        neg = []
+        for p, c, _ in pos:
+            sims = [self.hybrid_similarity(self.embeddings[c], self.embeddings[t]) for t in all_cands]
+            top5 = [all_cands[i] for i in np.argsort(sims)[-10:]]
+            for x in top5 + random.sample(all_cands, 5):
+                if (p, x) not in pos_set and p != x:
+                    neg.append((p, x, 0))
+        df = pd.DataFrame(pos + neg, columns=["p", "c", "y"])
+        df["feat"] = df.apply(lambda r: self.gen_features(r.p, r.c), axis=1)
+        X = np.vstack(df.feat)
+        y = df.y.values
+        Xs, ys = SMOTE().fit_resample(X, y)
+        return Xs, ys
+
+    def train(self):
+        X, y = self.prepare_training()
+        self.base_feature_size = X.shape[1]
+        self.base_clf.fit(X, y)
+
+    def candidate_generation(self):
+        cands = []
+        all_parents = self.train_types + self.test_types
+        for child in self.test_types:
+            if child not in self.embeddings:
+                continue
+            sims = []
+            for p in all_parents:
+                if p == child or p not in self.embeddings:
+                    continue
+                sim = self.hybrid_similarity(self.embeddings[child], self.embeddings[p])
+                sims.append((p, sim))
+            sims = sorted(sims, key=lambda x: -x[1])[:self.top_k]
+            for p, s in sims:
+                if s >= self.sim_threshold:
+                    cands.append((p, child, s))
+        return cands
+
+    def llm_score(self, prompts):
+        inputs = self.tokenizer(prompts, return_tensors="pt", padding=True, truncation=True).to(self.model.device)
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=16,
+                do_sample=False
+            )
+        decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        scores = []
+        for out in decoded:
+            try:
+                scores.append(float(out.strip().split()[0]))
+            except:
+                scores.append(0.0)
+        return scores
+
+
+    def gpt_score(self, p, c):
+        prompt = f"On a scale 0–1, how likely is '{c}' a subtype of '{p}' in Schema.org? Just float."
+        try:
+            resp = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=3
+            )
+            return float(resp.choices[0].message.content.strip())
+        except:
+            return 0.0
+
+    def rerank(self):
+        self.load_data()
+        self.compute_embeddings()
+        self.train()
+        cands = self.candidate_generation()
+
+        if not cands:
+            raise ValueError("❌ No candidates generated. Try lowering sim_threshold or increasing top_k.")
+
+        feats = np.array([self.gen_features(p, c) for p, c, _ in cands])
+        if feats.shape[1] != self.base_feature_size:
+            raise ValueError(f"❌ Feature shape mismatch: expected {self.base_feature_size}, got {feats.shape}")
+
+        xgb_scores = self.base_clf.predict_proba(feats)[:, 1]
+        sim_scores = [s for _, _, s in cands]
+
+        filtered = [(p, c, s, xb) for (p, c, s), xb in zip(cands, xgb_scores) if xb > 0.3 and s > 0.2]
+        filtered = sorted(filtered, key=lambda x: -x[3])[:5000]
+
+        prompts = [f"On a scale 0–1, how likely is '{c}' a SUBTYPE of '{p}' in Schema.org? Just output a float."
+                   for p, c, _, _ in filtered]
+        llm_scores = self.llm_score(prompts)
+
+        meta_X = [[xb, sim] + self.lexical_features(p, c) + [ls]
+                  for (p, c, sim, xb), ls in zip(filtered, llm_scores)]
+        y_meta = [int((p, c) in {(pr['parent'], pr['child']) for pr in self.train_pairs})
+                  for (p, c, _, _) in filtered]
+
+        self.meta_clf.fit(meta_X, y_meta)
+
+        final_preds = {}
+        for (p, c, sim, xb), ls in zip(filtered, llm_scores):
+            score = self.meta_clf.predict_proba([[xb, sim] + self.lexical_features(p, c) + [ls]])[0][1]
+            final_preds.setdefault(c, []).append((p, score))
+
+        output = []
+        gpt_calls = 0
+        for child, lst in final_preds.items():
+            lst = sorted(lst, key=lambda x: -x[1])[:10]
+            if gpt_calls < self.max_gpt_calls:
+                lst = [(p, self.gpt_score(p, child)) for p, _ in lst[:3]]
+                gpt_calls += len(lst)
+                lst = sorted(lst, key=lambda x: -x[1])
+            for p, _ in lst[:5]:
+                output.append({"parent": p, "child": child})
+
+        with open("/kaggle/working/submission_best1.json", "w") as f:
+            json.dump(output, f, indent=2)
+        print(f"✅ Final submission written: {len(output)} pairs")
+        return output
+
+if __name__ == "__main__":
+    os.environ["OPENAI_API_KEY"] = "sk-..."
+    model = BestTaxonomyClassifier()
+    model.rerank()
+
+
+# f1 = 0.0695569319
+from unsloth import FastLanguageModel
+import json
+import numpy as np
+import pandas as pd
+from sklearn.neural_network import MLPClassifier
+from sklearn.model_selection import train_test_split
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import classification_report, confusion_matrix
+from imblearn.over_sampling import SMOTE
+from transformers import (
+    DPRQuestionEncoder, DPRQuestionEncoderTokenizer,
+    DPRContextEncoder, DPRContextEncoderTokenizer,
+    pipeline
+)
+import openai
+import torch
+import os
+from tqdm import tqdm
+
+
+class RAGTaxonomyClassifier:
+    def __init__(self):
+        self.train_types_path = "/kaggle/input/taskc-5/schemaorg_train_types.txt"
+        self.train_pairs_path = "/kaggle/input/taskc-5/schemaorg_train_pairs.json"
+        self.test_types_path = "/kaggle/input/taskc-5/schemaorg_test_types.txt"
+
+        self.embedder = SentenceTransformer('all-mpnet-base-v2')
+        self.classifier = MLPClassifier(hidden_layer_sizes=(512, 128), max_iter=500, early_stopping=True)
+
+        self.q_tokenizer = DPRQuestionEncoderTokenizer.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
+        self.q_encoder = DPRQuestionEncoder.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
+        self.ctx_tokenizer = DPRContextEncoderTokenizer.from_pretrained("facebook/dpr-ctx_encoder-single-nq-base")
+        self.ctx_encoder = DPRContextEncoder.from_pretrained("facebook/dpr-ctx_encoder-single-nq-base")
+
+        model_name = "mistralai/Mistral-7B-Instruct-v0.1"
+        os.environ["HF_TOKEN"] = "hf_..."
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=model_name,
+            max_seq_length=2048,
+            dtype=None,
+            load_in_4bit=True,
+            token=os.environ["HF_TOKEN"]
+        )
+        self.rag_llm = pipeline("text-generation", model=model, tokenizer=tokenizer, device_map="auto", pad_token_id=tokenizer.eos_token_id)
+
+        self.sim_threshold = 0.4
+        self.ml_threshold = 0.4
+        self.rag_threshold = (0.4, 0.7)
+        self.gpt_threshold = 0.6
+        self.top_k_parents = 20
+        self.max_validations = 1000
+
+        self.definitions = {}
+        self.rag_cache = {}
+        self.gpt_cache = {}
+
+    def load_data(self):
+        with open(self.train_types_path, 'r') as f:
+            self.train_types = [line.strip() for line in f.readlines()]
+        with open(self.train_pairs_path, 'r') as f:
+            self.train_pairs = json.load(f)
+        with open(self.test_types_path, 'r') as f:
+            self.test_types = [line.strip() for line in f.readlines()]
+        print(f"✅ Loaded {len(self.train_types)} train types, {len(self.test_types)} test types")
+
+    def compute_embeddings(self):
+        all_types = list(set(self.train_types + self.test_types))
+        print("🔄 Computing embeddings...")
+        embeddings = self.embedder.encode(all_types, show_progress_bar=True)
+        self.embeddings = dict(zip(all_types, embeddings))
+
+    def generate_features(self, parent, child):
+        p_emb, c_emb = self.embeddings[parent], self.embeddings[child]
+        cos_sim = cosine_similarity([p_emb], [c_emb])[0][0]
+        return np.hstack([p_emb, c_emb, p_emb - c_emb, p_emb * c_emb, [cos_sim]])
+
+    def prepare_training_data(self):
+        print("📦 Preparing training data with SMOTE...")
+        positives = [{"parent": p['parent'], "child": p['child'], "label": 1} for p in self.train_pairs]
+        positive_set = {(p['parent'], p['child']) for p in self.train_pairs}
+        negatives = []
+
+        for p in tqdm(self.train_pairs, desc="Generating hard negatives"):
+            parent = p['parent']
+            candidates = [t for t in self.train_types if t != p['child'] and t != parent and (parent, t) not in positive_set]
+            child_emb = self.embeddings[p['child']]
+            sims = cosine_similarity([child_emb], [self.embeddings[t] for t in candidates])[0]
+            hard_negatives = [candidates[i] for i in np.argsort(sims)[-5:]]
+            for neg in hard_negatives:
+                negatives.append({"parent": parent, "child": neg, "label": 0})
+
+        df = pd.DataFrame(positives + negatives)
+        df['features'] = df.apply(lambda r: self.generate_features(r['parent'], r['child']), axis=1)
+        X = np.vstack(df['features'])
+        y = df['label']
+        X, y = SMOTE().fit_resample(X, y)
+        return X, y
+
+    def train_model(self, X, y):
+        print("🎯 Training MLP classifier...")
+        self.classifier.fit(X, y)
+
+    def generate_candidates(self):
+        print("🔍 Generating candidate (parent, child) pairs...")
+        candidates = []
+        test_embs = np.array([self.embeddings[t] for t in self.test_types])
+        sim_matrix = cosine_similarity(test_embs)
+        np.fill_diagonal(sim_matrix, -1)
+
+        for i, child in enumerate(tqdm(self.test_types)):
+            for parent in self.train_types:
+                sim = cosine_similarity([self.embeddings[child]], [self.embeddings[parent]])[0][0]
+                if sim > self.sim_threshold:
+                    candidates.append((parent, child))
+            top_indices = np.argsort(sim_matrix[i])[-self.top_k_parents:]
+            for j in top_indices:
+                if sim_matrix[i][j] > self.sim_threshold:
+                    candidates.append((self.test_types[j], child))
+        return list(set(candidates))
+
+    def rag_validate(self, parent, child):
+        key = f"{parent}::{child}"
+        if key in self.rag_cache:
+            return self.rag_cache[key]
+        question = f"Is {child} a subtype of {parent} in the schema.org taxonomy?"
+        parent_def = self.definitions.get(parent, parent)
+        child_def = self.definitions.get(child, child)
+        prompt = f"{question}\nParent: {parent_def}\nChild: {child_def}\nAnswer 'true' or 'false':"
+        try:
+            response = self.rag_llm(prompt, max_new_tokens=5, temperature=0.01)[0]['generated_text']
+            result = 'true' in response.lower()
+            self.rag_cache[key] = result
+            return result
+        except:
+            self.rag_cache[key] = False
+            return False
+
+    def gpt4o_score(self, parent, child):
+        key = f"{parent}::{child}"
+        if key in self.gpt_cache:
+            return self.gpt_cache[key]
+        prompt = f"On a scale from 0 to 1, how likely is it that '{child}' is a subtype of '{parent}' in a web ontology like schema.org? Answer with only a float."
+        try:
+            openai.api_key = os.environ.get("OPENAI_API_KEY")
+            response = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            score = float(response['choices'][0]['message']['content'].strip())
+            self.gpt_cache[key] = score
+            return score
+        except:
+            self.gpt_cache[key] = 0.0
+            return 0.0
+
+    def generate_submission(self):
+        X, y = self.prepare_training_data()
+        self.train_model(X, y)
+        candidates = self.generate_candidates()
+        features = [self.generate_features(p, c) for p, c in candidates]
+        probas = self.classifier.predict_proba(features)[:, 1]
+
+        results = []
+        rag_calls = 0
+
+        print(f"⚖️  Filtering candidate pairs with ML > {self.ml_threshold}")
+        for (parent, child), prob in tqdm(zip(candidates, probas)):
+            if prob >= self.ml_threshold:
+                if self.rag_threshold[0] < prob < self.rag_threshold[1] and rag_calls < self.max_validations:
+                    if self.rag_validate(parent, child):
+                        rag_calls += 1
+                        if prob > 0.9:
+                            results.append({"parent": parent, "child": child})
+                        else:
+                            score = self.gpt4o_score(parent, child)
+                            if score >= self.gpt_threshold:
+                                results.append({"parent": parent, "child": child})
+                elif prob >= self.rag_threshold[1]:
+                    results.append({"parent": parent, "child": child})
+
+        with open("/kaggle/working/submission_final_rag.json", "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"✅ Submission ready: {len(results)} parent-child pairs written")
+
+    def evaluate_model(self):
+        X, y = self.prepare_training_data()
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        self.train_model(X_train, y_train)
+        y_pred = self.classifier.predict(X_val)
+        print("\n📊 Classification Report:")
+        print(classification_report(y_val, y_pred, digits=4))
+        print("\n📉 Confusion Matrix:")
+        print(confusion_matrix(y_val, y_pred))
+
+    def run(self):
+        self.load_data()
+        self.compute_embeddings()
+        self.generate_submission()
+        self.evaluate_model()
+
+if __name__ == "__main__":
+    os.environ["OPENAI_API_KEY"] = "sk-..."
+    classifier = RAGTaxonomyClassifier()
+    classifier.run()
+
+

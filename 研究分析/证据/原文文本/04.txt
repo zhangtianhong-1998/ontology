@@ -1,0 +1,851 @@
+===== PDF PAGE 1 =====
+L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g C h all e n g e at t h e 2 3r d I S W C
+L L M s 4 O L 2 0 2 4 T a s k O v er vi e w
+htt p s:// d oi. or g/ 1 0. 5 2 8 2 5/ o c p. v 4i. 2 4 8 0
+© A ut h or s. T hi s w or k i s li c e n s e d u n d er a Cr e ati v e C o m m o n s Attri b uti o n 4. 0 I nt er n ati o n al Li c e n s e
+P u bli s h e d: 0 2 O ct. 2 0 2 4
+
+
+
+
+     L L M s 4 O L 2 0 2 4 D at a s et s: T o w ar d O nt ol o g y L e ar ni n g
+                     wit h L ar g e L a n g u a g e M o d el s
+        H a m e d B a b a ei Gi gl o u                 , J e n nif er D’ S o u z a        , S a m e er S a dr u d di n        , a n d S ¨or e n A u er
+
+                    TI B L ei b ni z I nf or m ati o n C e ntr e f or S ci e n c e a n d T e c h n ol o g y, H a n n o v er, G er m a n y
+                              { h a m e d. b a b a ei, j e n nif er. d s o u z a, s a m e er. s a dr u d di n, a u er } @ti b. e u
+                                  * C orr e s p o n d e n c e: H a m e d B a b a ei Gi gl o u, h a m e d. b a b a ei @ti b. e u
+
+
+A b str a ct: O nt ol o g y l e ar ni n g ( O L) fr o m u n str u ct ur e d d at a h a s e v ol v e d si g ni ﬁ c a ntl y, wit h
+r e c e nt a d v a n c e m e nt s i nt e gr ati n g l ar g e l a n g u a g e m o d el s ( L L M s) t o e n h a n c e v ari o u s
+a s p e ct s of t h e pr o c e s s. T h e p a p er i ntr o d u c e s t h e L L M s 4 O L 2 0 2 4 d at a s et s, d e v el o p e d
+t o b e n c h m ar k a n d a d v a n c e r e s e ar c h i n O L u si n g L L M s. T h e L L M s 4 O L 2 0 2 4 d at a s et
+a s a k e y c o m p o n e nt of t h e L L M s 4 O L C h all e n g e, t ar g et s t hr e e pri m ar y O L t a s k s: T er m
+T y pi n g, T a x o n o m y Di s c o v er y , a n d N o n- T a x o n o mi c R el ati o n E xtr a cti o n. It e n c o m p a s s e s
+s e v e n d o m ai n s, i. e. l e x o s e m a nti c s a n d bi ol o gi c al f u n cti o n s, off eri n g a c o m pr e h e n si v e
+r e s o ur c e f or e v al u ati n g L L M- b a s e d O L a p pr o a c h e s E a c h t a s k wit hi n t h e d at a s et i s
+c ar ef ull y cr aft e d t o f a cilit at e b ot h F e w- S h ot ( F S) a n d Z er o- S h ot ( Z S) e v al u ati o n s c e n ar-
+i o s, all o wi n g f or r o b u st a s s e s s m e nt of m o d el p erf or m a n c e a cr o s s diff er e nt k n o wl e d g e
+d o m ai n s t o a d dr e s s a criti c al g a p i n t h e ﬁ el d b y off eri n g st a n d ar di z e d b e n c h m ar k s f or
+f air c o m p ar i s o n f or e v al u ati n g L L M a p pli c ati o n s i n O L.
+
+K e y w or d s: O nt ol o g y L e ar ni n g, L ar g e L a n g u a g e M o d el s,                                   D at a s et, L L M s 4 O L C h al-
+lenge
+
+1 I ntr o d u cti o n
+O nt ol o gi e s h a v e g ai n e d a l ot of p o p ul arit y a n d r e c o g niti o n i n t h e s e m a nti c w e b b e c a u s e
+of t h eir ﬁ n e s o ur c e o f s e m a nti c s a n d i nt er o p er a bility . T h e i n cr e a s e i n u n str u ct ur e d
+d at a o n t h e w e b h a s m a d e t h e a ut o m at e d a c q ui siti o n of o nt ol o g y fr o m u n str u ct ur e d
+t e xt a m o st pr o mi n e nt r e s e ar c h ar e a. R e c e ntl y, i n st e a d of h a n d cr afti n g o nt ol o gi e s,
+t h e r e s e ar c h tr e n d i s n o w s hifti n g t o w ar d a ut o m ati c o nt ol o g y l e ar ni n g ( O L) [ 1]. O L
+i n v ol v e s a ut o m ati c all y i d e ntif yi n g t er m s, t y p e s, r el ati o n s, a n d p ot e nti al a xi o m s fr o m
+t ext u al i nf or m ati o n t o c o n str u ct a n o nt ol o g y [ 2].
+    L o o ki n g b a c k t o t h e hi st or y of O L r e s e ar c h, u ntil e arl y 2 0 0 2 [ 3], m o st O L a p pr o a c h e s
+r eli e d o n s e e d w or d s or e xi sti n g b a s e o nt ol o gi e s r at h er t h a n b uil di n g n e w o n e s fr o m
+s cr at c h. L at er i n 2 0 0 3 [ 4] t h e n at ur al l a n g u a g e pr o c e s si n g ( N L P) t e c h ni q u e s h o w e d
+pr o mi s e f or t h e e xtr a cti o n of n e w c o n c e pt s. H o w e v er, r el ati o n e xtr a cti o n f or O L r e-
+m ai n e d still c h all e n gi n g. Al s o, t h e pri or d o m ai n k n o wl e d g e of t h e b a s e o nt ol o gi e s still
+w a s i n t h e mi d dl e of t h e f o c u s f or O L. Wit h pr o g r e s s i n t h e ﬁ el d, i n 2 0 0 6 t h e c o n c e pt of
+” o nt ol o g y l e ar ni n g l a y er c a k e” [ 5] w a s i ntr o d u c e d t o or g a ni z e a n d d e s cri b e t h e diff er e nt
+st e p s i n v ol v e d i n t h e pr o c e s s of o nt ol o g y l e ar ni n g fr o m t h e t ext f or r e al-lif e a p pli c ati o n
+
+                                                                                     17
+
+
+===== PDF PAGE 2 =====
+  B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                 C h all e n g e at t h e 2 3r d I S W C”
+
+
+
+s c e n ari o s. T h e O L l a y er c a k e i n cl u d e s (fr o m t h e b ott o m of t h e c a k e t o t h e t o p), T er m s,
+S y n o n y m s, C o n c e pt s, T a x o n o mi e s, R el ati o n s, R ul e s, a n d A xi o m s. T hi s r e ﬂ e ct s a pr o-
+gr e s si o n fr o m si m pl er t o m or e c o m pl e x a n d a b str a ct f or m s, e a c h st e p b uil di n g o n t h e
+r e s ult s of t h e pr e vi o u s o n e. It pr o vi d e s a str u ct ur e d a p pr o a c h t o u n d er st a n di n g a n d a u-
+t o m ati n g t h e O L pr o c e s s. L at er i n 2 0 1 1, H a z m a n et al.[ 6] st u di e d v ari o u s O L s y st e m s
+a n d c at e g ori z e d t h e m i nt o t w o c at e g ori e s, ( 1) l e ar ni n g fr o m u n str u ct ur e d d at a a n d ( 2)
+l e ar ni n g fr o m s e mi- str u ct ur e d d at a. T h e y al s o p oi nt e d o ut t h at w h e n h u m a n- b a s e d
+e v al u ati o n i s n ot p o s si bl e, c arr yi n g o ut ﬁ v e-l e v el e v al u ati o n s f or O L i s i m p ort a nt, l e v el s
+s u c h a s l e xi c al, hi er ar c hi c al, c o nt e xt u al, s y nt a cti c, a n d str u ct ur al l e v el s. Si n c e 2 0 1 1
+a n d i n 2 0 1 8 s ur v e y of [ 7] s h o w e d t h at a h y bri d a p pr o a c h c o m pri si n g b ot h li n g ui sti c
+a n d st ati sti c al t e c h ni q u e s pr o d u c e s b ett er o nt ol o gi e s. H o w e v er, it i s dif ﬁ c ult t o ﬁ n d t h e
+b e st t e c h ni q u e a m o u nt a p pr o a c h e s d u e t o t h e d o m ai n of t h e st u di e s. T h e tr e n d w a s
+s hift e d t o w ar d st ati sti c al t e c h ni q u e s f or t er m e xtr a cti o n s, h o w e v er f or r el ati o n e xtr a cti o n
+cl u st eri n g m et h o d s w er e t h e m o st u s e d o n e s. M or e o v er, t h e v ari o u s e v al u ati o n s of O L
+s h o w e d t h at h u m a n- b a s e d e v al u ati o n i s t h e m o st r eli a bl e a p pr o a c h f or e v al u ati o n.
+   C o n si d eri n g t h at m o st of t h e a p pr o a c h e s i n t h e ﬁ el d w er e b a s e d o n st ati sti c al a p-
+pr o a c h e s or cl u st eri n g m o d el s, t h e e m er g e n c e of l ar g e l a n g u a g e m o d el s ( L L M s), of-
+f er e d a p ar a di g m s hift i n O L si n c e t h eir c h ar a ct eri sti c s j u stif y O L a s a st u di e d f or t h e
+ﬁr st ti m e wit hi n L L M s 4 O L p ar a di g m [ 8]. O n e r e a s o n f or t hi s s hift i s t h e L L M’ s g e n er a-
+ti o n c a p a biliti e s b e c a u s e t h e y ar e b ei n g tr ai n e d o n e xt e n si v e a n d di v er s e t e xt, si mil ar
+t o d o m ai n- s p e ci ﬁ c k n o wl e d g e b a s e s [ 9]. F or t h e ﬁr st ti m e, i n 2 0 2 3 t h e L L M s 4 O L [ 8]
+p ar a di g m w a s i ntr o d u c e d t h at i n c or p or at e s L L M s f or t hr e e i m p ort a nt t a s k s of O L a s
+T er m Ty pi n g, T a x o n o m y Di s c o v er y, a n d N o n- T a x o n o mi c R el ati o n E xtr a cti o n. L at er,
+m or e r e s e ar c h er s w er e i n v ol v e d i n t h e O L t a s k s fr o m diff er e nt p er s p e cti v e s [ 1 0] –[ 1 3].
+    T h e c urr e nt tr e n d i n t h e s e m a nti c w e b r e v e al s a gr o wi n g i nt er e st a m o n g r e s e ar c h er s
+i n utili zi n g L L M s [ 1 4]. A b e n c h m ar k d at a s et i s e s s e nti al t o a s s e s s t h e p erf or m a n c e
+of O L a p pr o a c h e s, p arti c ul arl y t h o s e i n v ol vi n g L L M s, i n a c o n si st e nt a n d c o m p ar a-
+bl e m a n n er. Wit h o ut s u c h b e n c h m ar k s, it b e c o m e s dif ﬁ c ult t o e v al u at e pr o gr e s s a n d
+c o m p ar e v ari o u s m et h o d ol o gi e s eff e cti v el y [ 1 3]. T o a d dr e s s t hi s g a p, i n t hi s w or k, w e
+i ntr o d u c e a n L L M s 4 O L p ar a di g m t a s k s d at a s et t o bri d g e t h e g a p i n b e n c h m ar k e v al-
+u ati o n d at a s et s s p e ci ﬁ c all y wit hi n t h e c o nt e xt of O L u si n g L L M s. O ur k e y c o ntri b uti o n
+i s t h e cr e ati o n of t h e L L M s 4 O L d at a s et, ai m e d at f a cilit ati n g c o n si st e nt e v al u ati o n i n
+t hi s e m er gi n g ﬁ el d. F or t h e ﬁr st ti m e, t hi s d at a s et i s i ntr o d u c e d i n t h e ” 1 st L L M s 4 O L
+C h all e n g e @ I S W C 2 0 2 4” [ 1 5], a c h all e n g e or g a ni z e d at t h e pr e sti gi o u s I nt er n ati o n al
+S e m a nti c W e b C o nf er e n c e (I S W C). T h e pri m ar y g o al of t h e c h all e n g e i s t o pr o vi d e a
+s h ar e d pl atf or m f or r e s e ar c h er s t o b e n c h m ar k t h eir L L M- b a s e d O L a p pr o a c h e s. B y e s-
+t a bli s hi n g t hi s d at a s et a n d l a u n c hi n g t h e L L M s 4 O L C h all e n g e, w e h o p e t o e n c o ur a g e
+f urt h er r e s e ar c h a n d i n n o v ati o n i n O L wit h L L M s, ulti m at el y e n a bli n g a m or e str u ct ur e d
+a n d f air c o m p ari s o n of diff er e nt m et h o d s i n t hi s r a pi dl y e v ol vi n g ar e a.
+   T h e L L M s 4 O L 2 0 2 4 d at a s et a d dr e s s e s t hr e e O L t a s k s, w hi c h ar e k n o w n a s pri miti v e
+o nt ol o g y c o n str u cti o n t a s k s [ 1 6]. C o n si d eri n g, L a s a l e xi c al e ntri e s f or c o n c e pt u al
+t y p e T , a n d H T a s a r e pr e s e nt ati o n of t a x o n o m y of t y p e s, a n d R a s a n o n-t a x o n o mi c
+r el ati o n s, t h e L L M s 4 O L t a s k s ar e d e ﬁ n e d a s f oll o w s:
+     • T a s k A – T er m T y pi n g: F or a gi v e n l e xi c al t er m L , di s c o v er t h e g e n er ali z e d t y p e
+       T .
+     • T a s k B – T a x o n o m y Di s c o v er y: F or a gi v e n s et of g e n er ali z e d t y p e s T , di s c o v er
+       t h e t a x o n o mi c hi er ar c hi c al p air s (T a , Tb ) p air s, r e pr e s e nti n g ”i s- a” r el ati o n s.
+     • T a s k C – N o n- T a x o n o mi c R el ati o n E xtr a cti o n: F or a gi v e n s et of g e n er ali z e d
+       t y p e s T a n d r el ati o n s R , d d e ntif y n o n-t a x o n o mi c, s e m a nti c r el ati o n s b et w e e n
+
+
+                                                                                     18
+
+
+===== PDF PAGE 3 =====
+     B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                    C h all e n g e at t h e 2 3r d I S W C”
+
+
+
+            t y p e s t o f or m a (T h , r, Tt ) tri pl et, w h er e T h a n d T t ar e h e a d a n d t ail t a x o n o mi c
+            t y p e s wit h r ∈ R .
+   T h e L L M s 4 O L d at a s et i s p u bli cl y a v ail a bl e o n Git H u b 1 , pr o vi di n g e a s y a c c e s s f or
+r e s e ar c h er s a n d pr a ctiti o n er s i n t h e ﬁ el d. T h e p a p er i s or g a ni z e d a s f oll o w s: S e cti o n
+2 d e s cri b e s t h e d o m ai n s t h at ar e b ei n g c o n si d er e d f or b e n c h m ar ki n g L L M s 4 Ol a n d
+S e cti o n 3 i n v e sti g at e s h o w o nt ol o gi e s ar e c ur at e d f or O L. I n s e cti o n 4, w e di s c u s s t h e
+c ur at e d d at a s et. Fi n all y, w e c o n cl u d e i n S e cti o n 5
+
+2 O nt ol o gi c al R e s o ur c e s a n d D o m ai n s of t h e St u d y
+T h e L L M s 4 O L 2 0 2 4 d at a s et s s u p p ort a v ari et y of d o m ai n s fr o m l e x o s e m a nti c s t o
+bi o m e di c al. S u c h v ari et y s u p p ort s t h e c o m pr e h e n si v e n e s s of t h e st u di e s wit hi n t h e
+L L M s 4 O L 2 0 2 4 C h all e n g e . I n t h e f oll o wi n g, w e d et ail e a c h o nt ol o g y wit hi n t h e d o m ai n s
+t h at w e u s e d f or t h e c o n str u cti o n of t h e L L M s 4 O L p ar a di g m t a s k s d at a s et.
+L e x o s e m a nti c s. W or d N et [ 1 7] i s a l ar g e l e xi c al d at a b a s e of E n gli s h t h at s er v e s a s
+a ri c h o nt ol o g y f or N L P a n d ot h er a p pli c ati o n s. It w a s d e v el o p e d at Pri n c et o n U ni-
+v er sit y a n d h a s b e c o m e a wi d el y u s e d t o ol f or u n d er st a n di n g a n d r e pr e s e nti n g t h e
+r el ati o n s hi p s b et w e e n w or d s. W or d N et i s di vi d e d i nt o f o ur m ai n p art s of s p e e c h, 1)
+N o u n s: C o n c e pt s, e ntiti e s, a n d o bj e ct s. 2) V er b s: A cti o n s, pr o c e s s e s, or st at e s of b e-
+i n g. 3) A dj e cti v e s: D e s cri pti v e q u aliti e s or attri b ut e s. 4) A d v er b s: M o di ﬁ er s of v er b s,
+a dj e cti v e s, or ot h er a d v er b s. E a c h p art of s p e e c h h a s it s o w n s et of s y n s et s a n d r e-
+l ati o n s hi p s, w hi c h h el p s i n di sti n g ui s hi n g t h e diff er e nt m e a ni n g s w or d s c a n h a v e w h e n
+u s e d i n diff er e nt gr a m m ati c al c o nt e xt s
+G e o gr a p hi c al L o c ati o n s. T h e G e o N a m e s [ 1 8] O nt ol o g y i s a f or m al r e pr e s e nt ati o n of
+g e o gr a p hi c al d at a t h at m o d el s g e o gr a p hi c f e at ur e s, l o c ati o n s, a n d a s s o ci at e d i nf or m a-
+ti o n. It i s a cr u ci al p art of t h e Li n k e d O p e n D at a ( L O D) cl o u d, pr o vi di n g a m a c hi n e-
+r e a d a bl e f or m at f or g e o gr a p hi c d at a t o f a cilit at e i nt e gr ati o n, q u er yi n g, a n d s h ari n g of
+g e o gr a p hi c k n o wl e d g e a cr o s s diff er e nt d o m ai n s. G e o N a m e s c o nt ai n s o v er 1 2 milli o n
+g e o gr a p hi c al n a m e s a n d 9 milli o n u ni q u e f e at ur e s s u c h a s citi e s, c o u ntri e s, ri v er s,
+m o u nt ai n s, l a k e s, et c. T hi s m a k e s G e o N a m e s a ri c h o nt ol o g y f or f urt h er st u di e s of
+L L M s 4 O L t a s k s.
+Bi o m e di c al. T h e U ni ﬁ e d M e di c al L a n g u a g e S y st e m ( U M L S) [ 1 9] i s a c o m pr e h e n si v e
+bi o m e di c al o nt ol o g y d e v el o p e d a n d m ai nt ai n e d b y t h e U. S. N ati o n al Li br ar y of M e di ci n e
+( N L M). It i nt e gr at e s v ari o u s h e alt h c ar e t er mi n ol o gi e s, c o di n g s y st e m s, a n d o nt ol o gi e s
+t o cr e at e a u ni ﬁ e d r e s o ur c e t h at s u p p ort s N L P, bi o m e di c al d at a i nt e gr ati o n, a n d i n-
+t er o p er a bilit y b et w e e n diff er e nt h e alt h c ar e s y st e m s. U M L S M et at h e s a ur u s i s a l ar g e
+d at a b a s e of bi o m e di c al c o n c e pt s a n d t er m s t h at i nt e gr at e s m a n y e xi sti n g t er mi n ol o gi e s
+a n d c o di n g s y st e m s. It c o n si st s of s o ur c e v o c a b ul ari e s a n d i n cl u d e s w ell- k n o w n o n-
+t ol o gi e s li k e S N O M E D C T U S [ 2 0], N CI [ 2 1], a n d M E D CI N [ 2 2]. T h e S N O M E D C T U S
+pr o vi d e s t h e c or e g e n er al t er mi n ol o g y f or t h e el e ctr o ni c h e alt h r e c or d. H o w e v er, N CI
+c o v er s v o c a b ul ar y f or c a n c er-r el at e d cli ni c al c ar e, tr a n sl ati o n al a n d b a si c r e s e ar c h, a n d
+p u bli c i nf or m ati o n a n d a d mi ni str ati v e a cti viti e s. M or e o v er, t h e M E D CI N m e di c al t er mi-
+n ol o g y e n c o m p a s s e s s y m pt o m s, hi st or y, p h y si c al e x a mi n ati o n, t e st s, di a g n o s e s, a n d
+t h er a pi e s.
+Bi ol o gi c al. G e n e O nt ol o g y ( G O) [ 2 3] c o n s orti u m i s a m aj or bi oi nf or m ati c s i niti ati v e
+t h at pr o vi d e s a st a n d ar di z e d v o c a b ul ar y t o d e s cri b e t h e f u n cti o n s, l o c ati o n s, a n d pr o-
+c e s s e s i n v ol vi n g g e n e s a n d g e n e pr o d u ct s a cr o s s diff er e nt s p e ci e s. G O ai m s t o u nif y
+
+ 1
+     htt p s:// git h u b. c o m/ H a m e d B a b a ei/ L L M s 4 O L- C h all e n g e-I S W C 2 0 2 4
+
+
+                                                                                        19
+
+
+===== PDF PAGE 4 =====
+  B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                 C h all e n g e at t h e 2 3r d I S W C”
+
+
+
+t h e r e pr e s e nt ati o n of g e n e a n d g e n e pr o d u ct attri b ut e s, all o wi n g r e s e ar c h er s t o c o n-
+si st e ntl y a n n ot at e bi ol o gi c al d at a a n d m a k e it e a si er t o c o m p ar e g e n e f u n cti o n s a cr o s s
+or g a ni s m s. G O pr o vi d e s a hi er ar c hi c al str u ct ur e t o d e s cri b e g e n e pr o d u ct s i n t hr e e k e y
+ar e a s s u c h a s Bi ol o gi c al Pr o c e s s ( B P) , M ol e c ul ar F u n cti o n ( M F) , a n d C ell ul ar C o m p o-
+n e nt ( C C) . T h e B P d e s cri b e s o ur k n o wl e d g e of t h e bi ol o gi c al d o m ai n i n t h e l ar g er pr o-
+c e s s e s a c c o m pli s h e d b y m ulti pl e m ol e c ul ar a cti viti e s. T h e C C g o e s b e y o n d m ol e c ul ar
+a cti viti e s a n d c o n si d er s o nl y l o c ati o n, r el ati v e t o c ell ul ar c o m p art m e nt s a n d str u ct ur e s.
+M F d e s cri b e s a cti viti e s t h at o c c ur at t h e m ol e c ul ar l e v el, s u c h a s “ c at al y si s” or “tr a n s-
+p ort”.
+G e n er al K n o wl e d g e. D B p e di a [ 2 4] i s a cr o w d- s o ur c e d i niti ati v e ai m e d at e xtr a cti n g
+str u ct ur e d d at a fr o m c o nt e nt g e n er at e d a cr o s s v ari o u s Wi ki m e di a pr oj e ct s. T hi s d at a
+f or m s a n o p e n k n o wl e d g e gr a p h ( O K G) t h at i s a c c e s si bl e t o e v er y o n e o n t h e W e b. T h e
+D B p e di a O nt ol o g y ( D B O), a s a cr o s s- d o m ai n o nt ol o g y, e m er g e d fr o m a c o m m u nit y ef-
+f ort t o u s e Wi ki p e di a’ s m o st c o m m o nl y u s e d i nf o b o x e s t o cr e at e a f or m al v o c a b ul ar y f or
+c at e g ori zi n g k n o wl e d g e f or m or e pr e ci s e q u er yi n g a n d d at a li n ki n g. Wi ki p e di a arti cl e s,
+t y pi c all y r e pr e s e nti n g s p e ci ﬁ c e ntiti e s ( e. g., p e o pl e, pl a c e s, or e v e nt s), c a n b e cl a s si-
+ﬁ e d u n d er o n e or m or e of t h e s e cl a s s e s. A s a r e s ult of t hi s, t h e o nt ol o g y i s str u ct ur e d
+a s a hi er ar c h y of cl a s s e s a n d pr o p erti e s t h at d e s cri b e c o n c e pt s a n d t h eir r el ati o n s hi p s,
+r e s ulti n g i n 7 6 8 cl a s s e s, w hi c h f or m a s u b s u m pti o n hi er ar c h y wit h ar o u n d 3, 0 0 0 pr o p-
+erti e s a n d c o nt ai n a p pr o xi m at el y 4 milli o n i n st a n c e s.
+F o o d. F o o d O nt ol o g y ( F o o d O n) [ 2 5] i s a c o n s orti u m- dri v e n pr oj e ct t o b uil d a c o m pr e-
+h e n si v e a n d e a sil y a c c e s si bl e gl o b al f ar m-t o-f or k o nt ol o g y a b o ut f o o d, t h at a c c ur at el y
+a n d c o n si st e ntl y d e s cri b e s f o o d s c o m m o nl y k n o w n i n c ult ur e s fr o m ar o u n d t h e w orl d.
+T h e F o o d O n a s a f o o d pr o d u ct t er mi n ol o g y s u p p ort s f o o d s e c urit y, s af et y, q u alit y, pr o-
+d u cti o n, di stri b uti o n, a n d c o n s u m er h e alt h a n d c o n v e ni e n c e.
+W e b C o nt e nt T y p e s. S c h e m a. or g [ 2 6] v o c a b ul ar y c o v er s e ntiti e s, r el ati o n s hi p s b e-
+t w e e n e ntiti e s, a n d a cti o n s, a n d c a n e a sil y b e e xt e n d e d t hr o u g h a w ell- d o c u m e nt e d
+e xt e n si o n m o d el. T h e s c h e m a s ar e a s et of ’t y p e s’, e a c h a s s o ci at e d wit h a s et of
+pr o p erti e s a n d t h e t y p e s ar e arr a n g e d i n a hi er ar c h y. O v er all, s c h e m a. or g c o n si st s
+of 8 0 6 Ty p e s, 1 4 7 6 pr o p erti e s 1 4 d at at y p e s, 9 0 e n u m er ati o n s, a n d 4 8 0 e n u m er ati o n
+m e m b er s.
+
+3 O nt ol o g y C ur ati o n f or L L M s 4 O L T a s k s
+W e c ur at e d 6 o nt ol o gi e s c o m pri si n g a t ot al of 1 0 d at a s et s f or T a s k A, 6 o nt ol o gi e s f or
+T a s k B, a n d 3 o nt ol o gi e s f or T a s k C. T h e c ur at e d o nt ol o gi e s a n d pr o c e s s e s ar e r e p-
+r e s e nt e d i n Fi g ur e 1, w hi c h i n v ol v e s t hr e e st e p s, e a c h c orr e s p o n di n g t o t h e s p e ci ﬁ e d
+t a s k s. I n t hi s s e cti o n, w e pr o vi d e a bri ef o v er vi e w of t h e c ur ati o n pr o c e s s.
+
+3. 1     W or d N et O nt ol o g y – T a s k A
+
+W e utili z e d t h e W N 1 8 R R d at a s et, a s i ntr o d u c e d i n [ 2 7]. F or e v al u ati o n, w e m er g e d t h e
+t e st a n d v ali d ati o n s et s, w hil e t h e ori gi n al tr ai ni n g s et w a s r et ai n e d f or m o d el tr ai ni n g.
+A d diti o n all y, w e f o c u s e d o n f o ur s p e ci ﬁ c l e xi c al t er m t y p e s T : n o u n s, v er b s, a d v er b s,
+a n d a dj e cti v e s. W e al s o i n c or p or at e d t h e s e nt e n c e s a v ail a bl e i n t h e W or d N et d at a s et
+a s a d diti o n al c o nt e xt f or t h e t er m s.
+
+
+
+
+                                                                                     20
+
+
+===== PDF PAGE 5 =====
+  B a b a ei Gi gl o u et al.            | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                          C h all e n g e at t h e 2 3r d I S W C”
+
+
+
+
+                             O nt ol o gi e s a n d D o m ai n s                                                          C oll e cti o n Pr o c e s s
+
+                D o m ai n s                    O nt ol o gi e s
+
+
+           L e xi c o s e m a nti c s
+                                                  W or d N et
+             G e o gr a p hi c al
+                L o c ati o n s                 Geo Na mes
+                                                                                                                                                                         Ta s k A
+                                                     N CI
+                                                                         U ML S
+               Bi o m e di c al
+                                                 M E D CI N
+
+                                           S N O M E D CT_ U S
+
+                                          Bi ol o gi c al Pr o c e s s
+                                                                         G O                                                                                             Ta s k B
+                Bi ol o gi c al
+                                         C ell ul ar C o m p o n e nt
+
+                                          M ol e c ul ar F u n cti o n
+                 G e n er al
+               K n o wl e d g e                      DB O                                                                                                                Ta s k C
+                    Food
+                                                  Food On
+             W e b C o nt e nt
+                  Ty p e s                     S c h e m a. or g
+
+
+
+
+                                                                Fi g ur e 1. L L M s 4 O L 2 0 2 4 D at a s et s C ur ati o n.
+
+
+3. 2 G e o N a m e s O nt ol o g y – T a s k s A a n d B
+
+T h e G e o N a m e s o nt ol o g y e n c o m p a s s e s all g e o gr a p hi c al l o c ati o n s w orl d wi d e. T o n ar-
+r o w o ur f o c u s, w e ﬁr st r e stri ct e d t h e d at a s et t o l o c ati o n s r e pr e s e nt e d i n E n gli s h l ett er s,
+r e s ulti n g i n a s et of l e xi c al t er m s L . G e o N a m e s u s e s F e at ur e- C o d e [ 2 8] t o c at e g ori z e
+a n d cl a s sif y v ari o u s g e o gr a p hi c e ntiti e s. E a c h l o c ati o n i s a s s o ci at e d wit h a F e at ur e-
+C o d e , w hi c h d e n ot e s a t y p e of g e o gr a p hi c al l o c ati o n ( e. g. ”r o a d”, or ” p o p ul at e d pl a c e”
+l o c ati o n s). W e m a p p e d t h e s e F e at ur e- C o d e ’ s t o t h eir c orr e s p o n di n g n a m e s t o cr e at e
+a s et T , i d e ntif yi n g a t ot al of 6 8 0 di sti n ct t y p e s wit hi n G e o N a m e s. F or i n st a n c e, t h e
+t er m ” El k s C o u ntr y Cl u b” wit h t h e f e at ur e- c o d e ” S. R S R T” i s m a p p e d t o it s t y p e n a m e,
+”r e s ort”. T h e r e s ulti n g (L, T ) p air s w er e t h e n u s e d t o cr e at e a tr ai n-t e st s plit b a s e d o n
+T , wit h a p pr o xi m at el y 1 0 % of t h e d at a all o c at e d f or t e sti n g a n d t h e r e m ai ni n g u s e d f or
+tr ai ni n g at T a s k A.
+F or T a s k B, w e utili z e d G e o N a m e s F e at ur e C o d e s , w hi c h ar e hi er ar c hi c all y str u ct ur e d
+t o r e ﬂ e ct v ar yi n g l e v el s of gr a n ul arit y i n g e o gr a p hi c f e at ur e s. T h e s e c o d e s ar e di vi d e d
+i nt o ni n e pri m ar y c at e g ori e s: ” A d mi ni str ati v e r e gi o n s,” ” H y dr o gr a p hi c f e at ur e s,” ” Ar e a,”
+” P o p ul at e d pl a c e s,” ” R o a d s a n d r ailr o a d s,” ” S p ot f e at ur e s,” ” T err ai n,” ” U n d er s e a f e a-
+t ur e s,” a n d ” V e g et ati o n.” T h e s e c at e g ori e s o p er at e at a hi g h er l e v el wit hi n a t w o-l e v el
+t a x o n o m y, r e s ulti n g i n 6 8 0 p air s wit h a n ”i s- a” r el ati o n s hi p. W e t h e n s plit t h e d at a i nt o
+a 7 0- 3 0 r ati o t o cr e at e tr ai ni n g a n d t e st s et s.
+
+3. 3 U M L S O nt ol o g y – T a s k s A, B, a n d C
+
+F or g e n er ati n g U M L S s u b- o nt ol o gi c al s o ur c e s i. e. N CI, M E D CI N, a n d S N O M E D C T U S,
+w e c o n si d er e d u m l s - 2 0 2 2 A B - m e t a t h e s a u r u s - f u l l v er si o n of t h e U M L S a n d pr o c e s s e d
+t h e M R C O N S O ﬁl e s f or o bt ai ni n g t h e t er m s t h at ar e writt e n i n E n gli s h. N e xt, w e u s e d t h e
+f oll o wi n g st e p s f or e xtr a cti o n of l e xi c al t er m s L , t h eir r e s p e cti v e t y p e s T , a n d r el ati o n s:
+   1. Filt eri n g L e xi c al T er m s : F or e a c h s o ur c e ( N CI, M E D CI N, S N O M E D C T U S), t h e
+      d at a s et i s ﬁr st ﬁlt er e d t o e xtr a ct r el ati o n s hi p s w h er e b ot h e ntiti e s i n a r el ati o n s hi p
+      b el o n g t o t h e s p e ci ﬁ c s o ur c e b ei n g c o n si d er e d. T hi s ﬁlt eri n g i s d o n e b y m at c hi n g
+
+
+                                                                                              21
+
+
+===== PDF PAGE 6 =====
+  B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                 C h all e n g e at t h e 2 3r d I S W C”
+
+
+
+      t h e s o ur c e ( N CI, M E D CI N, S N O M E D C T U S), e n s uri n g t h at o nl y tri pl et s fr o m t h at
+      s o ur c e ar e u s e d. T h e C o n c e pt U ni q u e I d e nti ﬁ er s ( C UI s) of t h e s e t er m s ar e t h e n
+      st or e d i n a li st, r e pr e s e nti n g all t h e u ni q u e C UI s fr o m t h e s o ur c e.
+   2. R etri e vi n g S e m a nti c I nf or m ati o n : Aft er i d e ntif yi n g t h e u ni q u e C UI s f or e a c h s o ur c e,
+      t h e n e xt st e p i s t o g at h er s e m a nti c i nf or m ati o n a b o ut t h e s e C UI s. F or e a c h C UI,
+      d at a fr o m t h e M R S T Y ( M et at h e s a ur u s S e m a nti c Ty p e s) ﬁl e i s u s e d t o o bt ai n it s
+      Ty p e U ni q u e I d e nti ﬁ er s ( T UI), S e m a nti c Ty p e N u m b er s ( S T N), a n d S e m a nti c Ty p e
+      Stri n g s ( S T Y). T hi s i nf or m ati o n i s c oll e ct e d a n d st or e d i n a di cti o n ar y t h at li n k s
+      e a c h C UI t o it s c orr e s p o n di n g s e m a nti c t y p e s, e n s uri n g t h at e a c h T UI a n d S T N
+      i s c o n si st e ntl y a s s o ci at e d wit h o nl y o n e s e m a nti c t y p e.
+   3. C o n ﬂi ct R e s ol uti o n : D uri n g t h e pr e vi o u s st e p s, a n y c o n ﬂi ct s — w h er e a T UI or
+      S T N mi g ht b e a s s o ci at e d wit h diff er e nt s e m a nti c t y p e s — ar e c h e c k e d a n d r e-
+      p ort e d. O n c e t h e c o n si st e n c y of t h e d at a i s v eri ﬁ e d, t h e ﬁ n al hi er ar c h y f or e a c h
+      s o ur c e ( N CI, M E D CI N, S N O M E D C T U S) i s o bt ai n e d, w hi c h c o nt ai n s m a p pi n g s
+      fr o m T UI s t o t h eir S T N s a n d S T Y s, al o n g wit h a li st of all u ni q u e T UI s a n d S T N s
+      a s s o ci at e d wit h e a c h s o ur c e, r e pr e s e nti n g t h e hi er ar c hi c al str u ct ur e of e ntiti e s
+      wit hi n t h at s p e ci ﬁ c s o ur c e.
+T h u s, s e p ar at e d at a s et s f or N CI, M E D CI N, a n d S N O M E D C T U S ar e cr e at e d, e a c h
+c a pt uri n g t h e u ni q u e s e m a nti c r el ati o n s hi p s a n d e ntit y t y p e s wit hi n t h o s e s o ur c e s. F or
+T a s k A, w e o nl y c o n si d er e d C UI’ s a n d T UI’ s t o f or m t h e t a s k d at a s et. W e s plit t h e
+d at a s et s p er s o ur c e i nt o tr ai ni n g a n d t e sti n g s et s wit h a 7 0- 3 0 r ati o. F or T a s k s B a n d
+C, si n c e b ot h d at a s et s ar e b a s e d o n t h e s a m e s e m a nti c n et w or k, w e l e v er a g e d t hi s
+n et w or k t o e xtr a ct t y p e s al o n g wit h t h eir r el ati o n s hi p s. Ty p e s wit h ’i s- a’ r el ati o n s hi p s
+ar e u s e d f or T a s k B, w hil e n o n-’i s- a’ r el ati o n s hi p s ar e u s e d f or T a s k C. I n b ot h c a s e s,
+t h e d at a s et s ar e s plit u si n g a 7 0- 3 0 r ati o.
+
+3. 4 G e n e O nt ol o g y – T a s k s A, B, a n d C
+
+F or t h e T er m Ty pi n g t a s k, w e n e e d e d t o m a p l e xi c al t er m s ( g e n e pr o d u ct s) t o t h eir
+g e n er ali z e d t y p e s, d eri v e d fr o m t hr e e G e n e O nt ol o g y ( G O) s u b- o nt ol o gi e s: Bi ol o gi c al
+Pr o c e s s ( B P), C ell ul ar C o m p o n e nt ( C C), a n d M ol e c ul ar F u n cti o n ( M F). T o c oll e ct r el-
+e v a nt a n n ot ati o n s, w e u s e d a P yt h o n s cri pt t o q u er y t h e G O L o o k u p S er vi c e ( G O L R)
+vi a t h e f oll o wi n g A PI: h t t p s : / / g o l r - a u x . g e n e o n t o l o g y . i o . T h e q u er y r etri e v e d a n-
+n ot ati o n s c o nt ai ni n g i nf or m ati o n s u c h a s g e n e pr o d u ct n a m e s ( bi o e ntit y n a m e), l a b el s
+( a n n ot ati o n cl a s s l a b el), a n d t h e a s s o ci at e d o nt ol o g y a s p e ct. T h e d at a s et w a s t h e n
+gr o u p e d b y t h e a s p e ct ﬁ el d, w hi c h c orr e s p o n d s t o t h e s u b- o nt ol o g y ( B P, C C, or M F),
+a n d d u pli c at e s w er e r e m o v e d. Aft er g at h eri n g a n d pr e pr o c e s si n g t h e d at a, w e cr e at e d
+s e p ar at e d at a s et s f or e a c h s u b- o nt ol o g y, or g a ni zi n g g e n e pr o d u ct s ( L ) a n d t h eir c or-
+r e s p o n di n g t y p e s (T ). T o e n s ur e t h e q u alit y of t h e d at a s et, w e a p pli e d a fr e q u e n c y
+t hr e s h ol d of 2 0 0, ﬁlt eri n g o ut l o w-fr e q u e n c y t er m s, t h u s r e d u ci n g n oi s e. S u b s e q u e ntl y,
+t h e d at a s et w a s di vi d e d i nt o tr ai ni n g a n d t e st s et s, wit h a 7 0- 3 0 s plit t o e n s ur e a r o b u st
+e v al u ati o n of m o d el s p erf or mi n g t h e T er m Ty pi n g t a s k. T h e r e s ulti n g d at a s et s w er e
+s uf ﬁ ci e ntl y l ar g e, wit h u ni q u e t er m c o u nt s f or e a c h s u b- o nt ol o g y, r a n gi n g fr o m 3 2 3 t o
+7 9 2.
+F or T a s k B, t h e o bj e cti v e w a s t o i d e ntif y hi er ar c hi c al r el ati o n s hi p s (i. e., ”i s- a” r el ati o n s)
+b et w e e n t h e g e n er ali z e d t y p e s fr o m T a s k A. W e u s e d t h e G O hi er ar c hi c al str u ct ur e,
+w hi c h d e ﬁ n e s r el ati o n s hi p s a s e d g e s b et w e e n n o d e s r e pr e s e nti n g diff er e nt o nt ol o g y
+t er m t y p e s. U si n g t h e G O o nt ol o g y ﬁl e, w e e xtr a ct e d n o d e s a n d e d g e s fr o m t h e o n-
+t ol o g y gr a p h s a n d t h e n ﬁlt er e d t h e e d g e s t o r et ai n o nl y t h o s e t h at r e pr e s e nt ”i s- a”
+r el ati o n s. W e t h e n g e n er at e d p air s of t er m t y p e s r e pr e s e nti n g t h e c hil d- p ar e nt r el ati o n-
+
+
+                                                                                     22
+
+
+===== PDF PAGE 7 =====
+   B a b a ei Gi gl o u et al.     | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                    C h all e n g e at t h e 2 3r d I S W C”
+
+
+SELECT DISTINCT ?class ?label WHERE {
+    ?class a owl:Class;
+           rdfs:label ?label .
+    FILTER (lang(?label) = 'en')
+}
+
+                                 Fi g ur e 2. D B O S P A R Q L q u er y f or r etri e vi n g l e af cl a s s e s f or t a s k A.
+
+SELECT DISTINCT ?term ?label WHERE {
+    ?term a <leaf_class> ;
+    rdfs:label ?label .
+    FILTER (lang(?label) = 'en')
+}
+LIMIT 100
+
+Fi g ur e 3. D B O S P A R Q L q u er y f or r etri e vi n g 1 0 0 t er m s f or gi v e n l e af cl a s s. T h e l e a f c l a s s i s a pl a c e
+             h ol d er f or r e pl a ci n g it wit h l e af cl a s s a n d q u er yi n g f or t er m s.
+
+
+s hi p s ( s u b, o bj). T h e s e p air s w er e s plit i nt o tr ai ni n g a n d t e st s et s b a s e d o n t h e u ni q u e
+t er m t y p e s i n v ol v e d, e n s uri n g t h at n o t er m a p p e ar e d i n b ot h s et s.
+Fi n all y, f or T a s k C, w e c ur at e d a d at a s et of s e m a nti c r el ati o n s hi p s b et w e e n t er m t y p e s
+di s c o v er e d i n T a s k A. T h e r el ati o n s ar e e n c o d e d i n t h e G O u si n g pr o p erti e s s u c h a s
+r e g ul at e s, p art of, a n d o c c ur s i n. W e p ar s e d t h e o nt ol o g y t o i d e ntif y e d g e s r e pr e s e nti n g
+t h e s e r el ati o n s, u si n g a pr e d e ﬁ n e d s et of r el ati o n m a p pi n g s. E d g e s t h at m at c h e d t h e
+s p e ci ﬁ e d r el ati o n t y p e s w er e c at e g ori z e d i nt o tr ai ni n g a n d t e st s et s. Si mil ar t o T a s k
+B, w e e n s ur e d t h at t h er e w a s n o o v erl a p i n t h e r el ati o n s b et w e e n t h e tr ai ni n g a n d t e st
+s et s. T h e ﬁ n al d at a s et f or T a s k C c o nt ai n e d 1 0, 5 3 8 tr ai ni n g tri pl et s a n d 7, 2 3 4 t e st
+tri pl et s, s p a n ni n g m ulti pl e n o n-t a x o n o mi c r el ati o n s.
+
+3. 5 D B P e di a O nt ol o g y – T a s k s A a n d B
+
+W e h a v e u s e d D B P e di a O nt ol o g y ( D B O) f or b ot h T a s k A a n d T a s k B, l e v er a gi n g t h e
+str u ct ur e a n d d at a pr o vi d e d b y D B p e di a’ s S P A R Q L e n d p oi nt. T h e d at a s et s fr o m t hi s
+o nt ol o g y h a s b e e n utili z e d i n a z er o- s h ot s etti n g, m e a ni n g it w a s u s e d e x cl u si v el y f or
+t e sti n g wit h o ut a n y pri or tr ai ni n g. T h e m o d el s w er e e v al u at e d dir e ctl y o n t h e s e u n s e e n
+t a s k s, wit h o ut e x p o s ur e t o a n y d at a fr o m t h e s p e ci ﬁ c d o m ai n d uri n g tr ai ni n g, e m p h a-
+si zi n g t h eir g e n er ali z ati o n c a p a biliti e s f or T a s k A a n d T a s k B.
+F or T a s k A, w e q u eri e d D B p e di a f or l e af cl a s s e s a n d t h eir a s s o ci at e d t er m s i n E n gli s h.
+L e af cl a s s e s w er e i d e nti ﬁ e d u si n g t h e S P A R Q L q u er y a s d e s cri b e d i n Fi g ur e 2, w hi c h
+r etri e v e s all cl a s s e s wit h E n gli s h l a b el s. F or e a c h l e af cl a s s, w e q u eri e d u p t o 1 0 0
+t er m s t h at b el o n g t o t h e cl a s s, a g ai n ﬁlt eri n g f or E n gli s h t er m s u si n g t h e S P A R Q L
+q u er y pr o vi d e d i n Fi g ur e 3. T h e r e s ult s of t h e s e q u eri e s w er e a g gr e g at e d i nt o t er m s
+a n d t h eir r e s p e cti v e t y p e s, f or mi n g t h e d at a s et f or T a s k A.
+F or T a s k B, w e q u eri e d D B p e di a’ s s u b cl a s s (’i s- a’) hi er ar c h y t o g e n er at e p ar e nt- c hil d
+r el ati o n s hi p s b et w e e n t a x o n o mi c t y p e s. T h e S P A R Q L q u er y, a s d e s cri b e d i n Fi g ur e 4,
+r etri e v e d s u b cl a s s r el ati o n s hi p s w h er e b ot h p ar e nt a n d c hil d h a v e E n gli s h l a b el s. T h e
+r e s ulti n g d at a s et c o nt ai n s hi er ar c hi c al t y p e p air s of ”i s- a” r el ati o n s, wit h t h e t a x o n o mi c
+t y p e s st or e d a s li st s. T hi s d at a s et s er v e s a s t h e i n p ut f or o ur T a x o n o m y Di s c o v er y t a s k.
+
+
+
+
+                                                                                        23
+
+
+===== PDF PAGE 8 =====
+  B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                 C h all e n g e at t h e 2 3r d I S W C”
+
+
+SELECT DISTINCT ?childLabel ?parentLabel WHERE {
+    ?child rdfs:subClassOf ?parent .
+    ?child rdfs:label ?childLabel .
+    ?parent rdfs:label ?parentLabel .
+    ?child a owl:Class .
+    ?parent a owl:Class .
+    FILTER (lang(?childLabel) = "en")
+    FILTER (lang(?parentLabel) = "en")
+}
+
+  Fi g ur e 4. D B O S P A R Q L q u er y f or cr e ati n g ”i s- a” r el ati o n s hi p s b et w e e n t a x o n o mi c t y p e s f or T a s k B.
+
+PREFIX        obo-term: <http://purl.obolibrary.org/obo/>
+SELECT        ?s ?label ?definition FROM <http://purl.obolibrary.org/obo/merged/FOODON> {
+    ?s        a owl:Class .
+    ?s        rdfs:label ?label .
+    ?s        obo-term:IAO\_0000115 ?definition .
+}
+
+               Fi g ur e 5. F o o d O n S P A R Q L q u er y f or e xtr a ct e ntit y l a b el s a n d d e ﬁ niti o n s f or T a s k A.
+
+
+3. 6 F o o d O nt ol o g y - T a s k s A, B, a n d C
+
+F or F o o d o nt ol o g y ( F o o d O n), w e c o n str u ct d at a s et s f or t a s k s A, B, a n d C. All t a s k s ar e
+d e si g n e d t o e v al u at e m o d el s i n a z er o- s h ot s etti n g. F or T a s k A, w e q u eri e d F o o d O n
+t o r etri e v e l e af cl a s s e s (i. e., s p e ci ﬁ c e ntit y t y p e s) a n d a s s o ci at e d t er m s. T h e S P A R Q L
+q u er y a s d e s cri b e d i n Fi g ur e 5 w a s u s e d t o e xtr a ct e ntit y l a b el s a n d d e ﬁ niti o n s, e n-
+s uri n g t h at o nl y cl a s s e s wit h E n gli s h l a b el s w er e i n cl u d e d. T h e o ut p ut fr o m t hi s q u er y
+w a s pr o c e s s e d t o a s si g n t er m s t o o n e of t h e pr e d e ﬁ n e d hi g h-l e v el c at e g ori e s s u c h a s
+” F o o d”, ” E n vir o n m e nt”, ” A gr o n o m y”, et c. T hi s r e s ult e d i n a d at a s et w h er e e a c h t er m i s
+l a b el e d wit h it s c orr e s p o n di n g cl a s s t y p e ( e. g., ” F o o d”, ” Pl a nt”, et c.).
+F or T a s k B o n t a x o n o m y di s c o v er y, w e e xtr a ct e d hi er ar c hi c al r el ati o n s hi p s b et w e e n
+cl a s s e s b y r etri e vi n g r df s: s u b Cl a s s Of r el ati o n s hi p s fr o m t h e F o o d O n. W e u s e d t h e
+S P A R Q L q u er y ( pr e s e nt e d i n Fi g ur e 6) t o o bt ai n p ar e nt- c hil d p air s of cl a s s e s i n E n gli s h,
+c a pt uri n g t h e t a x o n o mi c str u ct ur e. T hi s r e s ult e d i n a t a x o n o m y d at a s et wit h p air s of
+p ar e nt a n d c hil d c o n c e pt s, w hi c h w e u s e d t o e v al u at e h o w w ell m o d el s c a n u n c o v er
+s u b cl a s s r el ati o n s hi p s i n a z er o- s h ot c o nt e xt.
+F or t h e T a s k C, w e f o c u s e d o n e xtr a cti n g o bj e ct pr o p erti e s t h at r e pr e s e nt n o n-t a x o n o mi c
+r el ati o n s b et w e e n e ntiti e s. T h e Fi g ur e 7 S P A R Q L q u er y w a s u s e d t o r etri e v e all o bj e ct
+pr o p erti e s a n d t h eir l a b el s fr o m t h e F O O D O N o nt ol o g y. W e t h e n a p pli e d t h e s e r el a-
+ti o n s t o e xtr a ct tri pl e s of t h e f or m ( h e a d e ntit y, r el ati o n, t ail e ntit y), w h er e e a c h tri pl e
+r e pr e s e nt s a n o n-t a x o n o mi c r el ati o n s hi p b et w e e n t w o e ntiti e s. T hi s yi el d e d a d at a s et
+wit h v ari o u s r el ati o n t y p e s a n d c orr e s p o n di n g tri pl et s, all o wi n g u s t o e v al u at e m o d el s’
+p erf or m a n c e i n pr e di cti n g n o n-t a x o n o mi c r el ati o n s hi p s.
+
+3. 7 S c h e m a. or g – T a s k B
+
+W e al s o l e v er a g e d t h e S c h e m a. or g o nt ol o g y t o g e n er at e a d at a s et f or T a s k B, wit h a
+pri m ar y g o al of e xtr a cti n g hi er ar c hi c al r el ati o n s b et w e e n c o n c e pt s, e n a bli n g t h e e v al-
+u ati o n of h o w w ell m o d el s c a n i d e ntif y ’i s- a’ r el ati o n s hi p s wit hi n a t a x o n o m y. W e e x-
+
+
+                                                                                     24
+
+
+===== PDF PAGE 9 =====
+   B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                  C h all e n g e at t h e 2 3r d I S W C”
+
+
+PREFIX obo-term: <http://purl.obolibrary.org/obo/>
+SELECT DISTINCT ?childLabel ?parentLabel
+FROM <http://purl.obolibrary.org/obo/merged/FOODON> WHERE {
+    ?child rdfs:subClassOf ?parent .
+    ?child rdfs:label ?childLabel .
+    ?parent rdfs:label ?parentLabel .
+    ?child a owl:Class .
+    ?parent a owl:Class .
+    FILTER (lang(?childLabel) = "en")
+    FILTER (lang(?parentLabel) = "en")
+}
+
+       Fi g ur e 6. F o o d O n S P A R Q L q u er y t o o bt ai n p ar e nt- c hil d p air s of cl a s s e s i n E n gli s h f or T a s k B.
+
+FROM <http://purl.obolibrary.org/obo/merged/FOODON> WHERE {
+    ?property a owl:ObjectProperty .
+    ?property rdfs:label ?propertyLabel .
+    FILTER (lang(?propertyLabel) = "en") .
+}
+ORDER BY ?propertyLabel
+
+Fi g ur e 7. F o o d O n S P A R Q L q u er y t o e xtr a ct o bj e ct pr o p erti e s t h at r e pr e s e nt n o n- hi er ar c hi c al r el ati o n s
+             i n E n gli s h f or T a s k C.
+
+
+tr a ct e d s u b cl a s s r el ati o n s hi p s fr o m t h e S c h e m a. or g t a x o n o m y b y pr o c e s si n g t h e o n-
+t ol o g y. Fir st, w e ﬁlt er o ut irr el e v a nt c o n c e pt s b y e x cl u di n g r o ot c o n c e pt T h i n g or ot h er
+irr el e v a nt R D F cl a s s e s li k e r d f - s c h e m a # C l a s s . N e xt, w e pr e p ar e p ar e nt- c hil d p air s b y
+u si n g s u b T y p e O f pr o p ert y, w h er e if a c hil d h a d m ulti pl e p ar e nt s, w e s plit t h e s e i nt o s e p-
+ar at e p ar e nt- c hil d p air s. T hi s g a v e u s a li st of hi er ar c hi c al r el ati o n s hi p s, w h er e e a c h
+p air r e pr e s e nt e d a c hil d- p ar e nt r el ati o n s hi p. Fi n all y, t o si m ul at e a r e ali sti c f e w- s h ot
+s c e n ari o, w e s plit t h e t y p e s i nt o tr ai ni n g a n d t e sti n g s et s. C o n c e pt s t h at a p p e ar e d
+i n t h e s u b Ty p e Of pr o p ert y w er e di vi d e d i nt o t w o s et s u si n g a n 8 0/ 2 0 tr ai n-t e st s plit.
+P ar e nt- c hil d p air s w er e t h e n a s si g n e d t o t h e tr ai ni n g or t e sti n g s et b a s e d o n t h e p ar e nt
+c o n c e pt s.
+
+4 D at a s et St ati sti c s
+T h e L L M s 4 O L 2 0 2 4 d at a s et i s d e si g n e d t o s u p p ort t h e b e n c h m ar ki n g of o nt ol o g y
+l e ar ni n g m o d el s, wit h a t ot al of 1 9 d at a s et s di stri b ut e d a cr o s s t hr e e c or e t a s k s: T a s k
+A - T er m Ty pi n g, T a s k B - T a x o n o m y Di s c o v er y, a n d T a s k C - N o n- T a x o n o mi c R el a-
+ti o n E xtr a cti o n. T h e l ar g e st pr o p orti o n of d at a i s all o c at e d t o t h e T er m Ty pi n g t a s k,
+gi v e n it s f u n d a m e nt al r ol e i n a s s o ci ati n g t er m s wit h pr e d e ﬁ n e d t y p e s, w hi c h l a y s t h e
+gr o u n d w or k f or d o w n str e a m O L pr o c e s s e s. M or e o v er, T a x o n o m y Di s c o v er y a n d N o n-
+T a x o n o mi c R el ati o n E xtr a cti o n t a s k s ar e m or e s p e ci ali z e d, f o c u si n g o n hi er ar c hi c al a n d
+n o n- hi er ar c hi c al r el ati o n s hi p s, r e s p e cti v el y. T hi s b al a n c e d y et t a s k- s p e ci ﬁ c di stri b uti o n
+e n s ur e s t h at m o d el s ar e t e st e d a cr o s s di v er s e, r e al- w orl d l e ar ni n g s c e n ari o s.
+T a s k A - T er m T y pi n g. T a s k A d at a s et s a s d e s cri b e d i n T a bl e 1 c o v er s b ot h f e w-
+s h ot ( F S) a n d z er o- s h ot ( Z S) e v al u ati o n p h a s e s a cr o s s m ulti pl e d o m ai n s. T h e G e o N-
+a m e s ( A. 2 F S) i s t h e l ar g e st d at a s et, wit h o v er 8 milli o n tr ai ni n g s a m pl e s a n d 7 0 2
+t h o u s a n d t e sti n g s a m pl e s, m a ki n g it hi g hl y si g ni ﬁ c a nt f or l ar g e- s c al e g e o gr a p hi c t er m
+
+
+                                                                                      25
+
+
+===== PDF PAGE 10 =====
+   B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                  C h all e n g e at t h e 2 3r d I S W C”
+
+
+T a bl e 1. L L M s 4 O L 2 0 2 4 d at a s et s – T A S K A - T E R M T Y PI N G – d o m ai n s a n d e v al u ati o n p h a s e s. ” F S”
+            r ef er s t o t h e F e w- S h ot t e sti n g p h a s e d at a s et c o nt ai ni n g tr ai n a n d t e st s et s, B ut ” Z S” r ef er s t o
+            t h e Z er o- s h ot t e sti n g p h a s e e v al u ati o n d at a s et c o nt ai ni n g o nl y t e st s et s.
+
+  D at a s et                                                             D o m ai n                                              Tr ai n               T e st          Ty p e s
+  A. 1 ( F S) - W or d N et                                               l e xi c o s e m a nti c s                            4 0, 5 5 9             9, 4 7 0                4
+  A. 2 ( F S) - G e o N a m e s                                           g e o gr a p hi c al l o c ati o n s             8, 0 7 8, 8 6 5         7 0 2, 5 1 0            680
+  A. 3 ( F S) - U M L S - N CI                                                                                                  9 6, 1 7 7           2 4, 0 4 5            125
+  A. 3 ( F S) - U M L S - M E D CI N                                      bi o m e di c al                                    2 7 7, 0 2 8           6 9, 2 5 8              87
+  A. 3 ( F S) - U M L S - S N O M E D C T U S                                                                                 2 7 8, 3 7 4           6 9, 5 9 4            125
+  A. 4 ( F S) - G O - Bi ol o gi c al Pr o c e s s                                                                            1 9 5, 7 7 5         1 0 8, 3 0 0            792
+  A. 4 ( F S) - G O - C ell ul ar C o m p o n e nt                        bi ol o gi c al                                     2 2 8, 4 6 0         1 2 6, 4 8 5            323
+  A. 4 ( F S) - G O - M ol e c ul ar F u n cti o n                                                                            1 9 6, 0 7 4         1 0 7, 4 3 2            401
+  A. 5 ( Z S) - D B O                                                     g e n er al k n o wl e d g e                                    -          4 4, 7 2 4            484
+  A. 6 ( Z S) - F o o d O n                                               food                                                            -          1 8, 0 8 7              12
+
+T a bl e 2. L L M s 4 O L 2 0 2 4 d at a s et s – T A S K B - T A X O N O M Y D I S C O V E R Y – d o m ai n s a n d e v al u ati o n p h a s e s.
+            ” F S” r ef er s t o t h e F e w- S h ot t e sti n g p h a s e d at a s et c o nt ai ni n g tr ai n a n d t e st s et s, B ut ” Z S” r ef er s
+            t o t h e Z er o- s h ot t e sti n g p h a s e e v al u ati o n d at a s et c o nt ai ni n g o nl y t e st s et s. ” Si z e” r ef er s t o
+            gr o u n d tr ut h ”i s- a” p air s.
+
+                                                                                                                Tr ai n                              T e st
+       D at a s et                                    D o m ai n
+                                                                                                           Si z e      Ty p e s                Si z e       Ty p e s
+       B. 1 ( F S) - G e o N a m e s                  g e o gr a p hi c al l o c ati o n s                  476            477                  204             212
+       B. 2 ( F S) - S c h e m a. or g                w e b c o nt e nt t y p e s                        1, 0 7 0       2, 0 6 2                364             728
+       B. 3 ( F S) - U M L S                          bi o m e di c al                                         74            76                    45             51
+       B. 4 ( F S) - G O                              bi ol o gi c al                                  3 3, 7 0 3 2 5, 3 7 2                 5, 7 5 3        6, 6 2 1
+       B. 5 ( Z S) - D B O                            g e n er al k n o wl e d g e                                -             -               742             762
+       B. 6 ( Z S) - F o o d O n                      food                                                        -             -          3 0, 2 4 0 2 5, 6 3 1
+
+
+t y pi n g. M or e o v er, U M L S ( A. 3 F S) pr o vi d e s d et ail e d bi o m e di c al d at a a cr o s s t hr e e s u b-
+o nt ol o gi c al s o ur c e s s u c h a s N CI, M E D CI N, a n d S N O M E D C T U S, e a c h wit h a l ar g e
+n u m b er of t y p e s cr u ci al f or s p e ci ali z e d m e di c al t er m c at e g ori z ati o n. T h e G O ( A. 4 F S)
+d at a s et, p arti c ul arl y t h e ” Bi ol o gi c al Pr o c e s s ( B P)” s u b s et, off er s t er m s a n d t y p e s wit h
+t h e hi g h e st v ari et y of t y p e s u p t o 7 9 2. D B O ( A. 5 Z S) a n d F o o d O n ( A. 6 Z S) ar e i m p or-
+t a nt z er o- s h ot d at a s et s, t o st u d y t h e g e n er ali z ati o n of ﬁ n e-t u n e d m o d el s.
+T a s k B - T a x o n o m y Di s c o v er y. T a s k B d at a s et st ati sti c s ar e c o v er e d i n T a bl e 2,
+s h o w c a si n g 6 d at a s et s fr o m diff er e nt d o m ai n s. T h e G e o N a m e s ( B. 1 F S), S c h e m a. or g
+( B. 2 F S), a n d U M L S ( B. 3 - F S) ar e r el ati v el y s m all i n t er m s of tr ai ni n g e x a m pl e s b ut
+r e pr e s e nt u ni q u e d o m ai n s ( g e o gr a p hi c al l o c ati o n s, w e b c o nt e nt, a n d bi o m e di c al). Si m-
+il arl y, a z er o- s h ot d at a s et D B O ( B. 5 F S) h a s s m all e x a m pl e s f or t e sti n g w hi c h pl a y s a
+r e al- w orl d s c e n ari o t o st u d y t h e g e n er ali z ati o n of m o d el s, w h e n t h e y ar e ﬁ n e-t u n e d.
+M or e o v er, G O ( B. 4 F S) st a n d s o ut wit h o v er 3 3, 7 0 3 tr ai ni n g s a m pl e s a n d t h e hi g h e st
+v ari et y of t y p e s 2 5, 3 7 2, m a ki n g it k e y f or bi ol o gi c al t a x o n o m y di s c o v er y. A n d F o o d O n
+( B. 6 Z S) i s si g ni ﬁ c a ntl y l ar g e wit h 3 0, 2 4 0 t e st s a m pl e s a n d 2 5, 6 3 1 t y p e s, f o c u si n g o n
+t h e e v al u ati o n of t h e g e n er ali z ati o n of m o d el s i n ﬁ n di n g t a x o n o mi e s i n t h e f o o d d o m ai n.
+T a s k C - N o n- T a x o n o mi c R el ati o n E xtr a cti o n. T a s k C c o n si st s of 3 d at a s et s, a s
+s h o w n i n T a bl e 3, t h e d at a s et s f or t hi s t a s k ar e f e w i n c o m p ari s o n t o t a s k A a n d B
+d at a s et s. T h e U M L S ( C. 1 F S), d e s pit e it s m o d er at e si z e, h ol d s si g ni ﬁ c a n c e i n bi o m e d-
+i c al r el ati o n e xtr a cti o n, f o c u si n g o n m ulti pl e r el ati o n t y p e s. G O ( C. 2 F S) s h o w s a n
+i m b al a n c e i n r el ati o n t y p e s, wit h 5 r el ati o n s f or tr ai ni n g b ut o nl y 2 r el ati o n s f or t e sti n g.
+
+
+                                                                                      26
+
+
+===== PDF PAGE 11 =====
+               B a b a ei Gi gl o u et al.                                | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                                                           C h all e n g e at t h e 2 3r d I S W C”
+
+
+T a bl e 3. L L M s 4 O L 2 0 2 4 d at a s et s – T A S K C - N O N - TA X O N O MI C R E L A TI O N E X T R A C TI O N – d o m ai n s a n d
+            e v al u ati o n p h a s e s. ” F S” r ef er s t o t h e F e w- S h ot t e sti n g p h a s e d at a s et c o nt ai ni n g tr ai n a n d t e st
+            s et s, B ut ” Z S” r ef er s t o t h e Z er o- s h ot t e sti n g p h a s e e v al u ati o n d at a s et c o nt ai ni n g o nl y t e st s et s.
+            ” Si z e” r ef er s t o gr o u n d tr ut h (h, r, t ) tri pl et s.
+
+                                                                                                                                                                              Tr ai n                                                                                              T e st
+        D at a s et                                                                       D o m ai n
+                                                                                                                                        Si z e                             Ty p e s                         R el ati o n s                         Si z e                     T y p e s R el ati o n s
+        C. 1 ( F S) - U M L S                                                             bi o m e di c al                            3, 0 3 0                                 121                                      33                       2, 6 1 1                         111               15
+        C. 2 ( F S) - G O                                                                 bi ol o gi c al                           1 0, 5 3 8                            1 0, 9 0 1                                      5                      7, 2 3 4                    1 4, 0 6 5               2
+        C. 3 ( Z S) - F o o d O n                                                         food                                                 -                                    -                                      -                     7, 0 8 6                      7, 2 9 8             26
+
+                                                            T a s k A - T e r m T y pi n g ( T y p e s Di st ri b uti o n)                                  T a s k B - T a x o n o m y Di s c o v e r y ( Tr ai n v s T e st T y p e s)                     T a s k C - N o n- T a x o n o mi c R E ( Tr ai n v s T e st T y p e s)
+                                                                                                                                                                                                                                                                                                                                  Tr ai n
+                                        Food On                                                                                                                                                                                                                                                                                   T e st
+                                                                                                                                         Food On
+
+                                             DB O                                                                                                                                                                                             Food On
+
+
+                G O- M ol e c ul a r F u n cti o n                                                                                            DB O
+
+
+               G O- C ell ul a r C o m p o n e nt
+
+                                                                                                                                                 G O
+                  G O- Bi ol o gi c al Pr o c e s s
+
+ D at a s et
+                                                                                                                                                                                                                                                   G O
+                  U M L S- S N O M E D C T _ U S
+                                                                                                                                             U ML S
+
+                             U M L S- M E D CI N
+
+
+                                    U M L S- N CI                                                                                  S c h e m a. o r g
+
+
+                                   G e o N a m es                                                                                                                                                                                               U ML S
+
+                                                                                                                                    G e o N a m es
+                                      W o r d N et                                                                                                                                                                                  Tr ai n
+                                                                                                                                                                                                                                    T e st
+
+                                                      0   100      200       300      400         500      600        700    800                        0           5000           10000          15000           20000           25000                  0     2000       4000        6000        8000         10000   12000      14000
+                                                                               N u m b e r of T y p e s                                                                              N u m b e r of T y p e s                                                                         N u m b e r of T y p e s
+
+
+
+
+                                                                  Fi g ur e 8. L L M s 4 O L d at a s et s t y p e di stri b uti o n s i n tr ai n a n d t e st s et s.
+
+
+F o o d O n ( C. 3 Z S), wit h 7, 0 8 6 t e st s a m pl e s a n d 2 6 r el ati o n s, hi g hli g ht s t h e c o m pl e xit y
+of n o n-t a x o n o mi c r el ati o n s i n t h e f o o d d o m ai n.
+T y p e s Di stri b uti o n s. T h e Fi g ur e 8 hi g hli g ht s t h e c o m pl e xit y of t h e d at a s et s a cr o s s
+t a s k s. I n T a s k A ( T er m Ty pi n g), t h e G e o N a m e s a n d G O- Bi ol o gi c al Pr o c e s s d at a s et s
+st a n d o ut wit h t h e hi g h e st n u m b er of t y p e s, w hil e W or d N et a n d F o o d O n h a v e r el ati v el y
+f e w er t y p e s, i n di c ati n g si m pl er cl a s si ﬁ c ati o n c h all e n g e s. F or T a s k B ( T a x o n o m y Di s c o v-
+er y), t h e S c h e m a. or g a n d G O d at a s et s s h o w a l ar g e n u m b er of t y p e s i n b ot h tr ai n a n d
+t e st p h a s e s, s u g g e sti n g t h eir c o m pl e xit y, w hil e F o o d O n f e at ur e s a hi g h n u m b er of t e st
+t y p e s d e s pit e h a vi n g n o tr ai ni n g d at a, m a ki n g it a c h all e n gi n g z er o- s h ot t a s k. L a stl y,
+i n T a s k C ( N o n- T a x o n o mi c R el ati o n E xtr a cti o n), t h e G O d at a s et s h o w s a si g ni ﬁ c a nt i n-
+cr e a s e i n t y p e s fr o m tr ai n t o t e st, a n d F o o d O n a g ai n pr e s e nt s a l ar g e n u m b er of t y p e s
+a n d r el ati o n s, r ei nf or ci n g it s dif ﬁ c ult y i n a z er o- s h ot s etti n g.
+
+5 C o n cl u si o n
+I n t hi s p a p er, w e i ntr o d u c e d t h e L L M s 4 O L 2 0 2 4 d at a s et, d e si g n e d t o a d v a n c e t h e
+ﬁ el d of O L b y l e v er a gi n g t h e c a p a biliti e s of L L M s. T h e d at a s et e n c o m p a s s e s t hr e e
+c or e t a s k s — T a s k A - T er m Ty pi n g, T a s k B - T a x o n o m y Di s c o v er y, a n d T a s k C - N o n-
+T a x o n o mi c R el ati o n E xtr a cti o n — a cr o s s s e v e n di sti n ct d o m ai n s, pr o vi di n g a c o m pr e-
+h e n si v e b e n c h m ar k f or e v al u ati n g L L M s i n di v er s e s e m a nti c a n d str u ct ur al c o nt e xt s.
+B y f o c u si n g o n t h e s e t a s k s, w e ai m t o p u s h t h e b o u n d ari e s of O L a n d e n h a n c e t h e
+d e v el o p m e nt of m o d el s c a p a bl e of pr o c e s si n g u n str u ct ur e d t e xt i nt o f or m ali z e d k n o wl-
+e d g e r e pr e s e nt ati o n s. T h e d at a s et al s o r e ﬂ e ct s r e al- w orl d c h all e n g e s s u c h a s cl a s s
+i m b al a n c e a n d d o m ai n- s p e ci ﬁ c v ari ati o n s, w hi c h ar e cr u ci al f or t h e d e v el o p m e nt of r o-
+b u st, g e n er ali z a bl e m o d el s. F urt h er m or e, it s i nt e gr ati o n i nt o t h e L L M s 4 O L C h all e n g e
+
+
+
+                                                                                                                                                                           27
+
+
+===== PDF PAGE 12 =====
+  B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                 C h all e n g e at t h e 2 3r d I S W C”
+
+
+
+at t h e 2 3r d I nt er n ati o n al S e m a nti c W e b C o nf er e n c e (I S W C) 2 0 2 4 ai m s t o f o st er c o m-
+m u nit y e n g a g e m e nt a n d e n c o ur a g e t h e e x pl or ati o n of n o v el a p pr o a c h e s t o O L.
+   M o vi n g f or w ar d, t hi s d at a s et a n d it s b e n c h m ar k s will pr o vi d e r e s e ar c h er s wit h a f o u n-
+d ati o n al r e s o ur c e t o e x pl or e t h e i nt er s e cti o n of L L M s a n d O L, pr o m oti n g f urt h er i n n o-
+v ati o n s i n k n o wl e d g e e xtr a cti o n, cl a s si ﬁ c ati o n, a n d r el ati o n di s c o v er y. W e b eli e v e t h at
+t h e L L M s 4 O L 2 0 2 4 d at a s et will s er v e a s a k e y c at al y st i n t h e o n g oi n g e v ol uti o n of O L
+a n d it s pr a cti c al a p pli c ati o n s a cr o s s a v ari et y of d o m ai n s.
+
+D at a A v ail a bilit y St at e m e nt
+T h e d at a s et s s u p p orti n g t hi s arti cl e ar e p u bli cl y a v ail a bl e a n d c a n b e a c c e s s e d vi a
+Z e n o d o at htt p s:// d oi. or g/ 1 0. 5 2 8 1/ z e n o d o. 1 3 8 5 1 3 7 3 , or t hr o u g h t h e Git H u b r e p o sit or y:
+htt p s:// git h u b. c o m/ H a m e d B a b a ei/ L L M s 4 O L- C h all e n g e-I S W C 2 0 2 4 .
+
+A ut h or s C o ntri b uti o n s
+H a m e d B a b a ei Gi gl o u : C o n c e pt u ali z ati o n, M et h o d ol o g y, S oft w ar e, V ali d ati o n, I n v e s-
+ti g ati o n, R e s o ur c e s, D at a C ur ati o n, Writi n g - Ori gi n al Dr aft, Writi n g – R e vi e w & E diti n g,
+Vi s u ali z ati o n.
+J e n nif er D’ S o u z a : C o n c e pt u ali z ati o n, M et h o d ol o g y, I n v e sti g ati o n, R e s o ur c e s, S u p er-
+vi si o n, Pr oj e ct a d mi ni str ati o n, F u n di n g a c q ui siti o n, Writi n g – R e vi e w & E diti n g, Vi s u al-
+i z ati o n.
+S a m e er S a dr u d di n : M et h o d ol o g y, R e s o ur c e s, D at a C ur ati o n.
+S ¨or e n A u er : C o n c e pt u ali z ati o n, M et h o d ol o g y, R e vi e w & E diti n g, S u p er vi si o n, Pr oj e ct
+a d mi ni str ati o n, F u n di n g a c q ui siti o n.
+
+C o m p eti n g i nt er e st s
+T h e a ut h or s d e cl ar e t h at t h e y h a v e n o c o m p eti n g i nt er e st s.
+
+A c k n o wl e d g e m e nt s
+T h e 1 st L L M s 4 O L C h all e n g e @ I S W C 2 0 2 4 j oi ntl y s u p p ort e d b y t h e N F DI 4 D at a S ci e n c e
+i niti ati v e ( D F G, G er m a n R e s e ar c h F o u n d ati o n, Gr a nt I D: 4 6 0 2 3 4 2 5 9) a n d t h e S CI N E X T
+pr oj e ct ( B M B F, G er m a n F e d er al Mi ni str y of E d u c ati o n a n d R e s e ar c h, Gr a nt I D: 0 1l S 2 2 0 7 0).
+
+R ef er e n c e s
+ [ 1]     A. M a e d c h e a n d S. St a a b, “ O nt ol o g y l e ar ni n g,” i n H a n d b o o k o n O nt ol o gi e s , S. St a a b
+         a n d R. St u d er, E d s. B erli n, H ei d el b er g: S pri n g er B erli n H ei d el b er g, 2 0 0 4, p p. 1 7 3 – 1 9 0,
+         I S B N: 9 7 8- 3- 5 4 0- 2 4 7 5 0- 0. D OI : 1 0 . 1 0 0 7 / 9 7 8 - 3 - 5 4 0 - 2 4 7 5 0 - 0 _ 9 . [ O nli n e]. A v ail a bl e:
+         https://doi.org/10.1007/978-3-540-24750-0_9.
+ [ 2]     A. K o n y s, “ K n o wl e d g e r e p o sit or y of o nt ol o g y l e ar ni n g t o ol s fr o m t e xt,” Pr o c e di a C o m p ut er
+         S ci e n c e , v ol. 1 5 9, p p. 1 6 1 4 – 1 6 2 8, 2 0 1 9.
+ [ 3]     Y. Di n g a n d S. F o o, “ O nt ol o g y r e s e ar c h a n d d e v el o p m e nt. p art 2- a r e vi e w of o nt ol o g y
+         m a p pi n g a n d e v ol vi n g,” J o ur n al of i nf or m ati o n s ci e n c e , v ol. 2 8, n o. 5, p p. 3 7 5 – 3 8 8, 2 0 0 2.
+ [ 4]      M. S h a m sf ar d a n d A. A b d oll a h z a d e h B arf or o u s h, “ T h e st at e of t h e art i n o nt ol o g y l e ar n-
+         i n g: A fr a m e w or k f or c o m p ari s o n,” K n o wl. E n g. R e v. , v ol. 1 8, n o. 4, p p. 2 9 3 – 3 1 6, D e c.
+
+
+
+                                                                                     28
+
+
+===== PDF PAGE 13 =====
+   B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                  C h all e n g e at t h e 2 3r d I S W C”
+
+
+
+          2 0 0 3, I S S N: 0 2 6 9- 8 8 8 9. D OI : 1 0 . 1 0 1 7 / S 0 2 6 9 8 8 8 9 0 3 0 0 0 6 8 7 . [ O nli n e]. A v ail a bl e: h t t p s :
+          //doi.org/10.1017/S0269888903000687.
+ [ 5]      P. B uit el a ar, P. Ci mi a n o, a n d B. M a g ni ni, O nt ol o g y l e ar ni n g fr o m t e xt: m et h o d s, e v al u ati o n
+          a n d a p pli c ati o n s . I O S pr e s s, 2 0 0 5, v ol. 1 2 3.
+ [ 6]       M. H a z m a n, S. R. El- B elt a g y, a n d A. R af e a, “ A s ur v e y of o nt ol o g y l e ar ni n g a p pr o a c h e s,”
+          I nt er n ati o n al J o ur n al of C o m p ut er A p pli c ati o n s, v ol. 2 2, n o. 9, p p. 3 6 – 4 3, 2 0 1 1.
+ [ 7]       M. N. A si m, M. W a si m, M. U. G. K h a n, W. M a h m o o d, a n d H. M. A b b a si, “ A s ur v e y of
+          o nt ol o g y l e ar ni n g t e c h ni q u e s a n d a p pli c ati o n s,” D at a b a s e , v ol. 2 0 1 8, b a y 1 0 1, O ct. 2 0 1 8,
+          I S S N: 1 7 5 8- 0 4 6 3. D OI : 1 0 . 1 0 9 3 / d a t a b a s e / b a y 1 0 1 . e pri nt: h t t p s : / / a c a d e m i c . o u p .
+          com/database/article- pdf/doi/10.1093/database/bay101/27329264/bay101.pdf .
+          [ O nli n e]. A v ail a bl e: h t t p s : / / d o i . o r g / 1 0 . 1 0 9 3 / d a t a b a s e / b a y 1 0 1 .
+ [ 8]       H. B a b a ei Gi gl o u, J. D’ S o u z a, a n d S. A u er, “ Ll m s 4 ol: L ar g e l a n g u a g e m o d el s f or o nt ol o g y
+          l e ar ni n g,” i n T h e S e m a nti c W e b – I S W C 2 0 2 3 , T. R. P a y n e, V. Pr e s utti, G. Qi, et al. , E d s.,
+          C h a m: S pri n g er N at ur e S wit z erl a n d, 2 0 2 3, p p. 4 0 8 – 4 2 7, I S B N: 9 7 8- 3- 0 3 1- 4 7 2 4 0- 4.
+ [ 9]      F. P etr o ni, T. R o c kta¨ s c h el, P. L e wi s, et al. , L a n g u a g e m o d el s a s k n o wl e d g e b a s e s ? 2 0 1 9.
+          ar Xi v: 1 9 0 9 . 0 1 0 6 6 [ c s . C L ] . [ O nli n e]. A v ail a bl e: h t t p s : / / a r x i v . o r g / a b s / 1 9 0 9 . 0 1 0 6 6 .
+[ 1 0]     B. Z h a n g, V. A. C arri er o, K. S c hr ei b er h u b er, et al. , “ O nt o c h at: A fr a m e w or k f or c o n v er-
+          s ati o n al o nt ol o g y e n gi n e eri n g u si n g l a n g u a g e m o d el s,” ar Xi v pr e pri nt ar Xi v: 2 4 0 3. 0 5 9 2 1 ,
+          2 0 2 4.
+[ 1 1]      V. K. K o m mi n e ni, B. Ko¨ ni g- Ri e s, a n d S. S a m u el, “ Fr o m h u m a n e x p ert s t o m a c hi n e s: A n
+          ll m s u p p ort e d a p pr o a c h t o o nt ol o g y a n d k n o wl e d g e gr a p h c o n str u cti o n,” ar Xi v pr e pri nt
+          ar Xi v: 2 4 0 3. 0 8 3 4 5 , 2 0 2 4.
+[ 1 2]      M. J. S a e e di z a d e a n d E. Bl o m q vi st, “ N a vi g ati n g o nt ol o g y d e v el o p m e nt wit h l ar g e l a n-
+          g u a g e m o d el s,” i n E ur o p e a n S e m a nti c W e b C o nf er e n c e , S pri n g er, 2 0 2 4, p p. 1 4 3 – 1 6 1.
+[ 1 3]      R. D u, H. A n, K. W a n g, a n d W. Li u, A s h ort r e vi e w f or o nt ol o g y l e ar ni n g: Stri d e t o l ar g e
+          l a n g u a g e m o d el s tr e n d, 2 0 2 4. ar Xi v: 2 4 0 4 . 1 4 9 9 1 [ c s . I R ] . [ O nli n e]. A v ail a bl e: h t t p s :
+          //arxiv.org/abs/2404.14991.
+[ 1 4]      H. K h or a s h a di z a d e h, F. Z. A m ar a, M. E z z a b a d y, et al. , R e s e ar c h tr e n d s f or t h e i nt er-
+          pl a y b et w e e n l ar g e l a n g u a g e m o d el s a n d k n o wl e d g e gr a p h s , 2 0 2 4. ar Xi v: 2 4 0 6 . 0 8 2 2 3
+          [ c s . A I ] . [ O nli n e]. A v ail a bl e: h t t p s : / / a r x i v . o r g / a b s / 2 4 0 6 . 0 8 2 2 3 .
+[ 1 5]      H. B a b a ei Gi gl o u, J. D’ S o u z a, a n d S. A u er, “ Ll m s 4 ol 2 0 2 4 o v er vi e w: T h e 1 st l ar g e l a n-
+          g u a g e m o d el s f or o nt ol o g y l e ar ni n g c h all e n g e,” O p e n C o nf er e n c e Pr o c e e di n g s , v ol. 4,
+          O ct. 2 0 2 4.
+[ 1 6]     A. M a e d c h e a n d S. St a a b, “ O nt ol o g y l e ar ni n g f or t h e s e m a nti c w e b,” I E E E I nt elli g e nt
+          s y st e m s , v ol. 1 6, n o. 2, p p. 7 2 – 7 9, 2 0 0 1.
+[ 1 7]      G. A. Mill er, “ W or d n et: A l e xi c al d at a b a s e f or e n gli s h,” C o m m u ni c ati o n s of t h e A C M ,
+          v ol. 3 8, n o. 1 1, p p. 3 9 – 4 1, 1 9 9 5.
+[ 1 8] G e o n a m e s g e o gr a p hi c al d at a b a s e , 2 0 2 3. [ O nli n e]. A v ail a bl e: h t t p : / / w w w . g e o n a m e s .
+       org/.
+[ 1 9]      O. B o d e nr ei d er, “ T h e U ni ﬁ e d M e di c al L a n g u a g e S y st e m ( U M L S): i nt e gr ati n g bi o m e di c al
+          t er mi n ol o g y,” N u cl ei c A ci d s R e s e ar c h , v ol. 3 2, n o. s u p pl 1, p p. D 2 6 7 – D 2 7 0, J a n. 2 0 0 4,
+          I S S N: 0 3 0 5- 1 0 4 8. D OI : 1 0 . 1 0 9 3 / n a r / g k h 0 6 1 . e pri nt: h t t p s : / / a c a d e m i c . o u p . c o m / n a r /
+          a r t i c l e - p d f / 3 2 / s u p p l \ _ 1 / D 2 6 7 / 7 6 2 1 5 5 8 / g k h 0 6 1 . p d f . [ O nli n e]. A v ail a bl e: h t t p s :
+          //doi.org/10.1093/nar/gkh061.
+[ 2 0]      N ati o n al Li br ar y of M e di ci n e ( U S), U S E diti o n of S N O M E D C T , h t t p : / / w w w . n l m . n i h .
+          g o v / r e s e a r c h / u m l s / S n o m e d / u s _ e d i t i o n . h t m l , B et h e s d a, M D, 2 0 1 3.
+[ 2 1]      N ati o n al C a n c er I n stit ut e ( U S), N CI E nt er pri s e V o c a b ul ar y S er vi c e s ( E V S) , h t t p s : / /
+          w w w . c a n c e r . g o v / r e s e a r c h / r e s o u r c e s / t e r m i n o l o g y , B et h e s d a, M D, 2 0 1 5.
+
+                                                                                      29
+
+
+===== PDF PAGE 14 =====
+   B a b a ei Gi gl o u et al.   | O p e n C o nf Pr o c 4 ( 2 0 2 4) ” L L M s 4 O L 2 0 2 4: T h e 1 st L ar g e L a n g u a g e M o d el s f or O nt ol o g y L e ar ni n g
+                                                                  C h all e n g e at t h e 2 3r d I S W C”
+
+
+
+[ 2 2]      M e di c o m p S y st e m s, I n c., M E D CI N , h t t p : / / w w w . m e d i c o m p . c o m / i n d e x _ h t m l . h t m ,
+          C h a ntill y, V A, 2 0 0 4.
+[ 2 3]     S. C ar b o n a n d C. M u n g all, G e n e o nt ol o g y d at a ar c hi v e , v er si o n 2 0 2 4- 0 1- 1 7, Z e n o d o,
+          J a n. 2 0 2 4. D OI : 1 0 . 5 2 8 1 / z e n o d o . 1 0 5 3 6 4 0 1 . [ O nli n e]. A v ail a bl e: h t t p s : / / d o i . o r g / 1 0 .
+          5281/zenodo.10536401.
+[ 2 4]      S. A u er, C. Bi z er, G. K o bil ar o v, J. L e h m a n n, R. C y g a ni a k, a n d Z. I v e s, “ D b p e di a: A n u-
+          cl e u s f or a w e b of o p e n d at a,” i n T h e S e m a nti c W e b , K. A b er er, K.- S. C h oi, N. N o y, et
+          al. , E d s., B erli n, H ei d el b er g: S pri n g er B erli n H ei d el b er g, 2 0 0 7, p p. 7 2 2 – 7 3 5, I S B N: 9 7 8-
+          3- 5 4 0- 7 6 2 9 8- 0.
+[ 2 5]      D. M. D o ol e y, E. J. Grif ﬁt h s, G. S. G o s al, et al. , “ F o o d O n: a h ar m o ni z e d f o o d o nt ol o g y
+          t o i n cr e a s e gl o b al f o o d tr a c e a bilit y, q u alit y c o ntr ol a n d d at a i nt e gr ati o n,” N P J S ci e n c e of
+          F o o d , v ol. 2, p. 2 3, D e c. 2 0 1 8. D OI : 1 0 . 1 0 3 8 / s 4 1 5 3 8 - 0 1 8 - 0 0 3 2 - 6 . [ O nli n e]. A v ail a bl e:
+          https://www.nature.com/articles/s41538-018-0032-6.
+[ 2 6]      P. F. P at el- S c h n ei d er, “ A n al y zi n g s c h e m a. or g,” i n T h e S e m a nti c W e b – I S W C 2 0 1 4 , P.
+          Mi k a, T. T u d or a c h e, A. B er n st ei n, et al. , E d s., C h a m: S pri n g er I nt er n ati o n al P u bli s hi n g,
+          2 0 1 4, p p. 2 6 1 – 2 7 6, I S B N: 9 7 8- 3- 3 1 9- 1 1 9 6 4- 9.
+[ 2 7]     T. D ett m er s, P. Mi n er vi ni, P. St e n et or p, a n d S. Ri e d el, C o n v ol uti o n al 2 d k n o wl e d g e gr a p h
+          e m b e d di n g s , 2 0 1 8. ar Xi v: 1 7 0 7 . 0 1 4 7 6 [ c s . L G ] . [ O nli n e]. A v ail a bl e: h t t p s : / / a r x i v .
+          org/abs/1707.01476.
+[ 2 8]      G e o N a m e s, G e o n a m e s f e at ur e c o d e s , h t t p s : / / w w w . g e o n a m e s . o r g / e x p o r t / c o d e s .
+          h t m l , 2 0 2 4.
+
+
+
+
+                                                                                      30

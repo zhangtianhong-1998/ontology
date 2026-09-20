@@ -1,0 +1,149 @@
+[
+  {
+    "repository": "AuvaLab/itext2kg",
+    "license_url": "https://github.com/AuvaLab/itext2kg/blob/main/LICENSE",
+    "license_blob_sha": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+    "local_file": "研究分析/证据/扩展项目许可证/AuvaLab__itext2kg__LICENSE",
+    "license": {
+      "key": "apache-2.0",
+      "name": "Apache License 2.0",
+      "spdx_id": "Apache-2.0",
+      "url": "https://api.github.com/licenses/apache-2.0",
+      "node_id": "MDc6TGljZW5zZTI="
+    },
+    "status": "retrieved"
+  },
+  {
+    "repository": "HKUST-KnowComp/AutoSchemaKG",
+    "license_url": "https://github.com/HKUST-KnowComp/AutoSchemaKG/blob/main/LICENSE",
+    "license_blob_sha": "7ea2d41c72dd3c614ca2deedca6b4db388a57a9f",
+    "local_file": "研究分析/证据/扩展项目许可证/HKUST-KnowComp__AutoSchemaKG__LICENSE",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "status": "retrieved"
+  },
+  {
+    "repository": "RDFLib/pySHACL",
+    "license_url": "https://github.com/RDFLib/pySHACL/blob/master/LICENSE.txt",
+    "license_blob_sha": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+    "local_file": "研究分析/证据/扩展项目许可证/RDFLib__pySHACL__LICENSE.txt",
+    "license": {
+      "key": "apache-2.0",
+      "name": "Apache License 2.0",
+      "spdx_id": "Apache-2.0",
+      "url": "https://api.github.com/licenses/apache-2.0",
+      "node_id": "MDc6TGljZW5zZTI="
+    },
+    "status": "retrieved"
+  },
+  {
+    "repository": "SmartDataAnalytics/DL-Learner",
+    "license_url": "https://github.com/SmartDataAnalytics/DL-Learner/blob/develop/LICENSE",
+    "license_blob_sha": "94a9ed024d3859793618152ea559a168bbcbb5e2",
+    "local_file": "研究分析/证据/扩展项目许可证/SmartDataAnalytics__DL-Learner__LICENSE",
+    "license": {
+      "key": "gpl-3.0",
+      "name": "GNU General Public License v3.0",
+      "spdx_id": "GPL-3.0",
+      "url": "https://api.github.com/licenses/gpl-3.0",
+      "node_id": "MDc6TGljZW5zZTk="
+    },
+    "status": "retrieved"
+  },
+  {
+    "repository": "amazon-science/Automatic-Table-to-Graph-Generation",
+    "license_url": "https://github.com/amazon-science/Automatic-Table-to-Graph-Generation/blob/main/LICENSE",
+    "license_blob_sha": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+    "local_file": "研究分析/证据/扩展项目许可证/amazon-science__Automatic-Table-to-Graph-Generation__LICENSE",
+    "license": {
+      "key": "apache-2.0",
+      "name": "Apache License 2.0",
+      "spdx_id": "Apache-2.0",
+      "url": "https://api.github.com/licenses/apache-2.0",
+      "node_id": "MDc6TGljZW5zZTI="
+    },
+    "status": "retrieved"
+  },
+  {
+    "repository": "clear-nus/edc",
+    "license_url": "https://github.com/clear-nus/edc/blob/main/LICENSE",
+    "license_blob_sha": "a9f9e3191c0da95c9ccaca4f5e2ea1105b6b3af7",
+    "local_file": "研究分析/证据/扩展项目许可证/clear-nus__edc__LICENSE",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "status": "retrieved"
+  },
+  {
+    "repository": "dice-group/Ontolearn",
+    "license_url": "https://github.com/dice-group/Ontolearn/blob/develop/LICENSE",
+    "license_blob_sha": "906b5886476dac0bacfc1762fd6f9e0e92847fee",
+    "local_file": "研究分析/证据/扩展项目许可证/dice-group__Ontolearn__LICENSE",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "status": "retrieved"
+  },
+  {
+    "repository": "dkw-aau/qse",
+    "status": "not_retrieved",
+    "reason": "HTTP Error 403: rate limit exceeded"
+  },
+  {
+    "repository": "dig-team/AMIE",
+    "license_url": "https://github.com/dig-team/AMIE/blob/master/LICENSE.txt",
+    "license_blob_sha": "197ec4de65a2e5414b290fb46dee75f55e1b69e8",
+    "local_file": "研究分析/证据/扩展项目许可证/dig-team__AMIE__LICENSE.txt",
+    "license": {
+      "key": "other",
+      "name": "Other",
+      "spdx_id": "NOASSERTION",
+      "url": null,
+      "node_id": "MDc6TGljZW5zZTA="
+    },
+    "status": "retrieved"
+  },
+  {
+    "repository": "megagonlabs/doduo",
+    "status": "not_retrieved",
+    "reason": "HTTP Error 403: rate limit exceeded"
+  },
+  {
+    "repository": "megagonlabs/sato",
+    "status": "not_retrieved",
+    "reason": "HTTP Error 403: rate limit exceeded"
+  },
+  {
+    "repository": "monarch-initiative/ontogpt",
+    "status": "not_retrieved",
+    "reason": "HTTP Error 403: rate limit exceeded"
+  },
+  {
+    "repository": "ontop/ontop",
+    "status": "not_retrieved",
+    "reason": "HTTP Error 403: rate limit exceeded"
+  },
+  {
+    "repository": "sciknoworg/OntoLearner",
+    "status": "not_retrieved",
+    "reason": "HTTP Error 403: rate limit exceeded"
+  },
+  {
+    "repository": "stair-lab/kg-gen",
+    "status": "not_retrieved",
+    "reason": "HTTP Error 403: rate limit exceeded"
+  }
+]

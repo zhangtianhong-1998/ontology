@@ -1,0 +1,15 @@
+{
+  "full_name": "amazon-science/Automatic-Table-to-Graph-Generation",
+  "html_url": "https://github.com/amazon-science/Automatic-Table-to-Graph-Generation",
+  "default_branch": "main",
+  "license": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "spdx_id": "Apache-2.0",
+    "url": "https://api.github.com/licenses/apache-2.0",
+    "node_id": "MDc6TGljZW5zZTI="
+  },
+  "archived": false,
+  "pushed_at": "2026-04-21T20:54:39Z",
+  "retrieved": "2026-09-20"
+}

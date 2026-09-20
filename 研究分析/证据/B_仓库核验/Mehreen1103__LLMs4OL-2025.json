@@ -1,0 +1,14 @@
+{
+  "repo": "Mehreen1103/LLMs4OL-2025",
+  "url": "https://github.com/Mehreen1103/LLMs4OL-2025",
+  "default_branch": "main",
+  "license_api": null,
+  "tree_sha": "d4c986b3b0b2a52c8e4bcd17c20ed3aaa9f4a91a",
+  "paths": [
+    "README.md",
+    "cosine-similarity.ipynb",
+    "kmeansclustuering-llm.ipynb",
+    "methodology.png",
+    "sentence-embeddings-llm.ipynb"
+  ]
+}

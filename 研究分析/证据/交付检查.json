@@ -1,0 +1,54 @@
+{
+  "checked_at_utc": "2026-09-19T16:55:06.912613+00:00",
+  "scope": "README and 01-05 local links and L01-L18 anchors; independent reviewer verified 18 original PDF hashes",
+  "local_link_count": 130,
+  "missing_links": [],
+  "anchors": [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "L06",
+    "L07",
+    "L08",
+    "L09",
+    "L10",
+    "L11",
+    "L12",
+    "L13",
+    "L14",
+    "L15",
+    "L16",
+    "L17",
+    "L18"
+  ],
+  "anchor_check": true,
+  "source_hash_verification": "18 of 18 matched by independent reviewer",
+  "main_files": [
+    {
+      "name": "README.md",
+      "characters": 768
+    },
+    {
+      "name": "01_本体自动构建_综合研究报告.md",
+      "characters": 9946
+    },
+    {
+      "name": "02_本地18篇文献逐篇分析.md",
+      "characters": 49013
+    },
+    {
+      "name": "03_扩展研究与开源实践.md",
+      "characters": 7586
+    },
+    {
+      "name": "04_证据索引与核验说明.md",
+      "characters": 10314
+    },
+    {
+      "name": "05_从数据构建本体_方案与实验设计.md",
+      "characters": 5621
+    }
+  ]
+}

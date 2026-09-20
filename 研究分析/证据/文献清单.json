@@ -1,0 +1,146 @@
+[
+  {
+    "id": 1,
+    "pdf": "文献/1.pdf",
+    "translation": "翻译/1.md",
+    "pages": 27,
+    "text": "研究分析/证据/原文文本/01.txt",
+    "sha256": "586ea4a177d57a8e2893afafdec6b4004f7dd0b5047f07c534dd174b2fd623a7"
+  },
+  {
+    "id": 2,
+    "pdf": "文献/2.pdf",
+    "translation": "翻译/2.md",
+    "pages": 42,
+    "text": "研究分析/证据/原文文本/02.txt",
+    "sha256": "dc8be905a4fd4fdf5942976ff53bbdfdf33a880e456e02b7e7d52b822566fe0b"
+  },
+  {
+    "id": 3,
+    "pdf": "文献/3.pdf",
+    "translation": "翻译/3.md",
+    "pages": 14,
+    "text": "研究分析/证据/原文文本/03.txt",
+    "sha256": "190c445f2977a6ecdc300cc13fd49102e2569da8d9c47c55e2c777387ee6a558"
+  },
+  {
+    "id": 4,
+    "pdf": "文献/4.pdf",
+    "translation": "翻译/4.md",
+    "pages": 14,
+    "text": "研究分析/证据/原文文本/04.txt",
+    "sha256": "866e22d341abf0a67c045c7245a709d0b37622eaf60ca8f8f3648d94fa1a3dbb"
+  },
+  {
+    "id": 5,
+    "pdf": "文献/5.pdf",
+    "translation": "翻译/5.md",
+    "pages": 15,
+    "text": "研究分析/证据/原文文本/05.txt",
+    "sha256": "20ea6ba569609c430e713e669cd47eaa6a7cc3e580edceab653fb53d6ba15945"
+  },
+  {
+    "id": 6,
+    "pdf": "文献/6.pdf",
+    "translation": "翻译/6.md",
+    "pages": 7,
+    "text": "研究分析/证据/原文文本/06.txt",
+    "sha256": "b21b8f75e3df484b6a4f9457ed16d4309a568d7adf1bf7c42f7a0b088cee2c9c"
+  },
+  {
+    "id": 7,
+    "pdf": "文献/7.pdf",
+    "translation": "翻译/7.md",
+    "pages": 11,
+    "text": "研究分析/证据/原文文本/07.txt",
+    "sha256": "7de381a7698674a48fa4c114f5d1214109d0ae0aaba4d3b17360eb90ff061dda"
+  },
+  {
+    "id": 8,
+    "pdf": "文献/8.pdf",
+    "translation": "翻译/8.md",
+    "pages": 9,
+    "text": "研究分析/证据/原文文本/08.txt",
+    "sha256": "8832efa643fdc408a350aad68bba045dce3011729e27b3cadb0963d6cba2d26a"
+  },
+  {
+    "id": 9,
+    "pdf": "文献/9.pdf",
+    "translation": "翻译/9.md",
+    "pages": 15,
+    "text": "研究分析/证据/原文文本/09.txt",
+    "sha256": "ece12c031339aaf1bdc46779d9461d40fa7a20c3eec066e80fe5d8ff29542abb"
+  },
+  {
+    "id": 10,
+    "pdf": "文献/10.pdf",
+    "translation": "翻译/10.md",
+    "pages": 12,
+    "text": "研究分析/证据/原文文本/10.txt",
+    "sha256": "6947619abd5dc7b6e0b2dd8a6c703b72ac222f578205f7aaf5935d8980b62c1a"
+  },
+  {
+    "id": 11,
+    "pdf": "文献/11.pdf",
+    "translation": "翻译/11.md",
+    "pages": 17,
+    "text": "研究分析/证据/原文文本/11.txt",
+    "sha256": "eafeb1cd61be74bec707c5e005c9ab4237fa737bfecd4b2e44eae59c55f1605f"
+  },
+  {
+    "id": 12,
+    "pdf": "文献/12.pdf",
+    "translation": "翻译/12.md",
+    "pages": 7,
+    "text": "研究分析/证据/原文文本/12.txt",
+    "sha256": "dbc1665c20135458001bcf7ebff4e9b1aa9c0725b7717d2d5c4e1abf2fab70ae"
+  },
+  {
+    "id": 13,
+    "pdf": "文献/13.pdf",
+    "translation": "翻译/13.md",
+    "pages": 16,
+    "text": "研究分析/证据/原文文本/13.txt",
+    "sha256": "466fe41e8bf1824dbb03ea1cbf8d7735b029477b75563afe397775e71f47a40b"
+  },
+  {
+    "id": 14,
+    "pdf": "文献/14.pdf",
+    "translation": "翻译/14.md",
+    "pages": 11,
+    "text": "研究分析/证据/原文文本/14.txt",
+    "sha256": "f203af45157634fa4bbe2bd5c91f28db71479fb8fd32803502d3125013ffd28a"
+  },
+  {
+    "id": 15,
+    "pdf": "文献/15.pdf",
+    "translation": "翻译/15.md",
+    "pages": 9,
+    "text": "研究分析/证据/原文文本/15.txt",
+    "sha256": "84edd3fe4996d7a5e67daf3d7f677bc954e5fb5e37355f3f1d8fa299791ebff8"
+  },
+  {
+    "id": 16,
+    "pdf": "文献/16.pdf",
+    "translation": "翻译/16.md",
+    "pages": 2,
+    "text": "研究分析/证据/原文文本/16.txt",
+    "sha256": "dacbad5705679f2f3f72955f5dfd7e7d7c7429edba14278d2f8bd934b3c4cded"
+  },
+  {
+    "id": 17,
+    "pdf": "文献/17.pdf",
+    "translation": "翻译/17.md",
+    "pages": 17,
+    "text": "研究分析/证据/原文文本/17.txt",
+    "sha256": "78ed945ded1fa798eebf3a272abeb77fc5caa0a3375e3819d48a6b1b3a2cff23"
+  },
+  {
+    "id": 18,
+    "pdf": "文献/18.pdf",
+    "translation": "翻译/18.md",
+    "pages": 25,
+    "text": "研究分析/证据/原文文本/18.txt",
+    "sha256": "9a56499afd5b5aa08528df42cc1c55f9dc1fd7d76b61c465b3b1c5ed806dc1d9"
+  }
+]

@@ -1,0 +1,765 @@
+===== PDF PAGE 1 =====
+               DL-Learner - A Framework for Inductive Learning on the Semantic Web
+
+                                             Lorenz Bühmanna , Jens Lehmannb , Patrick Westphala
+                       a University of Leipzig, Institute of Computer Science, AKSW Group, Augustusplatz 10, D-04009 Leipzig, Germany
+
+                                                       E-mail: {lastname}@informatik.uni-leipzig.de
+                                 b University of Bonn, Institute of Computer Science, Römerstr. 164, D-53117 Bonn, Germany
+
+                                                           E-mail: jens.lehmann@cs.uni-bonn.de
+
+
+
+
+Abstract
+In this system paper, we describe the DL-Learner framework, which supports supervised machine learning using OWL and RDF for
+background knowledge representation. It can be beneficial in various data and schema analysis tasks with applications in different
+standard machine learning scenarios, e.g. in the life sciences, as well as Semantic Web specific applications such as ontology
+learning and enrichment. Since its creation in 2007, it has become the main OWL and RDF-based software framework for supervised
+structured machine learning and includes several algorithm implementations, usage examples and has applications building on top of
+the framework. The article gives an overview of the framework with a focus on algorithms and use cases.
+Keywords: System Description, Machine Learning, Supervised Learning, Semantic Web, OWL, RDF
+
+
+1. Introduction                                                                 It is also important that the obtained class expression is easy to
+                                                                                understand for a domain expert. We call these criteria accuracy
+     Over the past two decades, we have witnessed a transition                  and readability.
+from an industrial driven society to a data and knowledge driven                     As an example, consider the problem to find out whether a
+society. This trend is accompanied by a significant increase in                 chemical compound can cause cancer. In this case, the back-
+research interest in and importance of (large-scale) data process-              ground knowledge contains information about chemical com-
+ing methods. In this broad field, semantic technologies have                    pounds in general and certain concrete compounds we are inter-
+emerged as a means to structure, publish and integrate data. In                 ested in. The positive examples are those compounds causing
+particular, the RDF and OWL knowledge representation W3C                        cancer, whereas the negative examples are those compounds not
+standards are used in thousands of knowledge bases containing                   causing cancer. The prediction for those examples may have
+billions of facts.1                                                             been obtained from experiments and expensive long-term re-
+     A major challenge that research faces today is to analyse                  search trials. A learning algorithm can now derive a hypothesis
+this growing amount of information to obtain insights into the                  from examples and background knowledge, e.g. a learned class
+underlying problems. In many cases, in particular in the life                   expression in natural language could be “chemical compounds
+sciences, it is beneficial to employ methods that are able to use               containing more than three phosphorus atoms”. (Of course, in
+the complex structure of available background knowledge when                    practice the expression will be more complex to obtain a reason-
+learning hypotheses. DL-Learner is an open software framework,                  able accuracy.) Using this class expression, we can now classify
+which contains several such methods. It has the primary goal                    unseen chemical compounds.
+to serve as a platform for facilitating the implementation and                       To solve this and similar problems, researchers need to over-
+evaluation of supervised structured machine learning methods                    come hurdles which are highly important for machine learning in
+using semantic background knowledge.                                            general: Algorithms have to process complex background knowl-
+     The most common scenario we consider is to have a back-                    edge, possibly coming from several sources. Logical inference
+ground knowledge base in OWL and be additionally provided                       is needed during the learning process to drive the algorithms.
+with sets of individuals in our knowledge base which serve as                   During their runtime, algorithms frequently need to evaluate
+positive and negative examples. The goal is to find a logical for-              thousands or millions of hypotheses and use the results of those
+mula, e.g. an OWL class expression2 , such that all/many of the                 tests to determine their learning strategy. The expressions which
+positive examples are instances of this expression and none/few                 are eventually learned, can often be arbitrarily nested and in
+of the negative examples are instances of it. The primary pur-                  some cases need to portray complex relationships while still be-
+pose of learning is to find a class expression which can classify               ing as easy as possible to understand for domain experts. Some
+unseen individuals (i.e. not belonging to the examples) correctly.              of those machine learning challenges have been identified by
+                                                                                leading researchers, e.g. in [1] and [2], and DL-Learner aims
+   1 http://lodstats.aksw.org/                                                  to provide a platform to facilitate researchers in their quest for
+  2 http://www.w3.org/TR/owl2-syntax/#Class_                                    solutions.
+Expressions
+
+Preprint submitted to Journal of Web Semantics                                                                                          28th September 2016
+
+
+===== PDF PAGE 2 =====
+                                                                                Domain Knowledge              Learning System
+    A previous system paper on DL-Learner appeared in 2009                   supervised                                                    Domain Experts
+in the Journal of Machine Learning Research [3]. Compared to                   learning
+                                                                               problem
+this system description, the following major changes are:                                  use
+                                                                              integrated
+                                                                            consolidated
+    • Framework design: The framework has been generalised                    knowledge
+                                                                                     merge, transform
+      from being focused on learning OWL class expressions us-                                                                            symbolic classiﬁer
+                                                                                                                                            and accuracy
+      ing OWL ontologies as background knowledge to a more                                                                                   assessment
+
+      generic supervised structured machine learning frame-
+      work. Components are integrated via Java Beans and the                                       ...
+
+      Java Spring framework, which allows more fine-grained                        knowledge bases
+
+      and more flexible interaction between them.
+                                                                                                   Figure 1: General learning workflow.
+    • New algorithms for learning SPARQL queries (as feed-
+      back component in question answering), fuzzy description
+                                                                            of which nine have a black color, one could inductively derive
+      logic expressions, parallel OWL class expression learning,
+                                                                            that “all ravens are black” even though it does not hold for all
+      a special purpose algorithm for the EL description logic,
+                                                                            ravens and bears some degree of uncertainty. Learning prob-
+      two algorithms for knowledge base enrichment of almost
+                                                                            lems which are similar to the one we will analyse, have been
+      all OWL 2 axioms from SPARQL endpoints as well as
+                                                                            investigated in Inductive Logic Programming [4].
+      an algorithm combining inductive learning with natural
+                                                                                 The goal of DL-Learner is to provide a structural framework
+      language processing have been integrated.
+                                                                            and reusable components for solving those induction problems.
+    • Scalability enhancements: There are now statistical sam-              Figure 1 depicts a typical workflow from a user’s perspective.
+      pling methods available for dealing with a large number               On the left hand side, there are several knowledge bases which
+      of examples as well as different knowledge base fragment              together form the background knowledge for a given task. Within
+      selection methods for handling large knowledge bases in               that background knowledge, some resources are selected as pos-
+      general.                                                              itive and some others as negative examples. In a medical setting,
+                                                                            the resources could be patients reacting to a treatment (positive
+    • Major engineering changes: In 2011, the whole frame-                  examples) and patients not reacting to a treatment (negative ex-
+      work was refactored to be more easily extensible. More-               amples). Those are then processed by a supervised machine
+      over, algorithms are continuously extended with options               learning algorithm and return (in most cases in DL-Learner) a
+      based on received feature requests. In the same manner,               symbolic classifier. This classifier is human readable and ex-
+      new APIs and reasoners are continuously upgraded.                     pressed in a logical form, e.g. as a complex description logic
+                                                                            concept or a SPARQL query. It serves two purposes: First,
+    • Code repository statistics: About 3,500 commits were
+                                                                            due to its logical representation it should give insights into the
+      made which led to more than 4,500,000 changed lines
+                                                                            underlying problem, showing which concepts are relevant to dis-
+      of code. 30 new contributors could be acquired, 52 bugs
+                                                                            tinguish positive and negative examples. Furthermore, the result
+      could be fixed and 27 feature requests could be realized.
+                                                                            can also be used to classify unseen resources, e.g. by check-
+    The article is structured as follows: In Section 2, we give a           ing whether they are an instance of the learned concept using
+description of the problems DL-Learner aims to solve. Subse-                an OWL reasoner, or whether they are returned by a SPARQL
+quently, in Section 3, the software framework is described. We              endpoint executing a learned query.
+summarise core algorithms implemented in DL-Learner in Sec-                      In DL-Learner, the following learning problems are relevant:
+tion 4. Implementation statistics and notes are given in Section 5.         Standard Supervised Learning Let the name of the back-
+Use cases of DL-Learner in different problem areas are covered                   ground ontology be O. The goal in this learning problem
+in Section 6. In Section 7, we describe related work and give an                 is to find an OWL class expression C such that all/many
+outlook in Section 8.                                                            positive examples are instances of C w.r.t. O and none/few
+                                                                                 negative examples are instances of C w.r.t. O.
+2. Learning Problems
+                                                                            Positive Only Learning In case only positive examples are
+    The process of learning in logics, i.e. trying to find high-level             available, it is desirable to find a class expression that
+explanations for given data, is also called inductive reasoning                   covers the positive examples while still generalising suffi-
+as opposed to inference or deductive reasoning. Deductive rea-                    ciently well (usually measured on unlabelled data).
+soning is known as the process of deriving logically certain                Class Learning In class learning, you are given an existing
+conclusions from a set of general statements that are known to                    class A within an ontology O and want to describe it.
+be true, e.g. given a statement like “Every bird can fly”, we can                 This is similar to the previous problem in that you can use
+deductively derive that the bird “tweety” can fly. Contrarily, the                the instances of the class as positive examples. However,
+concept of inductive reasoning is to construct general statements                 you can make use of existing knowledge about A in the
+from a given set of examples. For instance, given ten ravens out                  ontology and (obviously) A itself should not be a solution.
+                                                                        2
+
+
+===== PDF PAGE 3 =====
+                                                                                                                       API, OWLlink as well as direct access to e.g. Pellet if
+                                                                                                                       advanced features not covered in the standard interfaces
+                                                                            - OCEL
+                                                                                                                       are needed. DL-Learner also implements own approxi-
+                                                                            - CELOE
+              - Pellet
+              - HermiT                                                      - ELTL                                     mative reasoners (not sound and/or incomplete) for high
+                                                                            - ...
+              - ELK
+              - OWLlink
+                                                            Le
+                                                         Alg arn
+                                                                                                                       performance hypothesis testing. Note that learning algo-
+                                     er                     or
+                               so
+                                 n                            it
+                                                               g
+                                                             in m                                                      rithms are not required to use reasoning, i.e. can also work
+                             Re                                 h
+                                a                                                                                      only on the asserted knowledge, but indeed can benefit
+                                                                                                                       from inferred knowledge – there is a trade-off between
+                                                                    O p er a t o                                       computational complexity and expressivity.
+                                                                                r
+                                                                                    - Upward/Downward
+                                    ge
+                               l ed
+                                           Java Spring                                Reﬁnement
+                           Know rce       Conﬁguration                              - Diﬀerent OWL Proﬁles          3. Learning problems define the task to solve (see Sec. 2).
+                             Sou
+
+       - Ontology File                                i ng
+                                                                                                                       Learning problems are typically used by learning algo-
+                                                 Learn m
+       - SPARQL Endpoint
+                                                  Prob
+                                                      le                                                               rithms for hypothesis testing. DL-Learner provides statis-
+                                                                                                                       tical sampling methods which allow efficient hypothesis
+                                                                                                                       testing even in the presence of a high number of exam-
+                                                - Class Learning Problem
+                                                - Pos/Neg Learning Problem
+                                                                                                                       ples [7]. Those methods approximate objective functions,
+                                                - Fuzzy Pos/Neg Learning Problem
+                                                - Pos Only Learning Problem
+                                                                                                                       such as F-measure, by iteratively sampling from the given
+                                                                                                                       examples until the confidence interval around the approxi-
+            Figure 2: Overview of core DL-Learner components.                                                          mated objective function value is sufficiently small.
+                                                                                                                    4. Refinement Operators are used to traverse through the
+In addition, there are different nuances of the above learning                                                         space of possible hypotheses. DL-Learner implements a
+problems which depend on how negative knowledge should be                                                              set of refinement operators, which can be configured to-
+treated (related to the open world assumption in description                                                           wards particular fragments of OWL as well as an efficient
+logics): The problems can be treated as a binary problem (hy-                                                          operator for the EL language specifically.
+potheses should cover positive examples and not cover negative                                                      5. Learning algorithms implement the core learning strategy.
+examples) or a ternary problem (hypotheses should cover posi-                                                          In the next section, we will summarise currently imple-
+tive examples, cover the negation of negative examples and not                                                         mented algorithms and briefly point out how contributors
+cover all other resources). The preferable setting partially de-                                                       can add further algorithms in Section 5.
+pends on the structure of the background knowledge. For ternary
+learning problems, more sophisticated schema axioms, e.g. con-
+                                                                                                                 4. Learning Algorithms
+taining negation, disjunction or certain property restrictions, are
+required to obtain useful results. DL-Learner implements stan-                                                       In early work, we provided theoretical foundations for the
+dard binary measures, e.g. predictive accuracy, F-measure, and                                                   field on top of which we developed algorithms derived from
+all ternary measures described in [5]. Obviously, in most cases,                                                 Inductive Logic Programming and genetic programming [8].
+we will not find a perfect solution to the learning problem, but                                                 This was extended to very expressive schemata [9] and learning
+rather an approximation, the degree of which is managed by set-                                                  problems with a lot of instance data [6]. Later, we extended the
+ting suitable thresholds representing the tolerance to noise/errors,                                             theoretical and algorithmic foundations for a) learning complex
+i.e. the fraction of uncovered positive resp. covered negative                                                   definitions in ontologies [7], b) generic schema enrichment [10,
+examples.                                                                                                        11], c) fuzzy description logics [12], d) the light-weight EL-
+                                                                                                                 description logic [13] and e) combinations of natural language
+3. Overview of the Framework                                                                                     processing and concept learning [14]. We will briefly describe
+                                                                                                                 the algorithms resulting from those lines of research.
+   The DL-Learner framework provides means to flexibly build
+concept learning algorithms. Several (Java) interfaces, adapters                                                 Refinement Operator Algorithms
+and external API connectors are part of the implementation.                                                          The first category of algorithms is based on so-called refine-
+Figure 2 shows the main parts of this structure:                                                                 ment operators. The design of those algorithms is motivated by
+                                                                                                                 the fact that, generally, learning can be seen as the search for a
+   1. Knowledge sources specify where and how to retrieve
+                                                                                                                 correct concept definition in an ordered space (Σ, ). In such a
+      data. Currently, most RDF and OWL serialisation formats
+                                                                                                                 setting, one can define suitable operators to traverse the search
+      are supported. Data can be retrieved locally or remotely.
+                                                                                                                 space.
+      Retrieving data from SPARQL endpoints is also supported,
+      including various options to extract fragments, filter and                                                 Definition 1 (refinement operator). Given a quasi-ordered3
+      pre-process data [6] as well as several retrieval strategies                                               search space (Σ, )
+      differing in performance. A single learning problem can
+      have multiple knowledge sources including mixtures of                                                         • a downward refinement operator is a mapping ρ : Σ → 2Σ
+      different types of sources.                                                                                     such that ∀α ∈ Σ ρ(α) ⊆ {β ∈ Σ | β  α}
+   2. Reasoners perform inference over knowledge sources.
+      DL-Learner supports connecting reasoners via the OWL                                                         3 A quasi-ordering is a reflexive and transitive relation.
+
+
+                                                                                                             3
+
+
+===== PDF PAGE 4 =====
+                                       0,45 [HE:1]                         required for complex prediction tasks.
+                                        owl:Thing                               ELTL (EL Tree Learner) is an algorithm optimized for learn-
+                                                                           ing EL trees using a refinement operator [13] designed for the
+            too weak                   0,73 [HE:5]                         OWL EL profile. This operator has been proven to be ideal,
+              Car                         Person                 ...       i.e. finite, proper and complete. One particular feature of the de-
+                                                                           veloped operator is that it integrates EL reasoning via so called
+                                                                           simulations, which makes the generation of refinements very
+              0,78 [HE:5]
+                                                                           efficient.
+            Person and attends some owl:Thing               ...
+                                                                                The ISLE (Inductive Statistical Learning of Expressions)
+                                                                           approach [14] is an extension of the ELTL algorithm, which can
+   0,97 [HE:4]                                                             take textual evidence into account in addition to structural back-
+   Person and attends some Talk              ...                           ground knowledge. It is particularly optimised for the ontology
+                                                                           learning use cases and assumes that the classes of the ontology to
+       Figure 3: Search tree used in OCEL and CELOE algorithm.
+                                                                           construct are described in a text corpus. The information in the
+                                                                           corpus is used to modify the search heuristic resulting in learned
+   • an upward refinement operator is a mapping δ : Σ → 2Σ                 expressions which are usually not more accurate with respect
+     such that ∀α ∈ Σ δ(α) ⊆ {β ∈ Σ | α  β}                               to available background knowledge, but have been shown to be
+                                                                           more accurate in manual human evaluation.
+     Intuitively, a downward (resp. upward) refinement operator
+returns a set of more specific (resp. general) concepts. The goal          OWL Schema Learning Algorithms
+is often to devise operators that have many useful properties like              Another group of algorithms aims at generating OWL ax-
+finiteness, non-redundancy, properness and completeness while              ioms which can be used to enrich or revise the existing schema
+still allowing to efficiently traverse throughout the search space         of a knowledge base by analysing the instance data [10]. This
+in pursuit of good hypotheses. However, there are theoretical              process can be applied to all types of OWL schema entities,
+limitations on what properties can be combined for more ex-                i.e. not only to classes but also to object and data properties. In
+pressive description logics [9], e.g. it is possible to design an          particular, this means that we do not only support the generation
+operator that is finite and complete but there exists no operator          of axioms regarding the class hierarchy, e.g. “every employee
+that is finite, proper and complete. This is not a problem at              is a person”, but also allow for computing the domain or range
+all because some of the missing properties of an operator can              of a property, whether it should be declared as functional, tran-
+be handled algorithmically, i.e. we are able to workaround for             sitive etc. As an example, the algorithms may suggest that
+instance infinity and redundancy.                                          the property birthDate has the domain Person and the
+     OCEL (OWL Class Expression Learner) was initially de-                 range xsd:date, and moreover is supposed to be functional,
+vised for learning in the description logic ALC, but was later             i.e. there is only one birth date for each person. The general
+extended to cover other parts of OWL as well, e.g. nominals.               workflow of schema enrichment is visualised in Figure 4. More
+The general idea is to use a proper and complete refinement op-            details will be given in Sec. 6.2.
+erator to build a search tree while using heuristics which control              In addition to the basic axiom types of OWL, which can be
+how the search tree is traversed. The algorithm uses techniques            semi-automatically added to the knowledge base, DL-Learner
+to cope with redundancy and infinity, in particular, infinity is           also support more complex axiom patterns [11]. Instead of
+handled by the ability to revisit nodes in the search tree several         learning general expressions, this technique is tailored to a suite
+times and perform incremental applications of the refinement op-           of axiom types which have been determined to be relevant by
+erator. Figure 3 visualises a search tree of OCEL, starting from           analysing a large corpus of ontologies on the web (upper part of
+the most general concept owl:Thing as the root node to more                Figure 4). After retrieving the general schema information, those
+specific concepts like Person or Person that attends                       patterns are used in SPARQL-based pattern detection algorithms,
+some talk. Nodes are annotated with their score and the                    which can be executed over large datasets stored in SPARQL
+number of times they have been expanded (denoted by the HE                 endpoints (lower part of Figure 4). On top of the data retrieved
+value). Some nodes are too weak to eventually lead to compet-              by those patterns, different scoring algorithms can be applied to
+itive learning problem solutions, i.e. the number of uncovered             compute confidence values and rank suggestions. The approach
+positive examples is above a given threshold. They are never               optionally allows to perform schema reasoning, but does not
+visited, which allows the algorithm to ignore those parts of the           load instance data into the reasoner for efficiency reasons. While
+search space resulting in improved efficiency.                             this approach lacks generality, it is scalable and based on real
+     CELOE (Class Expression Learning for Ontology Engineer-               schema usage patterns. This renders the approach a suitable
+ing) [7] is an evolution of OCEL, which contains adaptions                 algorithm candidate for ontology learning.
+specific for the class learning problem. One of the main mod-
+ifications is a different heuristic which is more biased towards           Other Algorithms
+short concepts. Those are more likely to be relevant in the on-               In addition to the previously shown algorithms, DL-Learner
+tology creation and maintenance scenarios as the expressions               contains algorithms that have been inspired by different tech-
+created and maintained by humans are often simpler than those              nologies resp. use cases:
+                                                                       4
+
+
+===== PDF PAGE 5 =====
+Figure 4: The general workflow of knowledge base enrichment and its pattern based extension: Frequent axiom patterns in various ontology portals are detected and
+converted into SPARQL query patterns (upper part). Those are then applied to other datasets to enrich them with further axioms (lower part).
+
+
+
+    QTL is an algorithm that makes use of so-called query trees,                   input tree in the QTL algorithm.
+which is intuitively a tree-like representation of information                         Finally, the tree or its corresponding SPARQL query will be
+about a particular individual. For example, a query tree repre-                    returned:
+senting the German city Leipzig could be                                            SELECT DISTINCT ?s WHERE {
+                                     Leipzig                                         ?s ont:leaderParty :SPD .
+                                                                                     ?s ont:federalState ?o1 .
+                                                                                     ?o1 ont:locatedIn :Germany .
+               federalState     population         leaderParty                       ?s ont:population ?o2 .
+                                                                                     FILTER(?o2 >= 539348) }
+                 Saxony              539 348              SPD
+                                                                                        PARCEL, the parallel class expression learning algorithm [15]
+     locatedIn             capital                                                 aims at computing partial definitions of a learning problem,
+       Germany            Dresden                                                  which are then aggregated to complete solutions. This approach
+                                                                                   lends itself naturally to parallelization and has been applied in an
+and for Berlin, the German capital, it might be
+                                                                                   abnormality detection usage scenario in smart homes, in which
+                               Berlin
+                                                                                   e.g. the learned result for the concept normal showering
+           federalState     population         leaderParty                         is the disjunction of the partial definitions like
+                                                                                    1. activityHasDuration some (hasDurationValue some
+            Berlin            3 415 091             SPD                                 double[>= 4.5] and hasDurationValue some double
+                                                                                        [<= 15.5])
+     locatedIn                                                                      2. activityHasDuration some (hasDurationValue some
+                                                                                        double [>= 15.5] and hasDurationValue some
+           Germany                                                                      double[<= 19.5]) and activityHasStarttime some
+                                                                                        {Spring}
+   Based on those input trees, the least general generalization
+(LGG) is computed, i.e. the most specific query tree that sub-                         Fuzzy DLL [12] is an algorithm that is targeted at vague
+sumes all positive examples will be returned. For the example                      and imprecise domains. While building on CELOE, it uses a
+above, the LGG could be represented by the query tree below,                       fuzzy description logic reasoner and can optimise towards fuzzy
+which can be roughly described as “German cities lead by SPD                       objective functions.
+and having at least 539 348 inhabitants”.                                              Influenced by the field of Genetic Programming, DL-Learner
+                                                                                   contains algorithms using evolutionarily inspired methods for
+                                 ?
+                                                                                   concept learning. Those algorithms [8] introduce new genetic
+           federalState     population         leaderParty                         operators to make better use of background knowledge than
+                                                                                   standard operators. Although those algorithms are meanwhile
+                 ?          ≥539 348                SPD
+                                                                                   usually outperformed by newer approaches, they can still be in-
+     locatedIn                                                                     teresting in case there are not many schema restrictions (e.g. dis-
+                                                                                   junctions, domain and range restrictions) as those are better
+           Germany
+                                                                                   exploited by CELOE and OCEL.
+    The negative examples are used for generalisation of this
+                                                                               5
+
+
+===== PDF PAGE 6 =====
+5. Implementation                                                         dedicated learning tasks. By implementing the interfaces, algo-
+                                                                          rithms can also readily be evaluated against all learning tasks
+     DL-Learner is developed under the GPL 3 license and pri-             provided in the framework.
+marily written in Java. The project was started in 2007 and
+had 30 developers contributing since then with 4 researchers
+in the core development team currently. 4400 commits were                 6. Use Cases
+contributed to the project over the past 7 years resulting in ap-
+                                                                          6.1. Application to Life-Science Problems
+proximately 86 thousand lines of Java code excluding comments,
+empty lines and import statements. The release contains around                 In first experiments applying the concept learning approach
+20 example machine learning tasks with 30 more experimental               to the life science domain, the DL-Learner was used to find de-
+or larger-scale tasks contained in the project repository4 (more          scriptions of chemicals that might cause cancer. There have been
+than 150 if all variations are counted).                                  several approaches by both – human and machines – to predict
+     DL-Learner provides two command line scripts: One for                carcinogenicity. It has been shown in [16] that the performance
+the general execution of configuration files, which can solve             of machine derived models for carcinogenicity can be equal to
+standard machine learning tasks, and one tailored to knowledge            human experts. Classifying chemicals is a massive challenge,
+base enrichment (as explained in Section 6.2). Moreover, it is            due to the high number and diversity of elements, structures,
+possible to apply n-fold cross-validation by just adding one line         and tests involved in the problem. To provide experimental
+to the config file, thus allowing for easy to use model validation        data, the U.S. National Toxicology Program (NTP) makes a
+for arbitrary learning tasks provided by DL-Learner. In addition,         set of more than 300 tested compounds available for training
+it is possible to set different fitness functions like F-measure or       by Machine Learning tools. For each compound, the chemi-
+predictive accuracy, which allows learning algorithms to opti-            cal structure, structural indicators, and the results of short-term
+mise for different criteria. The command line interface reads             assays were made available. In this carcinogenesis prediction
+in configuration files, which are internally processed using the          task background knowledge about chemical compounds and
+Spring Java Framework5 , and allow to configure almost arbitrary          existing results of already tested chemicals were used to derive
+workflows as the code follows Java Beans conventions.                     complex descriptions of the cancer-causing characteristics. In
+     Another means to access DL-Learner, in particular for ontol-         a first step the original data7 , available in a Prolog-like syntax,
+ogy engineering, is to use the Protégé plugin6 (cf. Section 6.4).         was converted into an OWL ontology. To do this, we extended
+The plugin can suggest axioms to add to a knowledge base inside           DL-Learner with a Prolog parser and wrote a mapping script
+of the popular Protégé ontology editor.                                   to convert the carcinogenesis files into OWL. It is sometimes
+                                                                          impossible and often not trivial to convert between both rep-
+Extending DL-Learner. DL-Learner is designed as a framework               resentations. For carcinogenesis such a mapping is possible,
+that is easily extensible allowing to add new custom components.          but required at least a superficial understanding of the domain.
+As an example, to develop a new learning algorithm one has                The mapping script we used and the resulting ontology are both
+to implement the class expression learning algorithm (CELA)               freely available at the DL-Learner use-case description page.8
+interface which means that certain methods to initialize, start           During the transformation process almost no knowledge was
+and stop the algorithm have to be written, as well as methods to          lost or added. The resulting ontology contains 142 classes, 19
+retrieve the best learned class expression. One simple example            properties, 22 373 instances, and more than 74 000 facts, e.g.
+of the main actions performed by the start method could be                information about atoms like Gallium or Hydrogen, chemical
+to build up a certain set of complex concept expressions and              structures like Halide or Methanol, and relates compounds to
+exhaustively evaluate them with regards to an existing objective          such structures or to its charge value. In the experiments, we
+function (score) implemented in DL-Learner. This score of a               run DL-Learner’s OCEL algorithm with different settings and
+concept expression depends on the actual problem to solve and             achieved a maximum cross validation accuracy of 67.4%, which
+is thus implemented in the applied learning problem. Using                outperformed other state-of-the-art approaches (cf. Table 1).
+the framework has the advantage of reducing development time                   As an example, the following definition was obtained when
+and it can be integrated into the command line interface almost           using DL-Learner over the full training set (72% accuracy, for
+effortlessly (just calling one method to register it).                    easier readability negation is moved further out if possible):
+    In the same fashion, the framework can also be extended by            Compound and
+new refinement operators which require to implement an initial-           not hasAtom some (Nitrogen-35 or Phosphorus-60 or
+                                                                                            Phosphorus-61 or Titanium-134)
+ization and refine method. The refine method takes a concept              and (min 3 hasStructure (Halide and not Halide10)
+expression and dynamically derives a set of new expressions. Do-               or (amesTestPositive = true and min 5 hasBond (
+                                                                                   not Bond-7)))
+ing all the wiring and providing clear interfaces the DL-Learner
+framework allows extension developers to concentrate on their                 This can be phrased in natural language as follows:
+components and further eases an overall customization to solve
+                                                                            7 http://web2.comlab.ox.ac.uk/oucl/research/areas/
+
+  4 https://github.com/AKSW/DL-Learner                                    machlearn/cancer.html
+                                                                            8 http://dl-learner.org/community/carcinogenesis/
+  5 http://projects.spring.io/spring-framework/
+  6 http://dl-learner.org/community/protege-plugin/
+
+
+                                                                      6
+
+
+===== PDF PAGE 7 =====
+Table 1: Overview of the accuracy on carcinogenesis prediction achieved by       and correct usage of schema elements. 2.) They improve the
+different approaches using the same background knowledge
+                                                                                 application of schema debugging techniques. For instance, after
+                                                                                 adding the above axioms the knowledge base would become
+   Approach                              Accuracy            Reference
+                                         (Std. Dev.)                             inconsistent if a person has two different birth places (explicitly
+                                                                                 stated to be not the same) due to the functionality axiom. Specifi-
+   DL-Learner (OCEL algorithm)           67.4% (±7.9%)
+   Aleph with Ensembles                  59.0% to 64.5%         [17]             cally for the DBpedia knowledge base we observed an erroneous
+   Boosted Weak ILP                      61.1%                  [18]             statement asserting that a person was born in Lacrosse, the game,
+   Weak ILP                              58.7%                  [18]             instead of Lacrosse, the city in the United States. Such errors can
+   Aleph Deterministic Top-Down 0.7      57.9% (±9.8%)          [19]
+   Aleph Randomized Rapid Restarts 0.9   57.6% (±6.4%)          [19]
+                                                                                 be automatically detected when schema information such as the
+   Aleph Deterministic Top-Down 0.9      56.2% (±9.0%)          [19]             range restriction is present (assuming disjointness of the classes
+   Aleph Randomized Rapid Restarts 0.7   54.8% (±9.0%)          [19]             Place and Game). 3.) Additional implicit information can be
+                                                                                 inferred. As an example in the above case it can be inferred that
+                                                                                 the birth place of a person is one of the places she stayed at. The
+“A chemical compound is carcinogenic iff it does not contain a                   main purpose of our research is to reduce the effort of creating
+Nitrogen-35, Phosphorus-60, Phosphorus-61, or Titanium-134                       and maintaining such schema information.
+atom and it has at least three Halide – excluding Halide10 –                         We have shown in [10] that the whole enrichment process
+structures or the ames test of the compound is positive and there                can be described as illustrated in the lower part of Figure 4 and
+are at least five atom bonds which are not of bond type 7.”                      also be applied to large scale knowledge bases accessible via
+The whole experimental setup as well as other experiments can                    SPARQL. The general workflow proceeds in three steps:
+be found in [9](cf. Sec. 7.2 and following).                                          1. In the optional first step, SPARQL queries are used to
+    In a further use case that is currently developed, the con-                          obtain existing information about the schema of the know-
+cept learning approach is applied to the prevalent gene and                              ledge base. In particular we retrieve axioms which allow
+biomedical databases. Algorithms in DL-Learner are used to                               to construct the class hierarchy. It can be configured
+find descriptions for insulitis-related diseases based on back-                          whether to use an OWL reasoner for inferencing over the
+ground knowledge containing information about genes, gene                                schema or just taking explicit knowledge into account.10
+functions and phenotypes. As a side effect, this use case is                             Naturally, the schema only needs to be obtained once per
+exploring scalability limits of all tools involved in the frame-                         knowledge base and can then be re-used by all algorithms
+work including reasoners. As a future direction the outcome                              and all entities in subsequent steps.
+of these investigations could be used for automated hypothesis                        2. The second step consists of obtaining data via SPARQL
+generation or the extraction of new classifiers from biomedical                          which is relevant for learning the considered axiom. This
+knowledge bases. By exploiting large ontological background                              results in a set of axiom candidates, configured via a
+knowledge, the approaches may achieve more accurate and/or                               threshold.
+readable hypotheses for a number of frequent diseases.                                3. In the third step, the score of axiom candidates is com-
+                                                                                         puted and the results are returned.
+6.2. Knowledge Base Enrichment                                                       In [11], patterns for frequent axioms are mined from more
+    A standard use case for the learning algorithms contained                    than one thousand ontologies and then used to learn on the
+in DL-Learner is knowledge base enrichment, i.e. the semi-                       DBpedia dataset. As one would expected, the most frequent
+automation of schemata creation and revision based on the                        axiom pattern was A SubClassOf B, but in the top 15 we found
+available instance data. The combination of instance data and                    also patterns like
+schemata allows improved querying, inference and consistency                      A SubClassOf p some (q some B)
+checking. As an example, consider a knowledge base containing                     A EquivalentTo B and p some C
+                                                                                  A SubClassOf p value a
+a property birthPlace and subjects in triples of this prop-
+erty, e.g. Brad Pitt, Angela Merkel, Albert Einstein, etc. Our                   Those patterns have been applied to search for promising instan-
+enrichment algorithms could, then, suggest that the property                     tiations on DBpedia and resulted in axioms like
+birthPlace may be functional and has the domain Person                            Song EquivalentTo MusicalWork and (artist some
+as it is encoded via the following axioms in Manchester OWL                                         Agent) and (writer some Artist)
+                                                                                 or
+syntax9 :                                                                         Conifer SubClassOf order value Pinales
+ObjectProperty: birthPlace
+    Characteristics: Functional                                                  A manual evaluation with non-author experts judging the 2154
+    Domain: Person                                                               proposed axioms showed that 48.2% of these axioms were useful
+    Range: Place
+    SubPropertyOf: hasBeenAt                                                     for extending the knowledge base. This shows promise, but also
+                                                                                 clearly indicates that a human expert is required in loop to ensure
+   Adding such axioms to a knowledge base can have several
+                                                                                 high quality.
+benefits: 1.) The axioms serve as documentation for the purpose
+                                                                                    10 Note that the OWL reasoner only loads the schema of the knowledge base
+   9 For details on Manchester OWL syntax (e.g. used in Protégé, OntoWiki)       and, therefore, this option worked even in case with several hundred thousand
+see http://www.w3.org/TR/owl2-manchester-syntax/.                                classes in our experiments using the HermiT reasoner.
+
+                                                                             7
+
+
+===== PDF PAGE 8 =====
+6.3. Knowledge Base Repair
+    While the number and size of datasets in the Semantic Web
+are increasing, there is also a risk for introducing modelling
+problems, e.g. because of data extraction errors or a misunder-
+standing and misuse of particular types of constructs in the
+ontology languages. Typical problems express themselves in
+inconsistencies or unsatisfiable classes. An inconsistency, in
+simple terms, is a logical contradiction in the knowledge base,
+which makes it impossible to derive any meaningful information
+by applying standard OWL reasoning techniques.11 Unsatisfi-
+able classes usually are a fundamental modelling error in that
+they cannot be used to characterize any individual.
+    Therefore, an application of DL-Learner that is directly ac-
+companied with the enrichment use case (cf. Sec. 6.2) is ontol-
+ogy repair, i.e. detecting and fixing those problems. A core prob-
+lem is usually that existing datasets are not expressive enough to
+apply ontology repair algorithms directly, which makes it inter-
+esting to apply knowledge base enrichment as a pre-processing
+step. While the enrichment process introduces uncertainty due
+                                                                                      Figure 5: Screenshot of the DL-Learner Protégé plugin. Equivalent class expres-
+to its machine learning nature, it frequently allows to detect
+                                                                                      sions for the class Customer Requirement contained in the SWORE ontology
+a much wider range of problems. There are at least two tools                          v1.012 have been generated and the best one Requirement and isCreatedBy some
+which use DL-Learner as a library for ontology repair: ORE [20]                       Customer was selected showing no potential conflicts.
+and RDFUnit [21]. While ORE allows user feedback in a semi-
+automatic fashion, RDFUnit performs the process automatically
+but annotates axioms with confidence values from DL-Learner.                          circle shows its list of individuals. Those individuals are also pre-
+    Another dimension of knowledge base repair can be achieved                        sented as points in the circles and moving the mouse over such
+on the instance data level. Often, when DL-Learner algorithms                         a point shows information about the respective individual. Red
+suggest a possible axiom to add to the knowledge base, not all                        points show potential problems detected by the plugin. Please
+resources in the background knowledge fit that suggestion. Thus,                      note that we use closed world reasoning to detect those problems.
+one can directly report those instances (which are frequently                         If there is not only a potential problem, but adding the expres-
+corner-cases) to the user such that she can align the data, e.g.                      sion would render the ontology inconsistent, the suggestion is
+add missing data or correct existing data if possible.                                marked red and a warning message is displayed.
+                                                                                           Accepting such a suggestion can still be a good choice, be-
+6.4. Providing Suggestions in Ontology Editors                                        cause the problem often lies elsewhere in the knowledge base,
+                                                                                      but was not obvious before, since the ontology was not suffi-
+    Together with the Protégé developers, we extended the Pro-
+                                                                                      ciently expressive for reasoners to detect it. This is illustrated
+tégé 4/5 plugin mechanism to be able to seamlessly integrate
+                                                                                      in a screencast available on the plugin homepage13 , where the
+the DL-Learner plugin as an additional method to create class
+                                                                                      ontology becomes inconsistent after adding an axiom, and the
+expressions. This means that the knowledge engineer can use
+                                                                                      real source of the problem is fixed afterwards. Being able to
+the algorithm exactly where it is needed without any additional
+                                                                                      make such suggestions can be seen as a strength of the plugin.
+configuration steps. The plugin has also become part of the
+                                                                                           The plugin allows the knowledge engineer to change ex-
+official Protégé repository, i.e. it can be directly installed from
+                                                                                      pert settings. Those settings include the maximum suggestion
+within Protégé.
+                                                                                      search time, the number of results returned and settings related
+    A screenshot of the plugin is shown in Figure 5. To use the
+                                                                                      to the desired target language, e.g. the knowledge engineer can
+plugin, the knowledge engineer is only required to press a button,
+                                                                                      choose to stay within the OWL 2 EL profile or enable/disable
+which then starts the learning algorithm and during runtime
+                                                                                      certain class expression constructors. The learning algorithm is
+periodically updates the list of suggested class expressions. For
+                                                                                      designed to be able to handle noisy data and the visualisation of
+each suggestion, the plugin displays its accuracy.
+                                                                                      the suggestions will reveal false class assignments so that they
+    When clicking on a suggestion, it is visualized by displaying
+                                                                                      can be fixed afterwards.
+two circles: One stands for the instances of the class to describe
+                                                                                           We also plan to integrate the DL-Learner into WebProtégé14
+and another circle for the instances of the suggested class expres-
+                                                                                      as it has full reasoning support. One use case related to this is
+sion. Ideally, both circles overlap completely, but in practice this
+                                                                                      that the DBpedia Association currently plans to adopt WebPro-
+will often not be the case. Clicking on the plus symbol in each
+                                                                                      tégé for maintaining the DBpedia ontology. DL-Learner in this
+
+   11 There are indeed approaches that do some kind of approximate reasoning to
+                                                                                        13 http://dl-learner.org/community/protege-plugin/
+infer useful information from an inconsistent ontology.                                 14 http://webprotege.stanford.edu/
+   12 SWORE Ontology: http://ns.softwiki.de/req/
+
+
+                                                                                  8
+
+
+===== PDF PAGE 9 =====
+context would then serve as a component suggesting ontology                 as equipment in hospitals, which can drastically reduce costs.
+extensions to all ontology maintainers for manual approval.                 Given an ontology based on real-world datasets from hospitals
+                                                                            describing all transport and related information over a longer
+6.5. Knowledge Exploration                                                  timespan of several moths, first some semantic clustering is used
+     Typically, querying an RDF knowledge base via SPARQL                   to partition the data, and then on each partition, the DL-Learner
+queries is not considered an end user task as it requires familiar-         is applied to learn rules. For instance, one explanation for why a
+ity with its syntax and the structure of the underlying knowledge           transport is late might be
+base. For this reason, query interfaces are often tight to a specific        LateTransport EquivalentTo hasRoute some (
+                                                                                                         hasSegment some
+knowledge base. More flexible techniques include facet based                                              {BusyElevator})
+browsing, graphical query builders and Question Answering
+(QA) systems. We integrated the QTL algorithm (cf. Sec. 4)                  Those rules can then be taken into account when planning new
+into the AutoSPARQL user interface [22]. It provides an alterna-            transports.
+tive to the above interfaces with a different set of strengths and
+restrictions. AutoSPARQL uses active supervised machine learn-              7. Related Work
+ing to generate a SPARQL query based on positive examples,
+i.e. resources which should be in the result set of the SPARQL              7.1. Inductive Learning
+query, and negative examples, i.e. resources which should not                    The goal of inductive learning approaches is to infer general
+be in the result set of the query. The user can either start with a         principles from specific facts or instances usually considering
+question as in other QA systems or by directly searching for a              some kind of background knowledge. Several systems using
+relevant resource, e.g. “Rome”. He then selects an appropriate              different techniques have been developed, for example Progol16 ,
+result, which becomes the first positive example. After that, he is         Golem17 and many others [2]. Those learning systems have been
+asked a series of questions on whether a resource, e.g. “London”,           applied in several scenarios, e.g. learning drug structure activity
+should also be contained in the result set. These questions are             rules, natural language processing, protein interaction [25, 26]
+answered by “yes” or “no”. This feedback allows the supervised              or the detection of traffic problems. Overall, inductive reasoning
+learning method to gradually learn which query the user is likely           is a rich and diverse research area with several applications, in
+to be interested in. After each question is answered, QTL is                particular those where rich structural knowledge is available.
+invoked again, i.e. a new SPARQL query which returns all pos-                    Despite the relative success of inductive reasoning in some
+itive examples and none of the negative examples is returned.               fields, there are also some open issues. One practical problem
+The user can always observe the result of the currently learned             is to make results of ILP programs more readable and under-
+query and stop answering questions if the algorithm has cor-                standable for their users. This became evident for instance at
+rectly learned it. The system can also inform the user if there is          the Predictive Toxicology Challenge18 where different ILP pro-
+no learnable query, which does not contradict with the selection            grams could obtain promising results [27, 28, 29], however, they
+of positive and negative examples. Overall, AutoSPARQL can                  turned out to be hard to understand by domain experts. Another
+generate more complex queries than facet-based browsers and                 problem is scalability. Clearly, one issue in research and practice
+most knowledge base specific applications, while still being eas-           in ILP is its scalability to large datasets [30]. One challenge
+ier to use than manual or visual SPARQL query builders and not              is the size of the hypothesis space, in particular for expressive
+much more difficult to use than facet-based browsers or standard            languages.
+QA systems.
+                                                                            7.2. Concept Learning in the Semantic Web
+6.6. Applications in other Domains
+                                                                                Whereas early approaches of applying machine learning tech-
+    Besides the major use cases shown before, DL-Learner was                niques to Description Logics focused on the Probably Approx-
+also used by the community to solve interesting problems in                 imately Correct (PAC) [31] learnability of concept description
+other domains. We roughly describe two of them and refer the                languages later several supervised and unsupervised methods
+interested reader to the corresponding publications.                        arose. One example of an unsupervised learning approach is
+    In [23], DL-Learner was used for sentiment analysis, a re-              the K LUSTER [32] algorithm which applies induction tasks to
+search area that analyses people’s opinions or sentiments about             DL languages. Other than the DL-Learner framework, this al-
+e.g. products, services, individuals, events, etc. The idea is to           gorithm is designed for general terminology induction and does
+pick some documents that reflect a positive opinion, annotate               not cover the tasks introduced in Section 2. Further research was
+and translate those into OWL axioms by a novel vocabulary for               done on operator-based techniques working on Description Log-
+texts, and finally apply the DL-Learner to learn class expressions          ics [33, 34, 35, 36] which follow the idea of generalization as
+that describe documents with a positive opinion.                            search [37]. These influenced the refinement operators available
+    [24] describes another application of the DL-Learner within
+the AORTA project15 , in which one of the primary goals is the
+optimization of the transportation workflow of patients as well               16 http://www.doc.ic.ac.uk/~shm/progol.html
+                                                                              17 http://www.doc.ic.ac.uk/~shm/Software/golem/
+                                                                              18 http://www.comlab.ox.ac.uk/activities/
+  15 https://www.iminds.be/en/projects/aorta                                machinelearning/PTE/
+
+                                                                        9
+
+
+===== PDF PAGE 10 =====
+in the DL-Learner framework as described in [9]. Besides the                               [7] J. Lehmann, S. Auer, L. Bühmann, S. Tramp, Class expression learning
+DL-Learner framework, the Y IN YANG system [36] is another                                     for ontology engineering, Journal of Web Semantics 9 (2011) 71 – 81.
+                                                                                           [8] J. Lehmann, Hybrid learning of ontology classes, in: Proc. of the 5th Int.
+example of an implementation supporting concept learning on                                    Conference on Machine Learning and Data Mining MLDM, Vol. 4571 of
+description logics. However, Y IN YANG focused on learning                                     LNCS, Springer, 2007, pp. 883–898.
+ALC concepts and its algorithms tend to produce very long and                              [9] J. Lehmann, P. Hitzler, Concept learning in description logics using refine-
+hard-to-understand class expressions.                                                          ment operators, Machine Learning journal 78 (1-2) (2010) 203–250.
+                                                                                          [10] L. Bühmann, J. Lehmann, Universal OWL axiom enrichment for large
+    Another option for concept induction is offered by learning                                knowledge bases, in: Proc. of EKAW 2012, 2012, pp. 57–71.
+with logical decision trees [38] which were extended to support                           [11] L. Bühmann, J. Lehmann, Pattern based knowledge base enrichment, in:
+more expressive logical representations in clausal form [39].                                  12th International Semantic Web Conference, 21-25 October 2013, Sydney,
+With terminological decision trees [40] a model was introduced                                 Australia, 2013, pp. 33–48.
+                                                                                          [12] J. Iglesias, J. Lehmann, Towards integrating fuzzy logic capabilities into
+that allows the nodes of a logical decision tree to be terminolog-                             an ontology-based inductive logic programming framework, in: Proc.
+ical concept descriptions. The DL-Learner framework provides                                   of the 11th International Conference on Intelligent Systems Design and
+different implementations to learn with decision trees. Further-                               Applications (ISDA), 2011, pp. 1323–1328.
+more, DL-F OIL [41], a new version of the F OIL algorithm [42]                            [13] J. Lehmann, C. Haase, Ideal downward refinement in the EL description
+                                                                                               logic, in: Inductive Logic Programming, 19th International Conference,
+was proposed which was adapted to learn concept descriptions                                   ILP 2009, Leuven, Belgium, 2009, pp. 73–87.
+supporting the OWL DL profile. The actual evaluation strat-                               [14] L. Bühmann, D. Fleischhacker, J. Lehmann, A. Melo, J. Völker, Inductive
+egy of concept candidates in DL-F OIL differs from the ideas                                   lexical learning of class expressions, in: Knowledge Engineering and
+                                                                                               Knowledge Management, Vol. 8876 of LNCS, Springer International
+presented in Section 2 since it follows the information gain ap-                               Publishing, 2014, pp. 42–53.
+proach of the F OIL algorithm. Another algorithm that derives                             [15] A. C. Tran, J. Dietrich, H. W. Guesgen, S. Marsland, An approach to
+from F OIL is F OIL-DL [43] which adapts the refinement strat-                                 parallel class expression learning, in: Proc. of the 6th International Con-
+egy and information gain calculation to learn fuzzy general class                              ference on Rules on the Web: Research and Applications, RuleML’12,
+                                                                                               Springer-Verlag, Berlin, Heidelberg, 2012, pp. 302–316.
+inclusion axioms from crisp DL knowledge bases.                                           [16] A. Srinivasan, R. D. King, D. W. Bristol, An assessment of submissions
+                                                                                               made to the predictive toxicology evaluation challenge, in: Proc. of the
+                                                                                               16th International Joint Conference on Artifical Intelligence - Volume 1,
+8. Future Work                                                                                 IJCAI’99, 1999, pp. 270–275.
+                                                                                          [17] I. Dutra, D. Page, V. S. Costa, J. Shavlik, An empirical evaluation of
+     In future work, we target several advances related to hori-                               bagging in inductive logic programming, in: Proc. of the 12th International
+zontal scalability of the algorithms in DL-Learner. In particular,                             Conference on Inductive Logic Programming, Vol. 2583 of Lecture Notes
+we will investigate algorithms for distributing the underlying                                 in Artificial Intelligence, Springer, 2003, pp. 48–65.
+data on several nodes of a cluster as well as distributing the                            [18] N. Jiang, S. Colton, Boosting descriptive ILP for predictive learning in
+                                                                                               bioinformatics, in: Proc. of the 15th International Conference on Inductive
+hypothesis search via a master-slave mechanism on supercom-                                    Logic Programming, Vol. 4455 of LNCS, Springer, 2006, pp. 275–289.
+puters. Within funded projects, DL-Learner will be evaluated in                           [19] F. Železný, A. Srinivasan, D. Page, Lattice-search runtime distributions
+use cases related to IT monitoring, manufacturing workflows as                                 may be heavy-tailed, in: Proc. of the 12th International Conference on
+well as compressor systems. For the application of DL-Learner                                  Inductive Logic Programming, Vol. 2583 of Lecture Notes in Artificial
+                                                                                               Intelligence, Springer-Verlag, 2003, pp. 333–345.
+in life science scenarios, we will research methods suitable for                          [20] J. Lehmann, L. Bühmann, ORE - a tool for repairing and enriching knowl-
+handling large schemata, i.e. those with many thousand classes                                 edge bases, in: Proc. of the 9th International Semantic Web Conference
+and demanding requirements in terms of reasoning.                                              (ISWC2010), LNCS, Springer, 2010, pp. 177–193.
+                                                                                          [21] D. Kontokostas, P. Westphal, S. Auer, S. Hellmann, J. Lehmann, R. Cor-
+Acknowledgements. This work was supported by grants from                                       nelissen, A. Zaveri, Test-driven evaluation of linked data quality, in: Proc.
+                                                                                               of the 23rd International Conference on World Wide Web, WWW ’14,
+the EU FP7 Programme for the project GeoKnow (GA no.                                           2014, pp. 747–758.
+318159) as well as for the German Research Foundation project                             [22] J. Lehmann, L. Bühmann, Autosparql: Let users query your knowledge
+GOLD and the German BMWi project SAKE.                                                         base, in: Proc. of ESWC 2011, 2011, pp. 63–79.
+                                                                                          [23] A. Salguero, M. Espinilla, Sentiment Analysis and Ontology Engineering:
+                                                                                               An Environment of Computational Intelligence, 2016, Ch. Description
+References                                                                                     Logic Class Expression Learning Applied to Sentiment Analysis, pp. 93–
+                                                                                               111.
+ [1] T. Dietterich, P. Domingos, L. Getoor, S. Muggleton, P. Tadepalli, Struc-            [24] P. Bonte, F. Ongenae, F. D. Turck, Learning semantic rules for intelligent
+     tured machine learning: the next ten years, Machine Learning 73 (1) (2008)                transport scheduling in hospitals, in: Proc. of the 5th Workshop on Data
+     3–23.                                                                                     Mining and Knowledge Discovery meets Linked Open Data, 2016.
+ [2] S. Muggleton, L. De Raedt, D. Poole, I. Bratko, P. Flach, K. Inoue, A. Srini-        [25] J. Chen, L. Kelley, S. Muggleton, M. Sternberg, Protein fold discovery
+     vasan, ILP turns 20, Machine Learning 86 (1) (2012) 3–23.                                 using stochastic logic programs, in: Probabilistic inductive logic program-
+ [3] J. Lehmann, DL-Learner: learning concepts in description logics, Journal                  ming, Springer, 2008, pp. 244–262.
+     of Machine Learning Research (JMLR) 10 (2009) 2639–2642.                             [26] J. C. Santos, H. Nassif, D. Page, S. H. Muggleton, M. J. Sternberg, Auto-
+ [4] S.-H. Nienhuys-Cheng, R. de Wolf (Eds.), Foundations of Inductive Logic                   mated identification of protein-ligand interaction features using inductive
+     Programming, Vol. 1228 of LNCS, Springer, 1997.                                           logic programming: a hexose binding case study, BMC bioinformatics
+ [5] C. d’Amato, N. Fanizzi, F. Esposito, A note on the evaluation of induc-                   13 (1) (2012) 162.
+     tive concept classification procedures, in: Proc. of the 5th Workshop on             [27] R. Benigni, A. Giuliani, Putting the predictive toxicology challenge into
+     Semantic Web Applications and Perspectives (SWAP2008), Rome, Italy,                       perspective: Reflections on the results, Bioinformatics 19 (10) (2003)
+     2008, Vol. 426, CEUR-WS.org, 2008.                                                        1194–1200.
+ [6] S. Hellmann, J. Lehmann, S. Auer, Learning of OWL class expressions on               [28] C. Helma, R. D. King, S. Kramer, A. Srinivasan, The predictive toxicology
+     very large knowledge bases and its applications., in: Semantic Services,                  challenge 2000-2001, Bioinformatics 17 (1) (2001) 107–108.
+     Interoperability and Web Applications: Emerging Concepts, IGI Global,                [29] H. Toivonen, A. Srinivasan, R. D. King, S. Kramer, C. Helma, Statistical
+     2011, pp. 104–130.
+
+                                                                                     10
+
+
+===== PDF PAGE 11 =====
+     evaluation of the predictive toxicology challenge 2000-2001, Bioinformat-
+     ics 19 (10) (2003) 1183–1193.
+[30] H. Watanabe, S. Muggleton, Can ILP be applied to large dataset?, in:
+     Inductive Logic Programming, 19th International Conference, ILP 2009,
+     Leuven, Belgium, 2009, pp. 249–256.
+[31] A. Blumer, A. Ehrenfeucht, D. Haussler, M. K. Warmuth, Learnability and
+     the vapnik-chervonenkis dimension, Journal of the ACM (JACM) 36 (4)
+     (1989) 929–965.
+[32] J. U. Kietz, K. Morik, A polynomial approach to the constructive induction
+     of structural knowledge, Machine Learning 14 (2) (1994) 193–218.
+[33] N. Fanizzi, F. Esposito, S. Ferilli, G. Semeraro, A methodology for the
+     induction of ontological knowledge from semantic annotations, in: Proc.
+     of the Conf. of the Italian Association for Artificial Intelligence, Vol. 2829
+     of LNAI/LNCS, Springer, 2003, pp. 65–77.
+[34] F. Esposito, N. Fanizzi, L. Iannone, I. Palmisano, G. Semeraro, Knowledge-
+     intensive induction of terminologies from metadata, in: The Semantic Web
+     – ISWC 2004: Third International Semantic Web Conference. Proceedings,
+     Springer, 2004, pp. 441–455.
+[35] N. Fanizzi, S. Ferilli, L. Iannone, I. Palmisano, G. Semeraro, Downward
+     refinement in the ALN description logic, in: Proc. of the 4th International
+     Conference on Hybrid Intelligent Systems, HIS2004, IEEE Computer
+     Society, 2005, pp. 68–73.
+[36] L. Iannone, I. Palmisano, N. Fanizzi, An algorithm based on counterfactu-
+     als for concept learning in the semantic web, Applied Intelligence 26 (2)
+     (2007) 139–159.
+[37] T. M. Mitchell, Generalization as search, Artificial Intelligence 18 (2)
+     (1982) 203–226.
+[38] J. R. Quinlan, Induction of decision trees, Machine Learning 1 (1986)
+     81–106.
+[39] H. Blockeel, L. D. Raedt, Top-down induction of first-order logical deci-
+     sion trees, Artificial Intelligence 101 (1-2) (1998) 285–297.
+[40] N. Fanizzi, C. d’Amato, F. Esposito, Induction of concepts in web on-
+     tologies through terminological decision trees, in: Proc. of ECML PKDD
+     2010, Part I, Vol. 6321 of LNCS/LNAI, Springer, 2010, pp. 442–457.
+[41] N. Fanizzi, C. d’Amato, F. Esposito, DL-F OIL: Concept learning in de-
+     scription logics, in: Proc. of the 18th International Conference on Inductive
+     Logic Programming, ILP2008, Vol. 5194 of LNAI, Springer, 2008, pp.
+     107–121.
+[42] J. R. Quinlan, Learning logical definitions from relations, Machine Learn-
+     ing 5 (1990) 239–266.
+[43] F. A. Lisi, U. Straccia, Learning in description logics with fuzzy concrete
+     domains, Fundamenta Informaticae 140 (3-4) (2015) 373–391.
+
+
+
+
+                                                                                      11

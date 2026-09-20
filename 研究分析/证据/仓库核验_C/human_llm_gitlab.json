@@ -1,0 +1,695 @@
+{
+  "checked": "2026-09-20",
+  "repo": "eswc2025/ontology-extension-with-llms",
+  "project": {
+    "id": 65092220,
+    "description": null,
+    "name": "Ontology extension with LLMs",
+    "name_with_namespace": "ESWC2025 / Ontology extension with LLMs",
+    "path": "ontology-extension-with-llms",
+    "path_with_namespace": "eswc2025/ontology-extension-with-llms",
+    "created_at": "2024-12-04T15:50:34.250Z",
+    "default_branch": "main",
+    "tag_list": [],
+    "topics": [],
+    "ssh_url_to_repo": "git@gitlab.com:eswc2025/ontology-extension-with-llms.git",
+    "http_url_to_repo": "https://gitlab.com/eswc2025/ontology-extension-with-llms.git",
+    "web_url": "https://gitlab.com/eswc2025/ontology-extension-with-llms",
+    "readme_url": "https://gitlab.com/eswc2025/ontology-extension-with-llms/-/blob/main/README.md",
+    "forks_count": 0,
+    "avatar_url": null,
+    "star_count": 0,
+    "last_activity_at": "2025-03-14T10:10:38.761Z",
+    "visibility": "public",
+    "namespace": {
+      "id": 98481376,
+      "name": "ESWC2025",
+      "path": "eswc2025",
+      "kind": "group",
+      "full_path": "eswc2025",
+      "parent_id": null,
+      "avatar_url": null,
+      "web_url": "https://gitlab.com/groups/eswc2025"
+    }
+  },
+  "tree": [
+    {
+      "id": "731302b23bf5345125a9a290818906b6e614335d",
+      "name": "Demonstration_and_Evaluation",
+      "type": "tree",
+      "path": "Demonstration_and_Evaluation",
+      "mode": "040000"
+    },
+    {
+      "id": "7e1a0ced742f2a3916aea382d28abe632071fdc5",
+      "name": "Inputs",
+      "type": "tree",
+      "path": "Demonstration_and_Evaluation/Inputs",
+      "mode": "040000"
+    },
+    {
+      "id": "bf5fcdfaed74662cfff682bf4003c9d70766d6c5",
+      "name": "Outputs",
+      "type": "tree",
+      "path": "Demonstration_and_Evaluation/Outputs",
+      "mode": "040000"
+    },
+    {
+      "id": "84eedbe444909fb01649b155401d36a888f22323",
+      "name": "Interviews",
+      "type": "tree",
+      "path": "Interviews",
+      "mode": "040000"
+    },
+    {
+      "id": "80a3c78730754a3936de822ee973c16e375e25a5",
+      "name": "Figures",
+      "type": "tree",
+      "path": "Interviews/Figures",
+      "mode": "040000"
+    },
+    {
+      "id": "ed2cbdb88d60e12d31e18ac670bfb485e920b46a",
+      "name": "Prompt_Templates",
+      "type": "tree",
+      "path": "Prompt_Templates",
+      "mode": "040000"
+    },
+    {
+      "id": "10f7209557211222d50ba7be830aa56d0a551f03",
+      "name": ".gitignore",
+      "type": "blob",
+      "path": ".gitignore",
+      "mode": "100644"
+    },
+    {
+      "id": "2fec2c861c776e4914936897ece4beccec3d8929",
+      "name": "CGO-v2.3 WORKING-VERSION.ttl",
+      "type": "blob",
+      "path": "CGO-v2.3 WORKING-VERSION.ttl",
+      "mode": "100644"
+    },
+    {
+      "id": "8426284fa12d9f70fca2710c922e59fbf98b26ea",
+      "name": "Input_Task1_6_BusinessScenarios.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Inputs/Input_Task1_6_BusinessScenarios.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "cbf2073159bf1ff3e3595ecdd752c957b7cf582a",
+      "name": "Input_Task1_6_ExtensionUseCaseDescription.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Inputs/Input_Task1_6_ExtensionUseCaseDescription.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "6e4cbcdfd039df6ebe9a3cf555e30bbf148dbcbe",
+      "name": "Input_Task1_7_Standard.json",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Inputs/Input_Task1_7_Standard.json",
+      "mode": "100644"
+    },
+    {
+      "id": "231d24de9a18532f69c8d3239f8c8abde1d91da1",
+      "name": "Input_Task2_1_BusinessScenariosAndInfo.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Inputs/Input_Task2_1_BusinessScenariosAndInfo.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "9e4cb8ba0867bef8b7f6c9806c0b775e21231514",
+      "name": "Input_Task2_3_CQs.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Inputs/Input_Task2_3_CQs.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "0c7268eced716582d281de085c7b0d9754436056",
+      "name": "Input_Task2_4_CQsAndInfo.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Inputs/Input_Task2_4_CQsAndInfo.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "511ac82c087ea1d0658e941e2719ece3ba1937a8",
+      "name": "sens.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Inputs/sens.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "8799e96002bc19c1a38a3f45bfaf3ef312264317",
+      "name": "Output_Task1_1.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_1.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "4413d61dbc192c6b311fae3ac8ca8238e162ad60",
+      "name": "Output_Task1_2.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_2.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "f07546ee29612ea238522255c57deefa6c4b9fcd",
+      "name": "Output_Task1_2_Q3.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_2_Q3.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "1e49370eece04eee0a61e390a0d049695b72d32a",
+      "name": "Output_Task1_2_Q3_additional.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_2_Q3_additional.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "7ef6f64e34a708fca15e3b17533419642a1da9c4",
+      "name": "Output_Task1_3.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_3.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "7e786b8504de3706a91d2422f6f46037187f8e86",
+      "name": "Output_Task1_4.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_4.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "1c3739b26424c1ed719c0ae41d9308ab59c05b60",
+      "name": "Output_Task1_5.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_5.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "f6b152193e334998717141b65d6827c38f32bd1e",
+      "name": "Output_Task1_6.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_6.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "99b1e7b16b6c4716e7accd6c7d83a4599b7c8c4f",
+      "name": "Output_Task1_7.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_7.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "d1b1b6aadd00362380e4d26dbc00da89f4bba4a3",
+      "name": "Output_Task1_7.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task1_7.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "459421223959195e188fa9d5de2090c3c66bc7c8",
+      "name": "Output_Task2_1_CQs.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_1_CQs.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "ee4aab56eb4fef3cca30ddee4a9594d8ed59c837",
+      "name": "Output_Task2_2.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_2.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "cd682a6ec995bd782a45c2f781a63972c6b9af9b",
+      "name": "Output_Task2_3.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_3.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "f0043cd032aa413034f1e97fa16d56a8fa6ec2ee",
+      "name": "Output_Task2_4.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "fd5e9f96dd624f6478bf1603535a787c5c4d6221",
+      "name": "Output_Task2_4_AdditionalPrompt_Situations.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_AdditionalPrompt_Situations.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "97c1be20dbf477c6a72fb062eb83b9a6d29b7533",
+      "name": "Output_Task2_4_Final.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_Final.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "9ff1d5b361133b50ad81f804d417026f2dcab20d",
+      "name": "Output_Task2_4_FinalOntology_Classes.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_FinalOntology_Classes.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "22068d5e2282d2e6df11bad76473c26ef3ddd4ea",
+      "name": "Output_Task2_4_FinalOntology_DP.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_FinalOntology_DP.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "22e30e102e4ed2849302263c915b9cc5786a02b4",
+      "name": "Output_Task2_4_FinalOntology_OP.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_FinalOntology_OP.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "256e1925a4de4e5b2635baae0b7f89d142d07861",
+      "name": "Output_Task2_4_PreliminarySubOntology.ttl",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_PreliminarySubOntology.ttl",
+      "mode": "100644"
+    },
+    {
+      "id": "755a3d669e9930b20562205366d0d20ce8c77a83",
+      "name": "Output_Task2_4_Prompt1.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_Prompt1.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "7cb6ee9ac2310182264f8c975a8365ada2e04dde",
+      "name": "Output_Task2_4_Prompt1_Classes.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_Prompt1_Classes.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "cab1662c6d77cbf4685a6b9aa6518dbf61118e49",
+      "name": "Output_Task2_4_Prompt1_DataProperties.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_Prompt1_DataProperties.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "045eaac9542f4bf7946ad91dbc23d471421dff94",
+      "name": "Output_Task2_4_Prompt1_Individuals.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_Prompt1_Individuals.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "f008a364d12f8e6b878b17270135d2b70ee6b4bd",
+      "name": "Output_Task2_4_Prompt1_ObjectProperties.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_4_Prompt1_ObjectProperties.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "3d3ac34d9d4e911a90a1db667534233c1568e2c9",
+      "name": "Output_Task2_5.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_5.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "d8945418781e2c18e3312ba19205074b418b9172",
+      "name": "Output_Task2_5_AlignedSubOntology.ttl",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_5_AlignedSubOntology.ttl",
+      "mode": "100644"
+    },
+    {
+      "id": "f3edfdeb0bd654f145ac70d4b5bb833aa8abbcf5",
+      "name": "Output_Task2_5_Alignment.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task2_5_Alignment.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "5246534b51e7694408be2e65f8b9b76cb6edece2",
+      "name": "Output_Task3_1.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task3_1.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "1e43f719e450de5292bb9aed0293b970e09d985c",
+      "name": "Output_Task3_1_SPARQLQuery_CQ12.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task3_1_SPARQLQuery_CQ12.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "3bebfa16b50ea95d126a3b5ad60750345d8a4abb",
+      "name": "Output_Task3_1_SPARQLQuery_CQ13.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task3_1_SPARQLQuery_CQ13.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "1b9ff46d64da6b063ed64ccca9da9718c87f705b",
+      "name": "Output_Task3_1_SPARQLQuery_CQ14.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task3_1_SPARQLQuery_CQ14.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "2e78bafd55d92366b50e6224e39bac61691fe6da",
+      "name": "Output_Task3_1_SPARQLQuery_CQ15.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task3_1_SPARQLQuery_CQ15.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "a4db2f1e4ff84c5f5e066ccb5593306caa3f19fd",
+      "name": "Output_Task3_1_SPARQLQuery_CQ16.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task3_1_SPARQLQuery_CQ16.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "9fd6186f4d3b4b38ad1e4d75d17087aaa1b1cbd1",
+      "name": "Output_Task3_1_SPARQLQuery_CQ2.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task3_1_SPARQLQuery_CQ2.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "2751e44bbe646c0e27d7a6383b95df5e0b2b4dae",
+      "name": "Output_Task3_1_SPARQLQuery_CQ3.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task3_1_SPARQLQuery_CQ3.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "455f354913acda61a21dc378f3a1667b1769c3b6",
+      "name": "Output_Task3_1_SPARQLQuery_CQ4.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task3_1_SPARQLQuery_CQ4.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "f3088fb10bf16bb56eb821a9be677e128cf28ea1",
+      "name": "Output_Task4_1_FinalOntology_IndividualExample1.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_FinalOntology_IndividualExample1.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "c9f8b032070fccec70d7853ab12b8ae60d67cdad",
+      "name": "Output_Task4_1_FinalOntology_IndividualExample2.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_FinalOntology_IndividualExample2.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "2fe573d409179f68816ec20a3ccc3e5a21bb694e",
+      "name": "Output_Task4_1_FinalOntology_IndividualExample3.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_FinalOntology_IndividualExample3.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "6f355fe0ff4380e20022eaa4aa38b304d910415a",
+      "name": "Output_Task4_1_PopulatedSubOntology.ttl",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_PopulatedSubOntology.ttl",
+      "mode": "100644"
+    },
+    {
+      "id": "bf3e9d220de69dd229cbea1ae13f091e986509e2",
+      "name": "Output_Task4_1_SPARQLQuery_CQ1.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ1.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "1d73226da78931dba4f7617ce9f05c4364c7c8bc",
+      "name": "Output_Task4_1_SPARQLQuery_CQ12.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ12.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "b6d763c4ce18aa974ed19cf137292cba5c893282",
+      "name": "Output_Task4_1_SPARQLQuery_CQ13.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ13.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "f2ec94898b8f2361ba9a0c686bafabc31389f583",
+      "name": "Output_Task4_1_SPARQLQuery_CQ14.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ14.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "1ac914754592275f6f20d8768fb0618e117193b3",
+      "name": "Output_Task4_1_SPARQLQuery_CQ15.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ15.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "0cbc4f7ed73c99a9a659158bb9a0ea3567c65253",
+      "name": "Output_Task4_1_SPARQLQuery_CQ16.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ16.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "ff285c5db39fba89e46c74f1442187c18c1f4f22",
+      "name": "Output_Task4_1_SPARQLQuery_CQ2.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ2.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "18bf614f30f600a4544b294711969ab2cae1f125",
+      "name": "Output_Task4_1_SPARQLQuery_CQ3.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ3.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "e2cdb31f4f32827618889d55d5c9a96cfb9529af",
+      "name": "Output_Task4_1_SPARQLQuery_CQ4.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ4.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "2e1183287f9c487f0e1609db686500eeb6c7ff21",
+      "name": "Output_Task4_1_SPARQLQuery_CQ5.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ5.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "e24d719211d4e279769336d48a3c96e38ca20396",
+      "name": "Output_Task4_1_SPARQLQuery_CQ6.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ6.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "e0bbd311ce3c46b0c91c29f95794343048bcc99a",
+      "name": "Output_Task4_1_SPARQLQuery_CQ7.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ7.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "aa98a2a5582ce6f42b14c657a6f637718307ac45",
+      "name": "Output_Task4_1_SPARQLQuery_CQ8.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ8.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "9ade65e6f1d2bdd928a2b49f34a5f084e18b6602",
+      "name": "Output_Task4_1_SPARQLQuery_CQ9.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_1_SPARQLQuery_CQ9.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "1bfe1922d87184d8c465d8d968600fe690b47a10",
+      "name": "Output_Task4_2.txt",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/Outputs/Output_Task4_2.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "abdb5bf976e6d9153c129c5b030ce1ab3b743d13",
+      "name": "RDF_Validation_Service_SENS_LLM_Extension.JPG",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/RDF_Validation_Service_SENS_LLM_Extension.JPG",
+      "mode": "100644"
+    },
+    {
+      "id": "faa737d388dca42273b068ec7ab3386611921b97",
+      "name": "README.md",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/README.md",
+      "mode": "100644"
+    },
+    {
+      "id": "6b6aa5b30924254d579c6c552da474ec426adcd3",
+      "name": "SENS_Ontology_RDF.rdf",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/SENS_Ontology_RDF.rdf",
+      "mode": "100644"
+    },
+    {
+      "id": "2e277e6759f504f720cb5f52d53a2859ace38480",
+      "name": "prompts_testing.xlsx",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/prompts_testing.xlsx",
+      "mode": "100644"
+    },
+    {
+      "id": "5afd10e9f0914c21de35bfbc14fac4b3e855dd19",
+      "name": "sens_gold_standard_highlighted.png",
+      "type": "blob",
+      "path": "Demonstration_and_Evaluation/sens_gold_standard_highlighted.png",
+      "mode": "100644"
+    },
+    {
+      "id": "424f8950d3e41abd116c90a1cbd97f17549c0da1",
+      "name": "as-is.png",
+      "type": "blob",
+      "path": "Interviews/Figures/as-is.png",
+      "mode": "100644"
+    },
+    {
+      "id": "6172437c3debec25b48e7b382aaa39c759a878d4",
+      "name": "concerns.png",
+      "type": "blob",
+      "path": "Interviews/Figures/concerns.png",
+      "mode": "100644"
+    },
+    {
+      "id": "57095e4673bbf6b211f8efa2619c4e136a6daa5a",
+      "name": "example-content-analysis-concerns.png",
+      "type": "blob",
+      "path": "Interviews/Figures/example-content-analysis-concerns.png",
+      "mode": "100644"
+    },
+    {
+      "id": "5c79e65c5e5fba90d6ee42d7941f769107ad06c2",
+      "name": "example-content-analysis-opportunities.png",
+      "type": "blob",
+      "path": "Interviews/Figures/example-content-analysis-opportunities.png",
+      "mode": "100644"
+    },
+    {
+      "id": "6c0262683136baebb6e1af49447bfb7964986342",
+      "name": "example-content-analysis-problems.png",
+      "type": "blob",
+      "path": "Interviews/Figures/example-content-analysis-problems.png",
+      "mode": "100644"
+    },
+    {
+      "id": "ea9aae62c539704d4c70f1e94ff5e1c4df6b3c1a",
+      "name": "ishikawa-diagram.png",
+      "type": "blob",
+      "path": "Interviews/Figures/ishikawa-diagram.png",
+      "mode": "100644"
+    },
+    {
+      "id": "f8ebee8ba246a4ac4a7775e05d923ec4c7ac201b",
+      "name": "opportunities.png",
+      "type": "blob",
+      "path": "Interviews/Figures/opportunities.png",
+      "mode": "100644"
+    },
+    {
+      "id": "4fcb5a39cfa6981b4b5a586e251a972332f4ecc7",
+      "name": "README.md",
+      "type": "blob",
+      "path": "Interviews/README.md",
+      "mode": "100644"
+    },
+    {
+      "id": "31c6dc838afc718e237d3d54fdeaa19cf04c17bc",
+      "name": "interviews_analysis.xlsx",
+      "type": "blob",
+      "path": "Interviews/interviews_analysis.xlsx",
+      "mode": "100644"
+    },
+    {
+      "id": "7a4a3ea2424c09fbe48d455aed1eaa94d9124835",
+      "name": "LICENSE",
+      "type": "blob",
+      "path": "LICENSE",
+      "mode": "100644"
+    },
+    {
+      "id": "92fac51466adf36e1b049b305de397e64cb01e41",
+      "name": "README.md",
+      "type": "blob",
+      "path": "Prompt_Templates/README.md",
+      "mode": "100644"
+    },
+    {
+      "id": "3979bc3d467d7a54c26f456179b9690a62291adb",
+      "name": "README.md",
+      "type": "blob",
+      "path": "README.md",
+      "mode": "100644"
+    },
+    {
+      "id": "6a69c1c56fb5aef17da1f384985751e7838f85a9",
+      "name": "SENS-CGO-extensions.ttl",
+      "type": "blob",
+      "path": "SENS-CGO-extensions.ttl",
+      "mode": "100644"
+    },
+    {
+      "id": "ad685f70988e491a585d0eeab87c37db55b83fce",
+      "name": "cgo.txt",
+      "type": "blob",
+      "path": "cgo.txt",
+      "mode": "100644"
+    },
+    {
+      "id": "bdb5b147273ad5c18c425c8f38673a17a347c523",
+      "name": "cgo_manual.pdf",
+      "type": "blob",
+      "path": "cgo_manual.pdf",
+      "mode": "100644"
+    },
+    {
+      "id": "e547bca94b9bffe4174f75bf477f25647fc95168",
+      "name": "extension_usecase_description.pdf",
+      "type": "blob",
+      "path": "extension_usecase_description.pdf",
+      "mode": "100644"
+    },
+    {
+      "id": "369937ed86b64d0994e2274d72cff51d6fb87f7e",
+      "name": "human_LLM_collaboration_framework.pdf",
+      "type": "blob",
+      "path": "human_LLM_collaboration_framework.pdf",
+      "mode": "100644"
+    },
+    {
+      "id": "9d41845f6ba2f2d2f270adbe62f277fd807657b2",
+      "name": "prompts.xlsx",
+      "type": "blob",
+      "path": "prompts.xlsx",
+      "mode": "100644"
+    }
+  ]
+}

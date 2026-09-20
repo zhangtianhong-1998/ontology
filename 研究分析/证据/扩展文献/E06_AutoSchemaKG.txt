@@ -1,0 +1,1620 @@
+===== PDF PAGE 1 =====
+                                             AutoSchemaKG: Autonomous Knowledge Graph Construction through
+                                                     Dynamic Schema Induction from Web-Scale Corpora
+                                               Jiaxin Bai* 1 , Wei Fan* 1 , Qi Hu* 1 , Qing Zong1 , Chunyang Li1 , Hong Ting Tsang1
+                                             Hongyu Luo1 , Yauwai Yim1 , Haoyu Huang2 , Xiao Zhou1 , Feng Qin1 , Tianshi Zheng1
+                                                               Xi Peng3 , Xin Yao3 , Huiwen Yang3 , Leijie Wu3 , Yi Ji3
+                                                                 Gong Zhang3 , Renhai Chen3 , and Yangqiu Song1
+                                                                1
+                                                                  CSE, HKUST 2 CSE, CUHK 3 Theory Lab, Huawei
+                                             {jbai, wfanag, qhuaf, qzong, cliei, httsangaj, hluoay, ywyimaa, tzhengad
+                                                      xzhoucs, fqinac}@cse.ust.hk, haoyuhuang@link.cuhk.edu.hk
+                                                      {pancy.pengxi, yao.xin1, huiwen.yang, leijie.wu1, jiyi13,
+                                                       nicholas.zhang, chenrenhai}@huawei.com yqsong@cse.ust.hk
+
+
+
+
+arXiv:2505.23628v1 [cs.CL] 29 May 2025
+                                                                  Abstract                             et al., 2024) and complex reasoning tasks (Li et al.,
+                                                                                                       2024b). Yet despite their critical importance, cur-
+                                                 We present AutoSchemaKG, a framework for
+                                                                                                       rent KG construction approaches remain hampered
+                                                 fully autonomous knowledge graph construc-
+                                                 tion that eliminates the need for predefined
+                                                                                                       by an inherent paradox: they require predefined
+                                                 schemas. Our system leverages large language          schemas created by domain experts, which funda-
+                                                 models to simultaneously extract knowledge            mentally limits their scalability, adaptability, and
+                                                 triples and induce comprehensive schemas di-          domain coverage.
+                                                 rectly from text, modeling both entities and             We present AutoSchemaKG, a paradigm-
+                                                 events while employing conceptualization to or-       shifting framework that breaks this dependency by
+                                                 ganize instances into semantic categories. Pro-
+                                                                                                       enabling autonomous knowledge graph construc-
+                                                 cessing over 50 million documents, we con-
+                                                 struct ATLAS (Automated Triple Linking And            tion without predefined schemas (Ye et al., 2023).
+                                                 Schema induction), a family of knowledge              Our approach leverages the semantic understanding
+                                                 graphs with 900+ million nodes and 5.9 bil-           capabilities of large language models to simultane-
+                                                 lion edges. This approach outperforms state-          ously extract knowledge triples and dynamically
+                                                 of-the-art baselines on multi-hop QA tasks and        induce schemas directly from text, eliminating this
+                                                 enhances LLM factuality. Notably, our schema          manual bottleneck in KG development (Zhang and
+                                                 induction achieves 95% semantic alignment
+                                                                                                       Soh, 2024; Li et al., 2024a; Wang et al., 2025).
+                                                 with human-crafted schemas with zero manual
+                                                 intervention, demonstrating that billion-scale           Our framework distinguishes itself by model-
+                                                 knowledge graphs with dynamically induced             ing events alongside entities (Zhang et al., 2020,
+                                                 schemas can effectively complement paramet-           2022), recognizing that real-world knowledge is dy-
+                                                 ric knowledge in large language models1 .             namic rather than static (Tan et al., 2024). By treat-
+                                                                                                       ing events as first-class citizens, AutoSchemaKG
+                                         1       Introduction                                          captures temporal relationships, causality, and pro-
+                                         In the current era of information abundance, trans-           cedural knowledge missed by entity-only graphs.
+                                         forming vast amounts of unstructured data into                Experiments confirm that with event information
+                                         structured, machine-readable knowledge remains                preserving over 90% of original passage content
+                                         one of the most significant challenges in artifi-             versus just 70% for entity information alone.
+                                         cial intelligence. Knowledge Graphs (KGs) have                   Central to our innovation is the conceptualiza-
+                                         emerged as the cornerstone technology for this                tion (Wang et al., 2023c; Bai et al., 2024; Wang
+                                         transformation (Zhao et al., 2024), providing the             et al., 2023b; He et al., 2024; Wang et al., 2024a,c)
+                                         semantic backbone for applications ranging from               process that drives schema induction. Rather than
+                                         search engines and question answering (Wu et al.,             simply extracting triples, we employ a sophisti-
+                                         2024; Chen et al., 2024b; Zong et al., 2024; Sun              cated abstraction mechanism that generalizes spe-
+                                         et al., 2024b) to recommendation systems (Lyu                 cific entities, events, and relations into broader con-
+                                             *
+                                                                                                       ceptual categories. This conceptualization serves
+                                              Equal contribution.
+                                             1
+                                             https://github.com/HKUST-KnowComp/                        multiple critical functions: it creates semantic
+                                         AutoSchemaKG                                                  bridges between seemingly disparate information,
+
+                                                                                                   1
+
+
+===== PDF PAGE 2 =====
+     Question: Who won the Indy Car Race in the largest populated city of the state where the performer of
+     Mingus Three is from?
+                          [Concept]               [Concept]
+        United State                     State                    Arizona     [is the capital]     Myth
+
+                                                                                                  [Concept]
+
+                          [Concept]
+         Champion                                race                                       Phoenix
+                                                                             [Concept]
+
+
+                            Country                [Concept]          City
+              [Concept]
+                                                                                              [Participated]
+                                          The final
+                                          career victory                             Phoenix has a
+      Mario Andretti                      for Indy legend                            rich history of
+                       [Participated]     Mario Andretti        [At the same time]   open wheel races
+                                          (1993)
+
+
+Figure 1: This figure demonstrates the structure of ATLAS, which stands for Automated Triple Linking And Schema
+induction. Entity nodes (blue) and event (green) nodes are extracted from text, and Concept nodes (orange) are
+obtained by schema induction.
+
+enables zero-shot inferencing across domains, re-             alignment with human-crafted schemas with zero
+duces sparsity in KGs, and provides hierarchical              manual intervention, demonstrating that automated
+organization that supports both specific and ab-              schema generation can match expert quality while
+stract reasoning (Wang et al., 2024d,b). Our ap-              dramatically improving construction efficiency.
+proach transforms the traditional static schema into             The power of AutoSchemaKG extends beyond
+a dynamic, multi-level conceptual framework that              its construction methodology to deliver substan-
+adapts to new domains without predefined ontolo-              tial performance improvements in downstream ap-
+gies. This conceptualization layer represents a fun-          plications. In rigorous evaluations, our approach
+damental advancement, transforming a collection               outperforms state-of-the-art baselines by 12-18%
+of disconnected facts into a coherent knowledge               on multi-hop question answering tasks (Trivedi
+ecosystem with emergent reasoning capabilities.               et al., 2022; Yang et al., 2018; Ho et al., 2020)
+   By applying our framework to the Dolma 1.7                 and enhances large language model factuality by
+(Soldaini et al., 2024) pretraining corpus across             up to 9% (Chen et al., 2023). Moreover, we found
+three diverse subsets, English Wikipedia, paper ab-           that our constructed knowledge graph is helpful
+stracts from Semantic Scholar, and 3% of Common               for Llama3.1 7B models on general reasoning task
+Crawl data, we construct the ATLAS family of                  on various domains that intensively requeries back-
+knowledge graphs (ATLAS-Wiki, ATLAS-Pes2o,                    ground knowledge, including Global Facts, History,
+and ATLAS-CC). Collectively, these knowledge                  Law, Religion, Philosophy and Ethics, Medicine
+graphs comprise over 900 million nodes connected              and Health, and Social Sciences. These gains stem
+by 5.9 billion edges, containing billions of facts that       from our system’s ability to create richer semantic
+are comparable in scale to the parametric knowl-              representations through the integration of entities,
+edge stored in large language models. This scale is           events, and their conceptual abstractions—enabling
+crucial, as we demonstrate that knowledge graphs              better reasoning over complex information across
+must reach a critical mass of billions of facts to            different domains and data sources. Our key con-
+effectively compete with and complement the para-             tributions include:
+metric knowledge in contemporary LLMs.                           (1) Autonomous Schema Induction: We intro-
+   Our work addresses a fundamental research                  duce a new approach that generates comprehensive
+question: can retrieval-augmented generation with             schemas directly from text, eliminating the need for
+comparable-sized knowledge graphs enhance LLM                 predefined ontologies while maintaining semantic
+performance even when the retrieval corpus is                 coherence and domain coverage.
+drawn from the same sources as the model’s pre-                  (2) Unified Triple Extraction: We develop an
+training data? Through comprehensive evalua-                  entity-event-concept extraction framework that cap-
+tions on general benchmarks, we demonstrate that              tures not only traditional entity relationships but
+properly structured knowledge representations of-             also complex event structures and their concep-
+fer advantages over traditional text-based retrieval          tual categorizations, creating a multi-dimensional
+even in these scenarios. Most significantly, our              knowledge representation.
+schema induction process achieves 95% semantic                   (3) Scale-Optimized Architecture: We present
+
+                                                          2
+
+
+===== PDF PAGE 3 =====
+techniques for efficient knowledge extraction and             texts by filtering for English language and segment-
+integration at web scale, processing billions of              ing documents that exceed token limits. The seg-
+triples while maintaining semantic consistency and            mented texts are grouped into processing batches.
+supporting real-time updates.                                 Stage 1 extracts Entity-Entity relationships using
+   (4) Cross-Domain Adaptability: We demon-                   a system prompt PEE that instructs the LLM to
+strate AutoSchemaKG’s effectiveness across di-                detect entities and their interrelations. The output
+verse domains without domain-specific customiza-              is parsed into triples (e1 , r, e2 ), where e1 , e2 ∈ VN
+tion, offering a truly general-purpose knowledge              are entity nodes and r ∈ R is a relation type. Stage
+acquisition framework.                                        2 identifies Entity-Event relationships with prompt
+   AutoSchemaKG represents a fundamental re-                  PEV , producing triples (e, r, v) or (v, r, e), where
+thinking of knowledge graph construction, trans-              e ∈ VN , v ∈ VE , and r ∈ R. Stage 3 targets
+forming what was once a heavily supervised pro-               Event-Event relationships with prompt PV V , gen-
+cess requiring significant domain expertise into a            erating triples (v1 , r, v2 ), where v1 , v2 ∈ VE and
+fully automated pipeline. This advancement not                r ∈ R. The pipeline supports various LLMs with
+only accelerates KG development but also dramati-             optimized precision settings and GPU acceleration.
+cally expands the potential application domains for           Extracted triples with their corresponding texts and
+knowledge-intensive AI systems.                               metadata are serialized into JSON files.
+
+2     Problem Definition                                      3.2      Schema Induction
+
+We formally outline the tasks involved in automat-            Following triple extraction, we perform schema
+ically constructing knowledge graphs. We begin                induction to abstract specific entities, events, and
+by providing a precise definition of a knowledge              relations into generalized types. This process uses
+graph equipped with a conceptual schema.                      LLMs to generate conceptual phrases representing
+                                                              types of each graph element, aligning with our for-
+Definition 1 (Knowledge Graph with Conceptual                 mal definition G = (V, E, C, ϕ, ψ). For each cat-
+Schema). Consider a knowledge graph denoted                   egory (events, entities, and relations), we process
+as G = (V, E, C, ϕ, ψ), where: V = VE ∪ VN                    elements in batches. The LLM generates at least
+represents the collection of nodes, with VE as the            three phrases per element that encapsulate its type
+set of event nodes, VN as the set of entity nodes,            or related concepts at varying abstraction levels.
+and VE ∩ VN = ∅. E ⊆ V × V × R defines the set                For entities (e ∈ VN ), we enhance abstraction by
+of edges, where R denotes relation types. Edges               incorporating contextual information from neigh-
+may connect entity-entity, entity-event, or event-            boring nodes. We sample up to Nctx neighbors to
+event nodes. C is the set of conceptual categories.           construct a context string that provides additional
+ϕ : V → P(C) assigns each node a subset of                    semantic cues. The schema induction pipeline pro-
+concepts, where ϕ(v) ⊆ C for every v ∈ V . ψ :                cesses the graph serialized from the triple extrac-
+R → P(C) links each relation type to a subset                 tion phase. Elements are partitioned into batches,
+of concepts, where ψ(r) ⊆ C for every r ∈ R.                  with options for slicing for distributed computation.
+P(C) denotes the power set of C, encompassing                 The generated phrases are recorded in a CSV file,
+all possible subsets. Additional constraints: ∀v ∈            mapping each node v ∈ V and relation r ∈ R to
+V : ϕ(v) ̸= ∅ and ∀r ∈ R : ψ(r) ̸= ∅.                         a subset of concepts in C via ϕ and ψ. This au-
+3     AutoSchemaKG Framework                                  tomated schema enhances the knowledge graph’s
+                                                              adaptability across varied domains without requir-
+In this section, we elaborate on the process of fully         ing manual curation.
+automating knowledge graph construction.
+                                                              4       Construction of ATLAS Families
+3.1    Triple Extraction
+                                                              Corpora As shown in Table 1, the ATLAS-Wiki,
+Our approach employs a multi-phase pipeline using
+                                                              ATLAS-Pes2o, and ATLAS-CC are constructed
+Large Language Models to convert unstructured
+                                                              from the subsets from Dolma’s subset of Wikipedia
+text into knowledge triples from the Dolma corpus
+                                                              & Wikibooks, Semantic Scholar, and Dolma’s CC
+(Soldaini et al., 2024). This pipeline extracts Entity-
+                                                              respectively.2 We use the full Wikipedia & Wiki-
+Entity, Entity-Event, and Event-Event relationships
+                                                                  2
+through three sequential stages. We preprocess                        https://huggingface.co/datasets/allenai/dolma
+
+
+                                                          3
+
+
+===== PDF PAGE 4 =====
+                                    Question Answering Corpora                     Pre-training Corpora
+                                 MuSiQue     2WikiQA    HotpotQA      ATLAS-Wiki       ATLAS-Pes2o          ATLAS-CC
+      # Text Chunks                11,656       6,119       9,221          9.599M            7.918M            35.040M
+      # Entities                  108,582      48,782      95,686         70.104M           75.857M           241.061M
+      # Events                     99,747      50,910      82,833        165.717M           92.636M           696.195M
+      # Concepts                   37,414      19,830      32,410          8.091M            5.895M            31.070M
+      # Nodes                     245,743     119,522     210,929        243.912M          174.387M           937.256M
+      # Entity-Entity Edges         91,186     40,748      78,467             0.114B           0.076B           0.414B
+      # Event-Entity Edges         143,254     63,680     123,527             0.265B           0.208B           1.063B
+      # Event-Event Edges           45,157     21,062      36,602             0.071B           0.044B           0.295B
+      # Conceptulization Edges     933,330    432,869     789,608             1.041B           0.821B           4.178B
+      # Edges                    1,212,927    558,359   1,028,204             1.492B           1.150B           5.958B
+Table 1: Statistics of knowledge graph construction across QA datasets (MuSiQue, 2WikiQA, HotpotQA) and
+LLM pre-training corpora (En-Wiki, Pes2o-Abstract, Common Crawl) for ATLAS knowledge graphs, showing
+counts of text chunks, nodes (entities/events), concepts, edges (Entity-Entity, Event-Entity, Event-Event), and
+conceptualizations. M = million, B = billion.
+                                                                 Knowledge Graph   Triple Type     Precision Recall    F1
+books to construct the ATLAS-Wiki, and we use
+                                                                                   Entity-Entity    99.13     90.10   94.09
+the abstract part of Semantic Scholar to construct
+                                                                 ATLAS-Wiki        Event-Entity     100.0     92.59   95.60
+ATLAS-Pes2o, and we use the each of 3% from cc-                                    Event-Event      99.60     93.59   96.01
+head, cc-middle, and cc-tail to construct ATLAS-
+                                                                                   Entity-Entity    97.66     89.89   93.03
+CC. According to (Soldaini et al., 2024) the head,               ATLAS-Pes2o       Event-Entity     100.0     94.29   96.83
+middle, tail of CC are used to measure the distribu-                               Event-Event      99.54     91.31   94.94
+tion similarity to Wikipedia text.                                                 Entity-Entity    95.65     84.64   88.82
+                                                                 ATLAS-CC          Event-Entity     99.93     87.92   92.72
+Computational Cost We constructed our                                              Event-Event      99.86     93.20   96.16
+knowledge graphs using 80GB GPUs with
+                                                              Table 2: Triple precision, recall and F1 score across
+1,513 TFLOPS of FP16 compute, running                         datasets. Each row displays the performance of a type
+Llama-3-8B-instruct with Flash Attention. The                 of extracted triples.
+computational demands were substantial: 14,300
+GPU hours for En-Wiki (243.9M nodes, 1.49B
+                                                              DeepSeek-V3 lists facts present in the original text
+edges), 11,800 GPU hours for Pes2o-Abstract
+                                                              but missing from the extracted triples (false neg-
+(174.4M nodes, 1.15B edges), and 52,300 GPU
+                                                              atives); This methodology allows us to calculate
+hours for Common Crawl (937.3M nodes, 5.96B
+                                                              precise metrics: (1) Precision: proportion of cor-
+edges). Processing 1024-token chunks in batches,
+                                                              rectly extracted triples out of all extracted triples;
+we invested approximately 78,400 GPU hours total
+                                                              (2) Recall: proportion of correctly extracted triples
+to extract billions of semantic relationships.
+                                                              among all ground-truth triples in the text; (3) F1
+5     Experiment                                              score: the harmonic mean of precision and recall.
+                                                              As shown in Table 2, our approach demonstrates
+In the this section, we show that the Au-                     exceptional extraction quality across all datasets,
+toSchemaKG has accurate triplex extraction, can               with particularly strong performance on Wikipedia
+coherently induce schemas, and has very high in-              content. The precision, recall, and F1 scores of
+formation preservations in section 5.1.                       the triples in our KG exceed 90% in most cases,
+                                                              demonstrating the high quality and reliability of
+5.1     Evaluating AutoSchemaKG                               our extracted triples.
+Evaluating Triple Extraction Accuracy We
+use a rigorous counting-based evaluation method.              Measuring Information Preservation in Knowl-
+Rather than relying on subjective scoring, we em-             edge Graphs We evaluate the effectiveness of
+ploy DeepSeek-V3 (Liu et al., 2024) as a judge in             the entity-level triples and event-level triples of our
+a structured verification process. For each docu-             constructed KG in preserving information from
+ment: (1) We present DeepSeek-V3 with both the                original passages. We test how well multiple-
+original text and the triples extracted by Llama-             choice question (MCQ) performance is preserved
+3-8B-Instruct; (2) DeepSeek-V3 identifies triples             when we convert the original passage into KG data.
+that are incorrectly extracted (false positives); (3)         Following the evaluation protocol from the exist-
+
+                                                          4
+
+
+===== PDF PAGE 5 =====
+                                         Model                               Task            Dataset     BS-R BS-C
+ Dataset         Context
+                               LLaMA-3-8B LLaMA-3-70B                                        FB15kET     88.57   86.54
+                                                                             Entity Typing
+              [Lower-Upper]    46.29-99.29   65.69-99.70                                     YAGO43kET   80.67   58.86
+                                                               LLaMA-3-8B
+                  Entity          65.08         70.96                        Event Typing    wikiHow     99.18   99.26
+ ATLAS-Wiki
+                  Event           92.69         94.82                        Relation Typing FB15kET     88.75   88.41
+              Event + Entity      93.30         95.13
+                                                                                           FB15kET       89.25   88.59
+             [Lower-Upper]     62.32-98.99   75.05-99.49                     Entity Typing
+                 Entity           80.00         83.33
+                                                                                           YAGO43kET     94.26   90.56
+ ATLAS-Pes2o                                                   LLaMA-3-13B
+                 Event            96.97         97.78                      Event Typing    wikiHow       98.97   99.33
+             Event + Entity       97.37         97.98                      Relation Typing FB15kET       88.58   88.66
+              [Lower-Upper]    56.08-97.29   70.25-99.10                                   FB15kET       89.49   87.30
+                  Entity          76.78         81.01                        Entity Typing
+ ATLAS-CC                                                                                  YAGO43kET     94.61   92.64
+                  Event           94.87         96.78          LLaMA-3-70B
+                                                                           Event Typing    wikiHow       99.41   99.15
+              Event + Entity      96.28         96.98
+                                                                           Relation Typing FB15kET       88.70   90.33
+Table 3: KG performance across datasets, showing
+                                                               Table 4: Results of schema induction with various
+bounds (no context to full passage) and results with
+                                                               LLaMA family LLMs across three kinds of typing tasks.
+different knowledge representations. Entity, Event, and
+combined representations preserve most information for
+MCQs, approaching full-passage performance across              details are in Appendix C.1. Since rule-based eval-
+all datasets and models.                                       uation might overlook semantic similarities, we use
+                                                               two semantic-level metrics: BS-R and BS-C, ex-
+ing work (Schuhmann et al., 2025), we generate
+                                                               plained in Appendix C.2. Table 4 shows results us-
+five MCQs with LLaMA-3-70B-Instruct for each
+                                                               ing three sizes of LLaMA-3. Our method achieves
+original passage, and the prompts are shown in
+                                                               over 80% and often 90% recall for entity, event,
+Figure 8. We sample 200 original passages and
+                                                               and relation types in most cases, with performance
+1,000 MCQs are obtained for each dataset. We ask
+                                                               improving as LLM parameter size increases.
+LLMs to answer them with no context (denoted as
+lower bound), then ask them again with the original            5.2   Performance on Multi-hop QA Tasks
+passage (denoted as upper bound) for sanity check.             This subsection details the experimental setup for
+Finally, we conduct tests using entity-level triples           open-domain QA, focusing on multi-hop reasoning
+(denoted as Entity), event-level triples (denoted              tasks where our knowledge graph’s structure and
+as Event), and a combination of both entity-level              schema induction are expected to excel.
+and event-level triples (denoted as Event + Entity).
+We evaluate on three pre-training datasets with                Datasets We select three benchmark datasets
+our constructed KG in Table 1: En-Wiki, Pes2o-                 known for their multi-hop reasoning demands, all
+Abstract and Common Crawl. According to the                    derived from Wikipedia: MuSiQue (Trivedi et al.,
+results shown in Table 3, we have the following                2022), HotpotQA (Yang et al., 2018), and 2Wiki-
+insights: (1) Information is well preserved in                 MultihopQA (Ho et al., 2020), necessitating com-
+our constructed KG. MCQs performance with En-                  plex relational paths across articles. From each
+tity, Event or Event + Entity remains far above the            dataset, we randomly select one thousand questions
+lower bound baseline and approaches the original-              following (Gutiérrez et al., 2024).
+passage upper bound. It suggests that the informa-
+                                                               Baselines and Metrics We compare our knowl-
+tion in the original passages is well preserved in
+                                                               edge graph-based RAG system against several
+our constructed KG; (2) Events are more effective
+                                                               state-of-the-art approaches. The graph-based base-
+than entities. The MCQs performance with Event
+                                                               lines include HippoRAG (Gutiérrez et al., 2024), a
+or Event + Entity is much closer to the upper bound
+                                                               framework that builds a memory graph from text us-
+than that with Entity, which accuracy is more than
+                                                               ing entity recognition and relation extraction; Hip-
+95% in most of the cases. It demonstrates that the
+                                                               poRAG2 (Gutiérrez et al., 2025), an advanced itera-
+event-level triples can preserve richer and more
+                                                               tion with enhanced graph construction; GraphRAG
+precious information than entity-level triples.
+                                                               (Edge et al., 2024), Microsoft Research’s technique
+Measuring Schema Quality To demonstrate our                    combining text extraction, network analysis, and
+schema induction method’s capability, we apply it              LLM prompting; LightRAG (Guo et al., 2024), a
+to entity, event, and relation typing tasks, measur-           simpler alternative to GraphRAG focused on ef-
+ing how many types our method recalls. Dataset                 ficiency; and MiniRAG (Fan et al., 2025), an ex-
+
+                                                           5
+
+
+===== PDF PAGE 6 =====
+Model/Dataset            MuSiQue        2Wiki       HotpotQA          Think on Graph Settings We implement Think
+Metric                  EM     F1     EM     F1     EM     F1         on Graph (ToG) (Sun et al., 2024a) using a knowl-
+  Baseline Retrievers                                                 edge graph derived from our corpus. Nodes
+No Retriever            17.6   26.1   36.5   42.8   37.0   47.3       represent extracted entities and concepts, with
+Contriever              24.0   31.3   38.1   41.9   51.3   62.3
+BM25                    20.3   28.8   47.9   51.2   52.0   63.4
+                                                                      edges showing semantic relations.           We use
+  LLM Embeddings
+                                                                      multi-qa-MiniLM-L6-dot-v1 to compute embed-
+                                                                      dings for all graph elements, indexed with FAISS.
+GTE-Qwen2-7B            30.6   40.9   55.1   60.0   58.6   71.0
+GritLM-7B               33.6   44.8   55.8   60.6   60.7   73.3       LLama-3.3-70B-Instruct performs entity recog-
+NV-Embed-v2 (7B)        34.7   45.7   57.5   61.5   62.8   75.3
+                                                                      nition, path scoring, reasoning, and answer genera-
+  Existing Graph-based RAG Methods                                    tion. The workflow extracts query entities, retrieves
+RAPTOR                  20.7   28.9   47.3   52.1   56.8   69.5       starting nodes, explores graph paths through depth-
+GraphRAG                27.3   38.5   51.4   58.6   55.2   68.6
+LightRAG                20.0   29.3   38.6   44.6   33.3   44.9       limited search, prunes irrelevant paths, and gener-
+MiniRAG                 9.6    16.8   13.2   21.4   47.1   59.9
+HippoRAG                26.2   35.1   65.0   71.8   52.6   63.5
+                                                                      ates answers based on retrieved paths. Algorithm 1
+HippoRAG2               37.2   48.6   65.0   71.0   62.7   75.5       in the Appendix provides details.
+  AutoSchemaKG (LLama-3.1-8B-Instruct) + Think-on-Graph
+                                                                      HippoRAG 1&2 Settings In our implementation
+Entity-KG               14.8   26.0   36.9   44.0   41.9   55.2
+Entity-Event-KG         19.4   32.8   39.0   47.1   47.7   61.2       of HippoRAG (Gutiérrez et al., 2024), we extend
+Full-KG                 20.1   31.2   40.0   47.7   48.2   60.5       the original framework to operate on a customized
+  AutoSchemaKG (LLama-3.1-8B-Instruct) + HippoRAG                     graph. Initially presented in the foundational paper,
+Entity-KG               22.5   36.4   57.7   65.8   50.3   65.8       we employ Named Entity Recognition (NER) to
+Entity-Event-KG         22.9   36.1   56.4   64.4   48.6   64.6
+Full-KG                 23.6   36.5   54.8   63.2   50.0   65.3       build a personalized dictionary for PageRank ex-
+  AutoSchemaKG (LLama-3.1-8B-Instruct) + HippoRAG2                    ecution. Regarding HippoRAG2 (Gutiérrez et al.,
+Entity-KG               31.4   47.2   64.2   73.3   60.9   77.5       2025), we select the top 30 edges (musique dataset
+Entity-Event-KG         31.6   47.3   65.2   73.7   60.0   77.0       50 edges) for LLM filtering, incorporating a weight
+Full-KG                 31.8   47.3   65.3   73.9   61.8   78.3
+                                                                      adjustment factor of 0.9. Considering the capabil-
+Table 5: Performance comparison of AutoSchemaKG                       ity of our graph to effectively locating subgraphs,
+integrated with ToG, HippoRAG and HippoRAG2 with                      combined with various graph configurations (en-
+bold indicating the highest performance per dataset.                  tity, event, concept) resulting in graphs of differing
+                                                                      densities, we set the damping factor to 0.9 to con-
+                                                                      centrate on propagation within the local subgraph.
+tremely simple framework tailored for Small Lan-                      For further implementation details, please refer to
+guage Models. For MiniRAG and LightRAG we                             Algorithm 2.
+adjust its prompts so that it outputs brief answers
+for QA instead of generating long answers with                        Implementation Details The knowledge graph
+explanations. For text-based RAG comparisons,                         is constructed from the corresponding context cor-
+we evaluate against BM25 + LLM using traditional                      pora for each dataset folowing (Gutiérrez et al.,
+retrieval with BM25 scoring; Contriever (Izacard                      2024) using the framework of AutoSchemaKG
+et al., 2021), a dense retrieval-augmented system                     with Lmax = 1024 and B = 16, and the schema
+fine-tuned for QA; and RAPTOR (Sarthi et al.,                         induction pipeline (Section B.2) with Bs = 5. We
+2024), a hierarchical summarization system. These                     employ Meta’s LLaMA-3.1-8B-Instruct to con-
+baselines allow us to benchmark our approach                          struct the graphs, optimized with bfloat16 preci-
+against diverse retrieval-augmented methods.                          sion and Flash Attention 2. The graph is stored
+                                                                      in NetworkX for retrieval, with subgraphs fed into
+   We evaluate our system using standard met-                         LLaMA-3.3-70B-Instruct for answer generation.
+rics for open-domain QA. Exact Match (EM)
+measures binary correctness after normalization:                      Evaluation Results The experimental results
+EM(a, g) = 1[norm(a) = norm(g)], where a is                           in Figure 5 and Figure 8 demonstrate Au-
+the predicted answer, g is the gold answer, and                       toSchemaKG’s effectiveness in multi-hop ques-
+normalization includes lowercasing and removing                       tion answering across three benchmark datasets.
+articles, punctuation, and whitespace. F1 Score                       With HippoRAG2 integration, the Full-KG con-
+measures token overlap between normalized an-                         figuration (entities, events, and concepts) out-
+                  ·R
+swers: F1 = 2·PP +R , where P = |a ∩ g|/|a| and                       performs traditional retrieval approaches like
+R = |a ∩ g|/|g| are precision and recall.                             BM25 and Contriever by 12-18%, highlight-
+
+                                                                  6
+
+
+===== PDF PAGE 7 =====
+   Corpus            Method            Acc      F1             ing vanilla settings for math and reasoning domains.
+   -                 -                 54.08   26.79           For a comprehensive comparison, we evaluated
+   Text Corpora                                                against multiple retrieval methods: HippoRAG v2,
+                                                               BM25, and dense retrieval using MiniLM (Wang
+                     Random            52.77   25.56
+   Wikipedia         BM25              56.15   30.43           et al., 2021). The retrieval process on text cor-
+                     Dense Retrieval   56.04   30.33           pora is implemented in ElasticSearch database sys-
+                     Random            53.34   26.00           tem (Elasticsearch, 2018). Our decision to use
+   Pes2o-Abstract    BM25              54.60   27.95           MiniLM rather than larger language model-based
+                     Dense Retrieval   55.43   29.19
+                                                               embedding approaches was driven by computa-
+                     Random            53.31   26.45
+   Common Crawl      BM25              54.56   28.32
+                                                               tional constraints. Implementing dense retrieval
+                     Dense Retrieval   54.42   28.49           with higher-dimensional embeddings (e.g., 4096
+   Knowledge Graph                                             dimensions) across our one billion nodes would re-
+   Freebase          Think on Graph    53.75   24.81
+                                                               quire approximately 16 terabytes of storage using
+                                                               standard 32-bit floating-point representation. These
+   ATLAS-Wiki                          56.43   30.48
+   ATLAS-Pes2o       HippoRAG2         55.30   28.12           baselines represent state-of-the-art approaches in
+   ATLAS-CC                            55.56   29.57           graph-based RAG and standalone retrieval systems.
+Table 6: Balanced accuracy (%) and F1 score (%) on             All experiments were implemented using the same
+FELM benchmark of Llama-3.1-8b-Instruct with                   LLaMA-3.1-8B-Instruct model with Neo4j inte-
+retrieval methods. The best results are in bold, and the       gration and zero-shot CoT settings, ensuring fair
+second best results are underlined.                            comparison across methods. Performance was
+                                                               measured using balanced accuracy (giving equal
+ing its strength in complex reasoning scenarios.               weight to true and false segments) and F1 score
+Notably, AutoSchemaKG achieves comparable                      for detecting factual errors (Table 6). Our results
+or better results using LLaMA-3.1-8B-Instruct                  demonstrate that HippoRAG2 with our KG consis-
+as graph constructor compared to the origi-                    tently outperforms baselines on Wikipedia (56.43%
+nal HippoRAG2 implementation that requires                     accuracy, 30.48% F1) and Common Crawl cor-
+LLaMA-3.3-70B-Instruct for both construction                   pora, while achieving competitive results on Pes2o-
+and QA reading.                                                Abstract. The superior performance on Wikipedia
+                                                               likely stems from FELM samples being partially
+Advantages of Events and Concepts Our case                     sourced from Wikipedia content. Detailed imple-
+studies revealed two key benefits of event and con-            mentation specifics and extended results are avail-
+cept nodes: 1) Event nodes provide enriched con-               able in Appendix G.1.
+text. As shown in Figure 9, they serve as valuable
+retrieval targets when critical information in triples         5.4   General Domain Knowledge Capabilities
+is ambiguous or missed, helping identify relevant              To assess AutoSchemaKG’s ability to construct
+subgraphs containing passage nodes; 2) Concept                 knowledge graphs across various domains, we eval-
+nodes create alternative pathways. These nodes                 uated it on MMLU (Hendrycks et al., 2021), a com-
+establish connections beyond direct entities and               prehensive benchmark for LLM reasoning. Pre-
+events, addressing complex multi-hop question an-              vious research on KNN-LMs (Khandelwal et al.)
+swering limitations. Figure 10 shows how concept               suggests that retrieval-augmented generation can
+nodes link knowledge across disparate subgraphs,               sometimes hinder LLMs’ reasoning capabilities
+enabling systems like HippoRAG to bridge sepa-                 (Wang et al., 2023a; Geng et al., 2025). While
+rate subgraph influences via PageRank algorithms.              we do not expect RAG to universally improve
+                                                               LLM performance, our findings demonstrate sig-
+5.3    Enhancing LLM Factuality with KGs                       nificant improvements in knowledge-intensive do-
+We evaluated our KG’s effectiveness in enhanc-                 mains, even those covered in LLM training data.
+ing factuality using the FELM benchmark (Chen                  Using the same retrieval and generation settings as
+et al., 2023), which contains 847 samples across               our FELM experiments, we classified MMLU tasks
+five domains with 4,425 fine-grained text segments.            into subject categories (detailed mapping in Ap-
+Following FELM’s protocol, we applied RAG to                   pendix G.2) and focused on knowledge-intensive
+three domains (world knowledge, science/technol-               domains including History, Law, Religion, Philos-
+ogy, and writing/recommendation) while maintain-               ophy/Ethics, Medicine/Health, Global Facts, and
+
+                                                           7
+
+
+===== PDF PAGE 8 =====
+       Knowledge Source     History   Law     Religion   Phil/Eth      Med/Hlth   GlbFct   SocSci   Average
+       None                  76.59    66.86    83.04         63.55      70.38     66.72    79.74     72.41
+       Freebase-ToG          78.42    69.00    75.44         65.67      72.65     67.27    76.00     72.06
+         Random Baseline
+       Wikipedia             76.64    66.82    79.53         59.26      70.34     66.46    77.78     70.98
+       Pes2o-Abstract        76.24    64.16    80.70         62.01      70.62     66.59    77.16     71.07
+       Common Crawl          74.89    66.52    79.53         61.74      69.82     68.11    77.52     71.16
+         Text Corpora + BM25
+       Wikipedia             76.67    67.35    78.36         63.34      69.35     61.98    76.99     70.58
+       Pes2o-Abstract        78.01    65.89    78.95         63.83      71.01     65.78    77.07     71.51
+       Common Crawl          76.15    66.36    80.12         60.43      69.58     64.67    76.71     70.57
+         Text Corpora + Dense Retrieval
+       Wikipedia             73.59    69.60    79.53         63.58      70.82     62.41    76.83     70.91
+       Pes2o-Abstract        75.79    61.82    78.36         65.15      69.72     66.77    76.47     70.58
+       Common Crawl          74.47    68.98    79.53         60.46      69.29     64.09    75.21     70.29
+         ATLAS + HippoRAG2
+       ATLAS-Wiki            76.73    67.38    84.21         66.01      70.82     68.36    79.16     73.24
+       ATLAS-Pes2o           77.13    68.41    81.29         65.05      72.75     65.67    81.19     73.07
+       ATLAS-CC              78.16    70.85    83.04         65.60      71.28     63.95    78.16     73.01
+
+Table 7: Performance comparison of Llama-3.1-8b-Instruct with our KG-integrated HippoRAG2 versus baseline
+methods across Wikipedia, Common Crawl, and Pes2o-Abstract corpora on MMLU benchmarks. Tasks are grouped
+by subject, with bold and underlined values indicating first and second-highest scores. Phil/Eth, Med/Hlth, GlbFct,
+and SocSci denote Philosophy/Ethics, Medicine/Health, Global Facts, and Social Sciences.
+
+
+Social Sciences.                                              6      Further Related Work
+   As shown in Table 7, our ATLAS knowledge                   Knowledge graph (KG) construction transforms
+graphs enhanced performance across these domains              unstructured data into machine-readable formats.
+on all tested corpora. Notably, each ATLAS vari-              Traditional approaches using predefined schemas
+ant demonstrated distinct strengths: ATLAS-Pes2o              limit cross-domain scalability, while LLMs now
+excelled in Medicine/Health and Social Sciences,              enable autonomous construction through improved
+reflecting its academic paper-sourced knowledge;              extraction and schema induction. Recent advances
+ATLAS-Wiki showed advantages in general knowl-                include SAC-KG (Chen et al., 2024a), which
+edge areas like Religion, Philosophy/Ethics, and              uses LLMs as domain experts to generate spe-
+Global Facts; while ATLAS-CC performed best                   cialized KGs with high precision on million-node
+in Law and History, leveraging its broader web-               graphs; Docs2KG (Sun et al., 2024c) for hetero-
+sourced content. All ATLAS variants consistently              geneous document processing; and KAG (Liang
+outperformed both the no-retrieval baseline and               et al., 2024), which enhances multi-hop reasoning
+Freebase-ToG in these humanities and social sci-              through KG-text mutual indexing. Schema induc-
+ence domains. For example, in Law, our approach               tion automatically derives KG structure without
+achieved a 4-point improvement over the baseline,             predefined ontologies. Hofer et al. (2024) survey
+while some other retrieval methods actually de-               construction pipelines emphasizing ontology learn-
+creased performance, as shown in Table 12.                    ing, while Dash et al. (2021) address canonical-
+                                                              ization using variational autoencoders and Dognin
+   The domain-specific performance pattern aligns
+                                                              et al. (2021) employ reinforcement learning for
+with intuitive expectations: knowledge graphs ex-
+                                                              bidirectional text-to-graph conversion.
+cel in retrieving factual relationships critical for
+humanities and social sciences, while showing lim-            7      Conclusion
+ited benefits in mathematical and technical domains
+where node-relation structures are less effective for         AutoSchemaKG transforms knowledge graph
+capturing procedural knowledge. The complete                  construction by eliminating predefined schemas
+subject analysis, including technical domains, is             through LLM-based triple extraction and schema
+available in Appendix G.2.                                    induction. Our methodology constructs the AT-
+
+                                                         8
+
+
+===== PDF PAGE 9 =====
+LAS family of knowledge graphs (900+ million               tially enabling more accurate and explainable AI
+nodes, 5.9 billion edges) with high-quality triple         systems across diverse applications and domains.
+extraction (>95% precision) and schema induction.
+This approach outperforms baselines on multi-hop
+QA tasks and enhances LLM factuality across di-            References
+verse domains. Our work demonstrates that billion-         Jiaxin Bai, Zhaobo Wang, Junfei Cheng, Dan Yu, Zerui
+scale knowledge graphs with dynamically induced               Huang, Weiqi Wang, Xin Liu, Chen Luo, Qi He, Yan-
+schemas can be effectively constructed without ex-            ming Zhu, Bo Li, and Yangqiu Song. 2024. Intention
+                                                              knowledge graph construction for user intention rela-
+pert intervention, providing valuable complements             tion modeling. Preprint, arXiv:2412.11500.
+to parametric knowledge in large language models.
+                                                           Kurt D. Bollacker, Colin Evans, Praveen K. Paritosh,
+8   Limitations                                              Tim Sturge, and Jamie Taylor. 2008. Freebase: a
+                                                             collaboratively created graph database for structuring
+Despite promising results, our work has several              human knowledge. In Proceedings of the ACM SIG-
+important limitations. The construction of billion-          MOD International Conference on Management of
+                                                             Data, SIGMOD 2008, Vancouver, BC, Canada, June
+scale knowledge graphs requires substantial com-             10-12, 2008, pages 1247–1250. ACM.
+putational resources (78,400+ GPU hours), limit-
+ing accessibility for researchers with resource con-       Antoine Bordes, Nicolas Usunier, Alberto García-
+straints. Our approach inherits biases and limita-           Durán, Jason Weston, and Oksana Yakhnenko.
+                                                             2013. Translating embeddings for modeling multi-
+tions from the underlying LLMs used for triple               relational data. In Advances in Neural Information
+extraction and schema induction, potentially af-             Processing Systems 26: 27th Annual Conference on
+fecting performance in specialized domains where             Neural Information Processing Systems 2013. Pro-
+these models lack expertise. While achieving high            ceedings of a meeting held December 5-8, 2013, Lake
+                                                             Tahoe, Nevada, United States, pages 2787–2795.
+semantic alignment with human-crafted schemas,
+our induction method still struggles with extremely        Hanzhu Chen, Xu Shen, Qitan Lv, Jie Wang, Xiaoqi
+technical domains requiring expert-level concep-             Ni, and Jieping Ye. 2024a. SAC-KG: Exploiting
+tual organization. Despite extracting billions of            large language models as skilled automatic construc-
+                                                             tors for domain knowledge graph. In Proceedings
+facts, our knowledge graphs may contain incon-               of the 62nd Annual Meeting of the Association for
+sistencies, contradictions, or information gaps in           Computational Linguistics (Volume 1: Long Papers),
+sparse knowledge regions.                                    pages 4345–4360, Bangkok, Thailand. Association
+                                                             for Computational Linguistics.
+9   Ethical Statement
+                                                           Muhao Chen, Hongming Zhang, Haoyu Wang, and
+Our research on AutoSchemaKG and ATLAS                      Dan Roth. 2020. " what are you trying to do?" se-
+                                                            mantic typing of event processes. arXiv preprint
+knowledge graphs adheres to rigorous ethical stan-          arXiv:2010.06724.
+dards. We exclusively utilized publicly available
+corpora (Dolma 1.7) with proper attribution and            Shiqi Chen, Yiran Zhao, Jinghan Zhang, I-Chun Chern,
+transparently disclosed our computational require-           Siyang Gao, Pengfei Liu, and Junxian He. 2023.
+                                                             Felm: benchmarking factuality evaluation of large
+ments (approximately 78,400 GPU hours). We ac-               language models. In Proceedings of the 37th Interna-
+knowledge potential inherited biases from source             tional Conference on Neural Information Processing
+texts and the large language models used in our              Systems, NIPS ’23, Red Hook, NY, USA. Curran
+pipeline, while emphasizing that our approach min-           Associates Inc.
+imizes manual intervention that might introduce            Zhongwu Chen, Long Bai, Zixuan Li, Zhen Huang, Xi-
+additional biases. Privacy considerations were ad-           aolong Jin, and Yong Dou. 2024b. A new pipeline
+dressed by processing only public data without               for knowledge graph reasoning enhanced by large
+extracting personally identifiable information. We           language models without fine-tuning. In Proceed-
+                                                             ings of the 2024 Conference on Empirical Methods
+candidly discuss limitations including resource con-         in Natural Language Processing, pages 1366–1381,
+straints, LLM biases, and challenges with special-           Miami, Florida, USA. Association for Computational
+ized domains. Through detailed methodological                Linguistics.
+descriptions, we promote reproducibility and sci-
+                                                           Sarthak Dash, Gaetano Rossiello, Nandana Mihinduku-
+entific validation. Our work aims to democratize             lasooriya, Sugato Bagchi, and Alfio Gliozzo. 2021.
+knowledge graph construction without requiring               Open knowledge graphs canonicalization using vari-
+specialized expertise or predefined schemas, poten-          ational autoencoders. In Proceedings of the 2021
+
+
+                                                       9
+
+
+===== PDF PAGE 10 =====
+  Conference on Empirical Methods in Natural Lan-                reasoning steps. In Proceedings of the 28th Inter-
+  guage Processing, pages 10379–10394, Online and                national Conference on Computational Linguistics,
+  Punta Cana, Dominican Republic. Association for                pages 6609–6625, Barcelona, Spain (Online). Inter-
+  Computational Linguistics.                                     national Committee on Computational Linguistics.
+
+Pierre Dognin, Inkit Padhi, Igor Melnyk, and Payel Das.        Marvin Hofer, Daniel Obraczka, Alieh Saeedi, Hanna
+   2021. ReGen: Reinforcement learning for text and             Köpcke, and Erhard Rahm. 2024. Construction of
+   knowledge base generation using pretrained language          knowledge graphs: Current state and challenges. In-
+   models. In Proceedings of the 2021 Conference on             formation, 15(8):509.
+   Empirical Methods in Natural Language Processing,
+   pages 1084–1099, Online and Punta Cana, Domini-             Gautier Izacard, Mathilde Caron, Lucas Hosseini, Se-
+   can Republic. Association for Computational Lin-              bastian Riedel, Piotr Bojanowski, Armand Joulin,
+   guistics.                                                     and Edouard Grave. 2021. Unsupervised dense infor-
+                                                                 mation retrieval with contrastive learning.
+Darren Edge, Ha Trinh, Newman Cheng, Joshua
+  Bradley, Alex Chao, Apurva Mody, Steven Truitt,              Urvashi Khandelwal, Omer Levy, Dan Jurafsky, Luke
+  Dasha Metropolitansky, Robert Osazuwa Ness, and                Zettlemoyer, and Mike Lewis. Generalization
+  Jonathan Larson. 2024. From local to global: A                 through memorization: Nearest neighbor language
+  graph rag approach to query-focused summarization.             models. In International Conference on Learning
+  arXiv preprint arXiv:2404.16130.                               Representations.
+
+BV Elasticsearch. 2018. Elasticsearch. software], ver-         Mahnaz Koupaee and William Yang Wang. 2018. Wiki-
+  sion, 6(1).                                                    how: A large scale text summarization dataset. arXiv
+                                                                 preprint arXiv:1810.09305.
+Tianyu Fan, Jingyuan Wang, Xubin Ren, and Chao
+  Huang. 2025. Minirag: Towards extremely sim-                 Muzhi Li, Minda Hu, Irwin King, and Ho-fung Leung.
+  ple retrieval-augmented generation. arXiv preprint            2024a. The integration of semantic and structural
+  arXiv:2501.06713.                                             knowledge in knowledge graph entity typing. In Pro-
+                                                                ceedings of the 2024 Conference of the North Amer-
+Shangyi Geng, Wenting Zhao, and Alexander M Rush.               ican Chapter of the Association for Computational
+  2025. Great memory, shallow reasoning: Limits of              Linguistics: Human Language Technologies (Volume
+  kNN-LMs. In Proceedings of the 2025 Conference                1: Long Papers), pages 6625–6638, Mexico City,
+  of the Nations of the Americas Chapter of the Asso-           Mexico. Association for Computational Linguistics.
+  ciation for Computational Linguistics: Human Lan-
+  guage Technologies (Volume 2: Short Papers), pages           Yinghao Li, Haorui Wang, and Chao Zhang. 2024b.
+  471–482, Albuquerque, New Mexico. Association                  Assessing logical puzzle solving in large language
+  for Computational Linguistics.                                 models: Insights from a minesweeper case study. In
+                                                                 Proceedings of the 2024 Conference of the North
+Zirui Guo, Lianghao Xia, Yanhua Yu, Tu Ao, and Chao              American Chapter of the Association for Computa-
+   Huang. 2024. Lightrag: Simple and fast retrieval-             tional Linguistics: Human Language Technologies
+   augmented generation.                                         (Volume 1: Long Papers), pages 59–81, Mexico City,
+                                                                 Mexico. Association for Computational Linguistics.
+Bernal Jiménez Gutiérrez, Yiheng Shu, Weijian Qi,
+  Sizhe Zhou, and Yu Su. 2025. From rag to memory:             Lei Liang, Mengshu Sun, Zhengke Gui, Zhongshu
+  Non-parametric continual learning for large language           Zhu, Zhouyu Jiang, Ling Zhong, Yuan Qu, Pei-
+  models. arXiv preprint arXiv:2502.14802.                       long Zhao, Zhongpu Bo, Jin Yang, Huaidong Xiong,
+                                                                 Lin Yuan, Jun Xu, Zaoyang Wang, Zhiqiang Zhang,
+Bernal Jiménez Gutiérrez, Yiheng Shu, Yu Gu, Michi-              Wen Zhang, Huajun Chen, Wenguang Chen, and
+  hiro Yasunaga, and Yu Su. 2024. Hipporag: Neu-                 Jun Zhou. 2024. Kag: Boosting llms in profes-
+  robiologically inspired long-term memory for large             sional domains via knowledge augmented generation.
+  language models. In The Thirty-eighth Annual Con-              Preprint, arXiv:2409.13731.
+  ference on Neural Information Processing Systems.
+                                                               Aixin Liu, Bei Feng, Bing Xue, Bingxuan Wang,
+Mutian He, Tianqing Fang, Weiqi Wang, and Yangqiu                Bochao Wu, Chengda Lu, Chenggang Zhao, Chengqi
+ Song. 2024. Acquiring and modeling abstract com-                Deng, Chenyu Zhang, Chong Ruan, et al. 2024.
+ monsense knowledge via conceptualization. Artifi-               Deepseek-v3 technical report.   arXiv preprint
+ cial Intelligence, 333:104149.                                  arXiv:2412.19437.
+Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou,          Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Man-
+  Mantas Mazeika, Dawn Song, and Jacob Steinhardt.               dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+  2021. Measuring massive multitask language under-              Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+  standing. Preprint, arXiv:2009.03300.                          Roberta: A robustly optimized bert pretraining ap-
+                                                                 proach. arXiv preprint arXiv:1907.11692.
+Xanh Ho, Anh-Khoa Duong Nguyen, Saku Sugawara,
+  and Akiko Aizawa. 2020. Constructing a multi-                Hanjia Lyu, Song Jiang, Hanqing Zeng, Yinglong Xia,
+  hop QA dataset for comprehensive evaluation of                 Qifan Wang, Si Zhang, Ren Chen, Chris Leung, Jiajie
+
+
+                                                          10
+
+
+===== PDF PAGE 11 =====
+  Tang, and Jiebo Luo. 2024. LLM-rec: Personalized               2024 Conference of the North American Chapter of
+  recommendation via prompting large language mod-               the Association for Computational Linguistics: Hu-
+  els. In Findings of the Association for Computational          man Language Technologies (Volume 1: Long Pa-
+  Linguistics: NAACL 2024, pages 583–612, Mexico                 pers), pages 311–325, Mexico City, Mexico. Associ-
+  City, Mexico. Association for Computational Lin-               ation for Computational Linguistics.
+  guistics.
+                                                               Qiang Sun, Yuanyi Luo, Wenxiao Zhang, Sirui Li,
+Changsung Moon, Paul Jones, and Nagiza F Samatova.               Jichunyang Li, Kai Niu, Xiangrui Kong, and Wei
+  2017a. Learning entity type embeddings for knowl-              Liu. 2024c. Docs2kg: Unified knowledge graph con-
+  edge graph completion. In Proceedings of the 2017              struction from heterogeneous documents assisted by
+  ACM on conference on information and knowledge                 large language models. Preprint, arXiv:2406.02962.
+  management, pages 2215–2218.
+                                                               Xingwei Tan, Yuxiang Zhou, Gabriele Pergola, and
+Changsung Moon, Paul Jones, and Nagiza F. Sama-                  Yulan He. 2024. Set-aligning framework for auto-
+  tova. 2017b. Learning entity type embeddings for               regressive event temporal graph generation. In Pro-
+  knowledge graph completion. In Proceedings of the              ceedings of the 2024 Conference of the North Amer-
+  2017 ACM on Conference on Information and Knowl-               ican Chapter of the Association for Computational
+  edge Management, CIKM ’17, page 2215–2218, New                 Linguistics: Human Language Technologies (Volume
+  York, NY, USA. Association for Computing Machin-               1: Long Papers), pages 3872–3892, Mexico City,
+  ery.                                                           Mexico. Association for Computational Linguistics.
+
+Parth Sarthi, Salman Abdullah, Aditi Tuli, Shubh               Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot,
+  Khanna, Anna Goldie, and Christopher D. Manning.               and Ashish Sabharwal. 2022. MuSiQue: Multi-
+  2024. Raptor: Recursive abstractive processing for             hop questions via single-hop question composition.
+  tree-organized retrieval. In International Conference          Transactions of the Association for Computational
+  on Learning Representations (ICLR).                            Linguistics.
+                                                               Shufan Wang, Yixiao Song, Andrew Drozdov, Aparna
+Christoph Schuhmann, Gollam Rabby, Ameya Prabhu,
+                                                                 Garimella, Varun Manjunatha, and Mohit Iyyer.
+  Tawsif Ahmed, Andreas Hochlehnert, Huu Nguyen,
+                                                                 2023a. kNN-LM does not improve open-ended text
+  Nick Akinci Heidrich, Ludwig Schmidt, Robert Kacz-
+                                                                 generation. In Proceedings of the 2023 Conference
+  marczyk, Sören Auer, et al. 2025. Project alexandria:
+                                                                 on Empirical Methods in Natural Language Process-
+  Towards freeing scientific knowledge from copyright
+                                                                 ing, pages 15023–15037, Singapore. Association for
+  burdens via llms. arXiv preprint arXiv:2502.19413.
+                                                                 Computational Linguistics.
+Luca Soldaini, Rodney Kinney, Akshita Bhagia, Dustin           Weiqi Wang, Tianqing Fang, Wenxuan Ding, Baixuan
+  Schwenk, David Atkinson, Russell Authur, Ben Bo-              Xu, Xin Liu, Yangqiu Song, and Antoine Bosselut.
+  gin, Khyathi Chandu, Jennifer Dumas, Yanai Elazar,            2023b. CAR: Conceptualization-augmented reasoner
+  Valentin Hofmann, Ananya Harsh Jha, Sachin Kumar,             for zero-shot commonsense question answering. In
+  Li Lucy, Xinxi Lyu, Nathan Lambert, Ian Magnusson,            Findings of the Association for Computational Lin-
+  Jacob Morrison, Niklas Muennighoff, Aakanksha                 guistics: EMNLP 2023, pages 13520–13545, Singa-
+  Naik, Crystal Nam, Matthew E. Peters, Abhilasha               pore. Association for Computational Linguistics.
+  Ravichander, Kyle Richardson, Zejiang Shen, Emma
+  Strubell, Nishant Subramani, Oyvind Tafjord, Pete            Weiqi Wang, Tianqing Fang, Chunyang Li, Haochen
+  Walsh, Luke Zettlemoyer, Noah A. Smith, Hannaneh              Shi, Wenxuan Ding, Baixuan Xu, Zhaowei Wang, Ji-
+  Hajishirzi, Iz Beltagy, Dirk Groeneveld, Jesse Dodge,         axin Bai, Xin Liu, Cheng Jiayang, Chunkit Chan, and
+  and Kyle Lo. 2024. Dolma: an open corpus of                   Yangqiu Song. 2024a. CANDLE: Iterative concep-
+  three trillion tokens for language model pretraining          tualization and instantiation distillation from large
+  research. CoRR, abs/2402.00159.                               language models for commonsense reasoning. In
+                                                                Proceedings of the 62nd Annual Meeting of the As-
+Fabian M Suchanek, Gjergji Kasneci, and Gerhard                 sociation for Computational Linguistics (Volume 1:
+  Weikum. 2007. Yago: a core of semantic knowledge.             Long Papers), pages 2351–2374, Bangkok, Thailand.
+  In Proceedings of the 16th international conference           Association for Computational Linguistics.
+  on World Wide Web, pages 697–706.
+                                                               Weiqi Wang, Tianqing Fang, Haochen Shi, Baixuan Xu,
+Jiashuo Sun, Chengjin Xu, Lumingyuan Tang, Saizhuo              Wenxuan Ding, Liyu Zhang, Wei Fan, Jiaxin Bai,
+   Wang, Chen Lin, Yeyun Gong, Lionel Ni, Heung-                 Haoran Li, Xin Liu, and Yangqiu Song. 2024b. On
+   Yeung Shum, and Jian Guo. 2024a. Think-on-graph:              the role of entity and event level conceptualization
+   Deep and responsible reasoning of large language              in generalizable reasoning: A survey of tasks, meth-
+   model on knowledge graph. In The Twelfth Interna-             ods, applications, and future directions. Preprint,
+   tional Conference on Learning Representations.                arXiv:2406.10885.
+Kai Sun, Yifan Xu, Hanwen Zha, Yue Liu, and Xin Luna           Weiqi Wang, Tianqing Fang, Baixuan Xu, Chun
+  Dong. 2024b. Head-to-tail: How knowledgeable are              Yi Louis Bo, Yangqiu Song, and Lei Chen. 2023c.
+  large language models (LLMs)? A.K.A. will LLMs                CAT: A contextualized conceptualization and instan-
+  replace knowledge graphs? In Proceedings of the               tiation framework for commonsense reasoning. In
+
+
+                                                          11
+
+
+===== PDF PAGE 12 =====
+  Proceedings of the 61st Annual Meeting of the As-             Bowen Zhang and Harold Soh. 2024. Extract, define,
+  sociation for Computational Linguistics (Volume 1:              canonicalize: An LLM-based framework for knowl-
+  Long Papers), pages 13111–13140, Toronto, Canada.               edge graph construction. In Proceedings of the 2024
+  Association for Computational Linguistics.                      Conference on Empirical Methods in Natural Lan-
+                                                                  guage Processing, pages 9820–9836, Miami, Florida,
+Wenhui Wang, Hangbo Bao, Shaohan Huang, Li Dong,                  USA. Association for Computational Linguistics.
+  and Furu Wei. 2021. MiniLMv2: Multi-head self-
+  attention relation distillation for compressing pre-          Hongming Zhang, Xin Liu, Haojie Pan, Haowen Ke,
+  trained transformers. In Findings of the Association            Jiefu Ou, Tianqing Fang, and Yangqiu Song. 2022.
+  for Computational Linguistics: ACL-IJCNLP 2021,                 ASER: towards large-scale commonsense knowl-
+  pages 2140–2151, Online. Association for Computa-               edge acquisition via higher-order selectional pref-
+  tional Linguistics.                                             erence over eventualities. Artificial Intelligence,
+                                                                  309:103740.
+Zehong Wang, Sidney Liu, Zheyuan Zhang, Tianyi Ma,
+  Chuxu Zhang, and Yanfang Ye. 2025. Can LLMs                   Hongming Zhang, Xin Liu, Haojie Pan, Yangqiu Song,
+  convert graphs to text-attributed graphs? In Pro-               and Cane Wing-Ki Leung. 2020. Aser: A large-scale
+  ceedings of the 2025 Conference of the Nations of               eventuality knowledge graph. In Proceedings of the
+  the Americas Chapter of the Association for Com-                web conference 2020, pages 201–211.
+  putational Linguistics: Human Language Technolo-              Tianyi Zhang, Varsha Kishore, Felix Wu, Kilian Q
+  gies (Volume 1: Long Papers), pages 1412–1432,                  Weinberger, and Yoav Artzi. 2019. Bertscore: Eval-
+  Albuquerque, New Mexico. Association for Compu-                 uating text generation with bert. arXiv preprint
+  tational Linguistics.                                           arXiv:1904.09675.
+Zhaowei Wang, Wei Fan, Qing Zong, Hongming Zhang,               Wenting Zhao, Ye Liu, Tong Niu, Yao Wan, Philip
+  Sehyun Choi, Tianqing Fang, Xin Liu, Yangqiu Song,             Yu, Shafiq Joty, Yingbo Zhou, and Semih Yavuz.
+  Ginny Wong, and Simon See. 2024c. AbsInstruct:                 2024. DIVKNOWQA: Assessing the reasoning abil-
+  Eliciting abstraction ability from LLMs through ex-            ity of LLMs via open-domain question answering
+  planation tuning with plausibility estimation. In Pro-         over knowledge base and text. In Findings of the
+  ceedings of the 62nd Annual Meeting of the Associa-            Association for Computational Linguistics: NAACL
+  tion for Computational Linguistics (Volume 1: Long             2024, pages 51–68, Mexico City, Mexico. Associa-
+  Papers), pages 973–994, Bangkok, Thailand. Associ-             tion for Computational Linguistics.
+  ation for Computational Linguistics.
+                                                                Chang Zong, Yuchen Yan, Weiming Lu, Jian Shao,
+Zhaowei Wang, Haochen Shi, Weiqi Wang, Tianqing                   Yongfeng Huang, Heng Chang, and Yueting Zhuang.
+  Fang, Hongming Zhang, Sehyun Choi, Xin Liu, and                 2024. Triad: A framework leveraging a multi-role
+  Yangqiu Song. 2024d. AbsPyramid: Benchmarking                   LLM-based agent to solve knowledge base question
+  the abstraction ability of language models with a uni-          answering. In Proceedings of the 2024 Conference
+  fied entailment graph. In Findings of the Association           on Empirical Methods in Natural Language Process-
+  for Computational Linguistics: NAACL 2024, pages                ing, pages 1698–1710, Miami, Florida, USA. Associ-
+  3991–4010, Mexico City, Mexico. Association for                 ation for Computational Linguistics.
+  Computational Linguistics.
+
+Yike Wu, Yi Huang, Nan Hu, Yuncheng Hua, Guilin Qi,
+  Jiaoyan Chen, and Jeff Z. Pan. 2024. CoTKR: Chain-
+  of-thought enhanced knowledge rewriting for com-
+  plex knowledge graph question answering. In Pro-
+  ceedings of the 2024 Conference on Empirical Meth-
+  ods in Natural Language Processing, pages 3501–
+  3520, Miami, Florida, USA. Association for Compu-
+  tational Linguistics.
+
+Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Ben-
+  gio, William W. Cohen, Ruslan Salakhutdinov, and
+  Christopher D. Manning. 2018. HotpotQA: A dataset
+  for diverse, explainable multi-hop question answer-
+  ing. In Conference on Empirical Methods in Natural
+  Language Processing (EMNLP).
+
+Hongbin Ye, Honghao Gui, Xin Xu, Xi Chen, Huajun
+  Chen, and Ningyu Zhang. 2023. Schema-adaptable
+  knowledge graph construction. In Findings of the
+  Association for Computational Linguistics: EMNLP
+  2023, pages 6408–6431, Singapore. Association for
+  Computational Linguistics.
+
+
+                                                           12
+
+
+===== PDF PAGE 13 =====
+A      Prompts for Triple Extractions                                   Event and Entity Triple Extraction
+
+                                                                        Please analyze and summarize the participation re-
+      Entity Relationship Extraction                                    lations between the events and entities in the given
+                                                                        paragraph. Each event is a single independent sen-
+      Given a passage, summarize all the important entities             tence. Additionally, identify all the entities that par-
+      and the relations between them in a concise manner.               ticipated in the events. Do not use ellipses. Please
+      Relations should briefly capture the connections be-              strictly output in the following JSON format:
+      tween entities, without repeating information from                [
+      the head and tail entities. The entities should be as                {
+      specific as possible. Exclude pronouns from being                        "Event": "{a simple sentence describing an
+      considered as entities. The output should strictly ad-            event}",
+      here to the following JSON format:                                       "Entity": ["{entity 1}", "{entity 2}", "..."]
+      [                                                                    }
+        {                                                                  ...
+            "Head": "{a noun}",                                         ]
+            "Relation": "{a verb}",
+            "Tail": "{a noun}",
+        }                                                           Figure 3: The figure demonstrates the prompts we use
+        ...
+      ]
+                                                                    to generate the text triples describing relations between
+      Here is the passage:                                          entities and events.
+
+
+Figure 2: The figure demonstrates the prompts we use                format. To manage the constraints of LLM input
+to generate the text triples describing relations between           capacity, denoted as Lmax tokens, we preprocess
+entities.                                                           the text corpus to ensure compatibility, segment-
+                                                                    ing documents as needed and organizing them into
+  The prompts used for extracting entity-entity,                    batches for efficient processing. This section out-
+entity-event, and event-event triples are given in                  lines the preprocessing strategy, the staged extrac-
+Figure 2, Figure 3, and Figure 4 respectively.                      tion process, and key implementation details.
+B      Implementation Details of Knowledge
+       Graph Construction Framework                                 B.1.1    Text Preprocessing and Data
+                                                                             Organization
+In this section, we elaborate on the process
+of fully automating knowledge graph construc-                       Given a corpus D = {D1 , D2 , . . . , Dn } of n doc-
+tion. Given a collection of n documents D =                         uments, we first filter the dataset to include only
+{D1 , D2 , D3 , . . . , Dn }, our method systematically             English-language texts, identified through meta-
+builds the graph.                                                   data or assumed if unspecified, to match the lin-
+                                                                    guistic capabilities of our LLMs. To adhere to
+B.1      Triple Extraction                                          the token limit Lmax , we account for an instruc-
+Our approach to triple extraction employs a multi-                  tional prompt length, Linst derived from empiri-
+phase pipeline that utilizes the generative power                   cal observations. The maximum token length per
+of Large Language Models (LLMs) to convert un-                      text segment, Cmax , is calculated as: Cmax =
+structured text into structured knowledge triples,                  (Lmax − Linst )
+drawing from the Dolma corpus (Soldaini et al.,                         Documents exceeding Cmax are divided into
+2024). This pipeline systematically extracts three                  smaller chunks, each tagged with a unique iden-
+categories of relationships—Entity-Entity, Entity-                  tifier and metadata to maintain traceability. This
+Event, and Event-Event—forming the foundation                       segmentation ensures that inputs remain within the
+of a comprehensive knowledge graph. Designed                        LLM’s token capacity, preserving contextual in-
+for scalability and resilience, the method incor-                   tegrity without truncation.
+porates batch processing, text segmentation, and                        The preprocessed text is then grouped into
+robust output parsing to efficiently process large-                 batches of size B, utilizing a custom data man-
+scale datasets.                                                     agement framework that integrates with standard
+   The extraction unfolds across three sequential                   dataset loading tools. Tokenization is applied to
+stages, each tailored to a specific relationship                    each batch, adjusting for padding and truncation to
+type, leveraging a single LLM guided by distinct                    produce consistent input representations suitable
+prompts to produce structured outputs in JSON                       for LLM processing.
+
+                                                               13
+
+
+===== PDF PAGE 14 =====
+    Event Relationship Extraction                                  v ∈ VE (event nodes), and r ∈ R. This bidirec-
+                                                                   tional extraction captures both entities involved in
+    Please analyze and summarize the relationships be-
+    tween the events in the paragraph. Each event is a             events and events tied to entities, enhancing the
+    single independent sentence. Identify temporal and             graph’s relational depth.
+    causal relationships between the events using the fol-
+    lowing types: before, after, at the same time, because,        B.1.4    Stage 3: Extraction of Event-Event
+    and as a result. Each extracted triple should be spe-
+    cific, meaningful, and able to stand alone. Do not                      Relationships
+    use ellipses. The output should strictly adhere to the         The third stage targets Event-Event relationships,
+    following JSON format:
+    [                                                              as shown in Figure 4„ detecting causal, temporal,
+       {                                                           or logical connections between events. A special-
+           "Head": "{a simple sentence describing the
+    event 1}",
+                                                                   ized prompt, PV V , is applied to the text segments,
+           "Relation": "{temporal or causality relation be-        prompting the LLM to generate triples of the form
+    tween the events}",                                            (v1 , r, v2 ), where v1 , v2 ∈ VE and r ∈ R. The
+           "Tail": "{a simple sentence describing the event
+    2}"
+                                                                   parsing process follows the same methodology, re-
+       }                                                           pairing JSON outputs as needed. To accommodate
+       ...                                                         potentially intricate event descriptions, we extend
+    ]
+                                                                   the generation limit to Lext = α · Lmax , where
+                                                                   α > 1 is a scaling factor, ensuring comprehensive
+Figure 4: The figure demonstrates the prompts we use               capture of event interactions.
+to generate the text triples describing relations between
+events.                                                            B.1.5    Implementation Considerations
+                                                                   The pipeline supports a variety of LLMs, includ-
+                                                                   ing models from Google, Meta, Mistral, Microsoft,
+B.1.2    Stage 1: Extraction of Entity-Entity                      and others, configured with optimized precision set-
+         Relationships                                             tings (e.g., bfloat16 or float16) and enhanced with
+In the initial stage, as shown in Figure 2, we extract             acceleration techniques where applicable. Deploy-
+Entity-Entity relationships, identifying connections               ment occurs on GPUs, with input-output formatting
+between named entities such as individuals, organi-                governed by model-specific chat templates, Tchat ,
+zations, or locations. For each batch, we prepend a                to ensure compatibility. The extracted triples, along
+system prompt, PEE , which instructs the LLM to                    with their corresponding texts and metadata, are
+detect entities and their interrelations, followed by              serialized into JSON files per batch, enabling sub-
+the segmented text. The LLM generates a response                   sequent schema induction and evaluation.
+in JSON format, which is subsequently decoded                         This multi-stage pipeline achieves thorough
+and parsed. The parsing process isolates the struc-                triple extraction by addressing each relationship
+tured content by locating the model’s answer start                 type systematically, harnessing the LLM’s genera-
+token, Tstart , repairs any malformed JSON, and                    tive capabilities within a scalable and fault-tolerant
+extracts a list of dictionaries. Each dictionary rep-              framework. The use of variables such as Lmax ,
+resents a triple (e1 , r, e2 ), where e1 , e2 ∈ VN are             Cmax , and B ensures flexibility across different
+entity nodes and r ∈ R is a relation type. If pars-                models and datasets, reinforcing the methodology’s
+ing encounters errors, an empty list is returned to                adaptability and generalizability.
+ensure pipeline continuity .
+                                                                   B.2     Schema Induction
+B.1.3    Stage 2: Extraction of Entity-Event                       Following the extraction of knowledge triples, our
+         Relationships                                             methodology advances to schema induction, a criti-
+The second stage focuses on Entity-Event relation-                 cal step that abstracts specific entities, events, and
+ships, as shown in Figure 3, linking entities to spe-              relations into generalized types to form a coher-
+cific occurrences or events. Using the original text               ent and adaptable schema for the knowledge graph.
+segments from Stage 1, we apply a new prompt,                      This process leverages the contextual understand-
+PEV , directing the LLM to identify events and                     ing of Large Language Models (LLMs) to generate
+their associated entities. The generation and pars-                conceptual phrases that represent the types or re-
+ing steps mirror those of Stage 1, producing triples               lated concepts of each graph element, enabling the
+of the form (e, r, v) or (v, r, e), where e ∈ VN ,                 graph to scale across diverse domains without man-
+
+                                                              14
+
+
+===== PDF PAGE 15 =====
+ual schema design. The induced schema aligns                      two words, that abstractly represent the input ele-
+with the formal definition of a knowledge graph                   ment. These phrases must satisfy several criteria:
+G = (V, E, C, ϕ, ψ), where C denotes the set of                   they should encapsulate the element’s type or re-
+concepts, and ϕ and ψ map nodes and relations to                  lated concepts, vary in abstraction level, and avoid
+subsets of C, respectively.                                       repetition or inclusion of the original input term.
+   Our schema induction pipeline processes the                    For each element, a minimum of three phrases is
+triples extracted from the Dolma corpus (Soldaini                 targeted, though more may be generated depending
+et al., 2024), organizing them into batches and em-               on the LLM’s output.
+ploying a generative approach to derive abstract                     For events (v ∈ VE ), the prompt directs the LLM
+representations. The process targets three compo-                 to identify abstract event types or related notions.
+nents—events (VE ), entities (VN ), and relations                 For example, an event such as "Sam playing with
+(R)—producing a set of conceptual phrases for                     his dog" might yield phrases like "playing," "bond-
+each, which collectively form the concept set C.                  ing," and "relaxing event," reflecting different lev-
+This section outlines the abstraction methodology,                els of generality. For entities (e ∈ VN ), the prompt
+the role of context in entity conceptualization, and              similarly elicits abstract entity types, augmented
+key implementation details.                                       by contextual information derived from the graph
+                                                                  structure, as detailed below. Relations (r ∈ R) are
+   Abstract Event Phrase Generation                               abstracted into phrases that capture their seman-
+   I will give you an EVENT. You need to give several
+                                                                  tic essence, such as transforming "participated in"
+   phrases containing 1-2 words for the ABSTRACT                  into "engage in," "attend," and "involve in." The
+   EVENT of this EVENT. You must return your an-                  LLM generates these outputs in a structured format,
+   swer in the following format: phrases1, phrases2,
+   phrases3,... You can’t return anything other than an-          which we parse into lists of phrases, forming the
+   swers. These abstract event words should fulfill the           mappings ϕ(v), ϕ(e), and ψ(r) to the concept set
+   following requirements:                                        C.
+      1. The ABSTRACT EVENT phrases can well
+   represent the EVENT, and it could be the type of the              The abstraction process operates in batches, pro-
+   EVENT or the related concepts of the EVENT.                    cessing Bs elements simultaneously. The input
+      2. Strictly follow the provided format, do not add
+   extra characters or words.
+                                                                  prompts are tokenized to a maximum length Ltok ,
+      3. Write at least 3 or more phrases at different            and the LLM generates responses under controlled
+   abstract level if possible.                                    parameters (e.g., temperature τ and top-p sampling
+      4. Do not repeat the same word and the input in
+   the answer.
+                                                                  with probability p) to balance creativity and coher-
+      5. Stop immediately if you can’t think of any more          ence. The resulting phrases are stored alongside
+   phrases, and no explanation is needed.                         their corresponding elements, ensuring traceability
+   Examples:
+   EVENT: A man retreats to mountains and forests                 and enabling subsequent analysis.
+   Your answer: retreat, relaxation, escape, nature, soli-
+   tude                                                           B.2.2   Contextual Enhancement for Entities
+   EVENT: A cat chased a prey into its shelter Your
+   answer: hunting, escape, predation, hidding, stalking          As shown in Figure 6, to enhance the accuracy of
+   EVENT: Sam playing with his dog Your answer: re-               entity abstraction, we incorporate contextual infor-
+   laxing event, petting, playing, bonding, friendship            mation extracted from the knowledge graph. For
+   EVENT: [EVENT] Your answer:
+                                                                  each entity e ∈ VN , we examine its neighboring
+                                                                  nodes—predecessors and successors—along with
+Figure 5: This figure shows the prompt used for gener-            their associated relations. A subset of these neigh-
+ating the concepts for an event.                                  bors, limited to Nctx (e.g., one predecessor and one
+                                                                  successor), is randomly sampled to construct a con-
+                                                                  text string. This string concatenates the neighbor’s
+B.2.1   Abstraction Methodology                                   identity and relation (e.g., "neighbor1 relation1, re-
+The schema induction begins by categorizing the                   lation2 neighbor2"), providing the LLM with addi-
+nodes and edges of the knowledge graph G into                     tional semantic cues. For instance, an entity "Black
+events, entities, and relations. For each category,               Mountain College" with context "started by John
+we process the elements in batches of size Bs to                  Andrew Rice" might yield phrases like "college,"
+optimize computational efficiency and scalability.                "school," and "liberal arts college." This contex-
+The LLM is prompted with tailored instructions to                 tual enrichment ensures that the abstracted types
+generate a list of phrases, each containing one to                are grounded in the entity’s role within the graph,
+
+                                                             15
+
+
+===== PDF PAGE 16 =====
+improving the schema’s relevance and specificity.                   Abstract Relation Phrase Generation
+
+                                                                    I will give you a RELATION. You need to give
+   Abstract Entity Phrase Generation                                several phrases containing 1-2 words for the AB-
+                                                                    STRACT RELATION of this RELATION. You must
+   I will give you an ENTITY. You need to give several              return your answer in the following format: phrases1,
+   phrases containing 1-2 words for the ABSTRACT                    phrases2, phrases3,... You can’t return anything other
+   ENTITY of this ENTITY. You must return your an-                  than answers. These abstract intention words should
+   swer in the following format: phrases1, phrases2,                fulfill the following requirements:
+   phrases3,... You can’t return anything other than an-               1. The ABSTRACT RELATION phrases can well
+   swers. These abstract intention words should fulfill             represent the RELATION, and it could be the type
+   the following requirements:                                      of the RELATION or the simplest concepts of the
+      1. The ABSTRACT ENTITY phrases can well                       RELATION.
+   represent the ENTITY, and it could be the type of the               2. Strictly follow the provided format, do not add
+   ENTITY or the related concepts of the ENTITY.                    extra characters or words.
+      2. Strictly follow the provided format, do not add               3. Write at least 3 or more phrases at different
+   extra characters or words.                                       abstract level if possible.
+      3. Write at least 3 or more phrases at different                 4. Do not repeat the same word and the input in
+   abstract level if possible.                                      the answer.
+      4. Do not repeat the same word and the input in                  5. Stop immediately if you can’t think of any more
+   the answer.                                                      phrases, and no explanation is needed.
+      5. Stop immediately if you can’t think of any more            Examples:
+   phrases, and no explanation is needed.                           RELATION: participated in Your answer: become
+   Examples:                                                        part of, attend, take part in, engage in, involve in
+   ENTITY: Soul CONTEXT: premiered BFI London                       RELATION: be included in Your answer: join, be a
+   Film Festival, became highest-grossing Pixar release             part of, be a member of, be a component of
+   Your answer: movie, film                                         RELATION: [RELATION] Your answer:
+   ENTITY: Thinkpad X60 CONTEXT: Richard Stall-
+   man announced he is using Trisquel on a Thinkpad
+   X60 Your answer: Thinkpad, laptop, machine, device,
+   hardware, computer, brand                                     Figure 7: This figure shows the conceptualization
+   ENTITY: Harry Callahan CONTEXT: bluffs another                prompts for relations enhanced with context.
+   robber, tortures Scorpio Your answer: person, Amari-
+   can, character, police officer, detective
+   ENTITY: Black Mountain College CONTEXT: was
+   started by John Andrew Rice, attracted faculty Your
+   answer: college, university, school, liberal arts col-        selected to reduce processing time during experi-
+   lege
+   ENTITY: 1st April CONTEXT: Utkal Dibas cele-                  mentation.
+   brates Your answer: date, day, time, festival
+   ENTITY: [ENTITY] CONTEXT: [CONTEXT] Your                         The LLM, configured with a precision setting
+   answer:
+                                                                 (e.g., float16) and optimized with acceleration tech-
+                                                                 niques, operates on a GPU to handle the batched
+Figure 6: This figure shows the conceptualization                inference efficiently. Prompts are formatted using a
+prompts for entities enhanced with context.                      model-specific chat template, Tchat , ensuring com-
+                                                                 patibility with the LLM’s input-output conventions.
+   Events and relations, as shown in Figure 5 and                The generated phrases are written to a CSV file,
+Figure 7, by contrast, rely solely on their textual              with each row recording the original element, its
+descriptions without additional context, as their ab-            abstracted phrases, and its type (event, entity, or
+straction focuses on inherent semantics rather than              relation). Post-processing aggregates these phrases
+graph connectivity. This distinction reflects the dif-           to compute the unique concepts in C, providing
+fering roles of nodes and edges in the knowledge                 statistics on the schema’s coverage, such as the
+graph structure.                                                 number of distinct event types, entity types, and
+                                                                 relation types.
+B.2.3   Implementation Details
+The schema induction pipeline processes a graph                    This approach yields a flexible and automated
+G serialized from the triple extraction phase, typi-             schema, mapping each node v ∈ V and relation
+cally stored in a binary format and loaded into mem-             r ∈ R to a subset of concepts in C via ϕ and ψ. By
+ory. The elements are partitioned into batches, with             abstracting specific instances into general types, the
+the option to apply slicing (dividing the workload               induced schema enhances the knowledge graph’s
+into Stotal slices and processing the Sslice -th por-            adaptability, supporting downstream applications
+tion) for distributed computation. If a sample size              across varied domains without requiring manual
+Nsample is specified, a random subset of batches is              curation.
+
+                                                            16
+
+
+===== PDF PAGE 17 =====
+C     Experiment Settings of Schema                                                     1 X
+                                                                        BertPrec =          max x⊤tj xt̂i ,             (2)
+      Accuracy                                                                         |t̂| tj ∈t
+                                                                                          t̂i ∈t̂
+
+C.1    Datasets                                                                      BertRecall · BertPrec
+                                                                     BS(t, t̂) = 2                         ,            (3)
+Entity Typing. We conduct experiments on                                             BertRecall + BertPrec
+the typed entities of two real-world knowledge
+                                                              where t and t̂ represents the tokens of a ground truth
+graphs, FB15kET (Bordes et al., 2013) and
+                                                              type and induced schema, respectively. The embed-
+YAGO43kET (Moon et al., 2017a), which are the
+                                                              ding vector of each token ti or t̂j of a type t or in-
+subsets of Freebase (Bollacker et al., 2008) and
+                                                              duced schema t̂ is denoted as xti and xt̂j , which are
+YAGO (Suchanek et al., 2007), respectively. The
+                                                              obtained with RoBERTa (Liu et al., 2019). Then
+types of entities are collected from (Moon et al.,
+                                                              the BS-R and BS-C can be calculated as follows:
+2017b). There are 3,584 and 45,182 entity types
+in FB15kET and YAGO43kET, respectively. We                                              1 X
+                                                                    BS-R(T , T̂ ) =                    max BS(t, t̂),   (4)
+utilize the entities in the testing sets of these two                                  |T̂ |            t∈T
+                                                                                               t̂∈T̂
+datasets with their types as ground truths to validate
+the entity induction performance of our schema in-
+                                                                                        1 X
+duction method.                                                    BS-C(St , St̂ ) =          max BS(t, t̂),            (5)
+                                                                                       |St̂ | t∈St
+   Event Typing. We conduct experiments on                                                     t̂∈St̂
+the typed events of wikiHow (Koupaee and Wang,
+2018), which is an online community contains a                where T and T̂ represent a set of ground truth
+collection of professionally edited how-to guide-             types and induced schemas in each testing instance,
+line articles. The types of events are collected by           respectively. Similarly, St and St̂ denote the set of
+P2GT (Chen et al., 2020). There are 625 event                 ground truth types and induced schemas across the
+types among 12,795 events. We utilize the events              entire testing set, respectively.
+in the testing set of wikiHow with their types as
+ground truths to validate the event induction perfor-         D    Case Study Examples
+mance of our schema induction method.                         Figures 9 and 10 demonstrate specific cases where
+   Relation Typing. There are no datasets de-                 events and concepts are crucial for effective knowl-
+signed for the relation typing task, so here we make          edge graph utilization in retrieval-augmented gen-
+use of the domain segments separated by "/" in                eration. Figure 9 illustrates how event nodes pro-
+FB15kET (Bordes et al., 2013) to extract the types.           vide essential contextual information that entity-
+These domain segments serve as ground truth types,            only representations miss, while Figure 10 show-
+with the last domain component functioning as the             cases how concept nodes establish semantic bridges
+relation itself. There are 607 relation types among           across otherwise disconnected subgraphs, enabling
+1,345 relations in FB15kET. We utilize the rela-              more comprehensive reasoning for complex ques-
+tions in the testing set of FB15kET with their types          tions.
+as ground truths to validate the relation induction
+performance of our schema induction method.                   E   Algorithm for RAG
+C.2    Metrics                                                We include all the algorithms used in our RAG
+We employ BertScore-Recall and BertScore-                     evaluation on various graphs constructed by Au-
+Coverage as the evaluation metrics, which are de-             toSchemaKG. Algorithm 1 presents the Think-on-
+noted as BS-R and BS-C respectively. They are                 Graph reasoning method that leverages our knowl-
+used to calculate how many types in each instance             edge graphs for multi-hop question answering. For
+or entire testing set are recalled by our schema              adapting our entity-event-concept graphs at differ-
+induction method. The BertScore (Zhang et al.,                ent scales, we implemented two variants of Hip-
+2019), which is denoted as BS, between each pair              poRAG2: Algorithm 2 for smaller, more focused
+of type and induced schema are calculated as fol-             graph traversal, and Algorithm 3 for large-scale
+lows:                                                         graph exploration with optimized memory manage-
+                                                              ment. These adaptations enable efficient naviga-
+                         1 X                                  tion of the rich semantic structures in our ATLAS
+         BertRecall =           max x⊤ x ,        (1)
+                        |t| t ∈t t̂j ∈t̂ ti t̂j               knowledge graphs.
+                            i
+
+
+
+                                                         17
+
+
+===== PDF PAGE 18 =====
+Algorithm 1 Think on Graph (ToG) (Sun et al., 2024a) for Question Answering
+Require: Knowledge Graph G, Query q, Top-N parameter, Maximum depth Dmax
+Ensure: Answer to query q
+ 1: Extract entities from query q using NER
+ 2: Retrieve top-k initial nodes from G based on entity similarity
+ 3: Let P ← set of paths, each containing a single initial node
+ 4: D ← 0                                                                        ▷ Current search depth
+ 5: while D ≤ Dmax do
+ 6:     P ← Search(q, P, G)                                                 ▷ Expand paths by one hop
+ 7:     P ← Prune(q, P, N )                                           ▷ Keep top-N most relevant paths
+ 8:     if Reasoning(q, P ) determines paths sufficient then
+ 9:         return Generate(q, P )                                       ▷ Generate answer using paths
+10:     end if
+11:     D ←D+1
+12: end while
+13: return Generate(q, P )                                  ▷ Generate answer using best available paths
+14: procedure S EARCH(q, P, G)
+15:     Pnew ← ∅
+16:     for each path p ∈ P do
+17:         etail ← last entity in path p
+18:         S ← successors of etail in G not already in p
+19:         R ← predecessors of etail in G not already in p
+20:         if S = ∅ and R = ∅ then
+21:             Pnew ← Pnew ∪ {p}                                                ▷ Keep dead-end paths
+22:         else
+23:             for each node n ∈ S do
+24:                 r ← relation from etail to n in G
+25:                 Pnew ← Pnew ∪ {p + [r, n]}                                   ▷ Extend path forward
+26:             end for
+27:             for each node n ∈ R do
+28:                 r ← relation from n to etail in G
+29:                 Pnew ← Pnew ∪ {p + [r, n]}                                 ▷ Extend path backward
+30:             end for
+31:         end if
+32:     end for
+33:     return Pnew
+34: end procedure
+35: procedure P RUNE(q, P, N )
+36:     Score each path in P using LLM relevance assessment (1-5 scale)
+37:     Sort paths by decreasing score
+38:     return top-N highest scoring paths
+39: end procedure
+40: procedure R EASONING(q, P )
+41:     Extract triples from paths in P
+42:     Ask LLM if triples are sufficient to answer q (Yes/No)
+43:     return True if answer is "Yes", False otherwise
+44: end procedure
+45: procedure G ENERATE(q, P )
+46:     Extract triples from paths in P
+47:     Prompt LLM with triples and query q to generate answer
+48:     return generated answer
+49: end procedure
+
+
+                                                  18
+
+
+===== PDF PAGE 19 =====
+Algorithm 2 HippoRAG2 (Gutiérrez et al., 2025)
+General algorithm follows the original implementation, while we modify the initialization of graph and
+embeddings.
+ 1: function INIT(graph_type)
+ 2:    if graph_type is entity then
+ 3:         graph, embedding ← Graph(entity), Embeddings(entity)
+ 4:    else if graph_type is entity+event then
+ 5:         graph, embedding ← Graph(entity, event), Embeddings(entity, event)
+ 6:    else if graph_type is entity+event+concept then
+ 7:         graph, embedding ← Graph(entity, event, concept), Embeddings(entity, event, concept)
+ 8:    end if
+ 9: end function
+10: function QUERY 2 EDGE(query, topN)
+11:    Qemb ← Retriever(query)
+12:    S = Q · We                     ▷ Calculate similarity scores with precomputed edge embeddings
+13:    E = argsorti (S)[: N ]                                       ▷ Select topN edges based on scores
+14:    filtered_edges ← LLM_filter(E)                       ▷ Filter edges using Large Language Model
+15:    mapped_edges ← Map_edges(filtered_edges)                    ▷ Map filtered edges to original edges
+16:    return_node_scores ← Calculate_node_scores(mapped_edges)
+17:    return return_node_scores
+18: end function
+19: function QUERY 2 PASSAGE(query, weight_adjust)
+20:    Qpass ← Encode(query)                                ▷ Encode query into passage representation
+21:    Stext ← Similarity_Scores(Qpass , text_embeddings)
+22:    return Scores_Dictionary(Stext )
+23: end function
+24: function RETRIEVE _ PERSONALIZATION _ DICT(query, topN)
+25:    node_dict ← query2edge(query, topN )
+26:    text_dict ← query2passage(query, weight_adjust)
+27:    return node_dict, text_dict
+28: end function
+29: function RETRIEVE _ PASSAGES(query, topN)
+30:    node_dict, text_dict ← retrieve_personalization_dict(query, topN )
+31:    if node_dict is empty then
+32:         return TopN_Text_Passages(text_dict)
+33:    else
+34:         personalization_dict ← {node_dict, text_dict}
+35:         page_rank_scores ← PageRank(personalization_dict)
+36:         return TopN_Passages(page_rank_scores)
+37:    end if
+38: end function
+
+
+
+
+                                                  19
+
+
+===== PDF PAGE 20 =====
+Algorithm 3 LargeKGRetriever
+A variant of HippoRAG2 (Gutiérrez et al., 2025), optimized with dynamic graph sampling and common
+word filtering
+ 1: function INIT(graph_type)
+ 2:    keyword ← Default_graph_keyword                              ▷ Keyword can be cc, pes2o, wiki
+ 3:    Initialize_resources(keyword)
+ 4:    Load_node_and_edge_indexes()
+ 5: end function
+ 6: function RETRIEVE _ TOPK _ NODES(query, top_k_nodes)
+ 7:    entities ← LLM_NER(query)
+ 8:    KG_entities ← Encode_and_Search(entities, FAISS_index)
+ 9:    filtered_keywords ← LLM_filter(KG_entities)
+10:    return filtered_keywords
+11: end function
+12: function RETRIEVE _ PERSONALIZATION _ DICT(query, number_of_source_nodes)
+13:    topk_nodes ← retrieve_topk_nodes(query, number_of_source_nodes)
+14:    if topk_nodes == {} then
+15:         return {}
+16:    end if
+17:    Update personalization dictionary with topk_nodes
+18:    return Personalization dictionary
+19: end function
+20: function PAGERANK (personalization_dict, topN, sampling_area)
+21:    GSample ← Random Walk with Restart Sampling
+22:    Scores = PageRank(GSample , personalization_dict)
+23:    topN_nodes = argsorti (Scores)[: N ]
+24:    for node in topN nodes do
+25:         Connected_Passage += node.score
+26:    end for
+27:    return TopN_Ranked_Passages
+28: end function
+29: function RETRIEVE _ PASSAGES(query, topN, number_of_source_nodes, sampling_area)
+30:    personalization_dict ← retrieve_personalization_dict(query, number_of_source_nodes)
+31:    if personalization_dict is empty then
+32:         return {}, [0]
+33:    end if
+34:    topN_passages ← pagerank(personalization_dict, topN, sampling_area)
+35:    return topN_passages
+36: end function
+
+
+
+
+                                                20
+
+
+===== PDF PAGE 21 =====
+F     The Recall Metrics in Opendomain QA                    same across different knowledge bases. The de-
+      Tasks                                                  tailed results of the 3 domains are shown in Ta-
+                                                             ble 10.
+We also use Retrieval Quality metrics at k ∈ {2, 5}:
+PR@k = |Dk ∩ S|/|S| where PR@k (Partial Re-                  G.2   Implementation and Evaluation Details
+call) measures the fraction supporting document is                 on MMLU
+in top-k, Dk is the set of top-k retrieved documents,        Table 11 presents our classification for organizing
+and S is the set of supporting documents. For multi-         MMLU tasks into distinct subject categories, pro-
+hop QA datasets (HotpotQA, 2WikiMultihopQA,                  viding a structured framework for domain-specific
+MuSiQue), these retrieval metrics are crucial as             performance analysis. Table 12 displays compre-
+they measure how effectively our system retrieves            hensive results across all MMLU subject areas,
+the evidence needed for multi-step reasoning.                revealing an important insight: while retrieval-
+   Questions in datasets like 2WikiMultihopQA                augmented generation enhances performance in
+(Ho et al., 2020) and HotpotQA (Yang et al., 2018)           knowledge-intensive domains, it can negatively im-
+tend to be more entity-centric, with relationships           pact performance on reasoning-focused tasks such
+and entities more explicitly represented, which aids         as mathematics and logical reasoning. This finding
+retrievers in easily locating relevant subgraphs. In         aligns with previous research suggesting that RAG
+contrast, MuSiQue (Trivedi et al., 2022), due to its         may sometimes interfere with LLMs’ inherent rea-
+questions’ increased complexity in both description          soning capabilities.
+and multi-hop nature, poses greater challenges for
+retrieval. Additionally, differences in graph con-
+struction cause the retrievers to perform differently
+across datasets.
+
+G     Details and Full Results on General
+      Benchmarks
+G.1    Implementation and Evaluation Details
+       on FELM
+For the evaluation metrics, we follow the original
+paper (Chen et al., 2023) and use balanced accuracy
+and F1 score to evaluate the factuality checking
+capability. For the classification of segments in an
+instance, we ask the model to generate the ID of
+false segments, and then get the true positive (TP),
+false positive (FP), true negative (TN) and false
+negative (FN) results. The balanced accuracy is
+calculated as:
+                              TP        TN
+      Balanced Accuracy =           +             (6)
+                            TP + FN   TN + FP
+
+Since we use F1 score to evaluate the factual error
+detection capability, we calculate the F1 score as:
+                    2 · Precision · Recall
+             F1 =                                (7)
+                     Precision + Recall
+where Precision = T NT+F
+                       N                     TN
+                          N and Recall = T N +F P .
+  We use the Retrieval-Augmented Generation
+method with different knowledge bases on 3 do-
+mains (world knowledge, science and technology,
+and writing/recommendation) of FELM bench-
+mark. For the math domain and reasoning domain,
+we use the vanilla setting and their results are the
+
+                                                        21
+
+
+===== PDF PAGE 22 =====
+  Model/Dataset                                           MuSiQue                              2Wiki                      HotpotQA
+  Metric                                         Recall@2        Recall@5            Recall@2          Recall@5       Recall@2     Recall@5
+     Baseline Retrievers
+  Contriever                                          34.8            46.6              46.6             57.5           58.4             75.3
+  BM25                                                32.4            43.5              55.3             65.3           57.3             74.8
+     LLM Embeddings
+  GTE-Qwen2-7B-Instruct                               48.1            63.6              66.7             74.8           75.8             89.1
+  GritLM-7B                                           49.7            65.9              67.3             76.0           79.2             92.4
+  NV-Embed-v2 (7B)                                    52.7            69.7              67.1             76.5           84.1             94.5
+     Existing Graph-based RAG Methods
+  RAPTOR (Llama-3.3-70B-Instruct)                     47.0            57.8              58.3             66.2           76.8             86.9
+  HippoRAG (Llama-3.3-70B-Instruct)                   41.2            53.2              71.9             90.4           60.4             77.3
+  HippoRAG2 (Llama-3.3-70B-Instruct)                  56.1            74.7              76.2             90.4           83.5             96.3
+     AutoSchemaKG (LLama-3.1-8B-Instruct) + HippoRAG1
+  Entity-KG (Llama-3-8B-Instruct)                     41.37        51.08               61.72            75.45           51.89          65.95
+  Entity-Event-KG (Llama-3-8B-Instruct)               41.28        51.12               61.37            74.56           51.31          65.93
+  Full-KG (Llama-3-8B-Instruct)                       40.78        50.36               61.08             71.9            52.8           65.4
+     AutoSchemaKG (LLama-3.1-8B-Instruct) + HippoRAG2
+  Entity-KG (Llama-3-8B-Instruct)                     48.33        72.58               67.34            84.25           77.59          92.16
+  Entity-Event-KG (Llama-3-8B-Instruct)               48.83         72.7               68.59            85.85           81.26          92.66
+  Full-KG (Llama-3-8B-Instruct)                       49.12        72.48               68.46             84.6           84.17          93.04
+
+                                              Table 8: Recall @ 2 and Recall @ 5.
+
+Table 9: Recall performance in the knowledge graph created by Llama-3-8B-Instruct shows strong performance that
+is comparable with the knowledge graph created with 70B model.
+
+
+
+
+                                             World Knowledge                     Science and Technology           Writing/Recommendation
+ Corpus            Method
+                                      P         R        F1     Acc          P         R        F1       Acc      P       R       F1        Acc
+ -                 -                 36.67    29.93     32.96   55.10    15.43       24.51     18.94    50.49   25.95    12.73   17.09     52.69
+ Text Corpora
+                   Random            31.78    27.89     29.71   52.52     7.95       11.76      9.49    43.94   21.95    26.97   24.20     53.78
+ Wikipedia         BM25              26.82    32.65     29.45   49.31    15.23       38.24     21.79    50.48   29.21    48.69   36.52     62.40
+                   Dense Retrieval   33.93    38.78     36.19   54.97    16.92       43.14     24.31    53.01   25.22    43.45   31.91     58.68
+                   Random            27.36    19.73     22.92   49.86    10.13       15.69     12.31    45.64   26.92    28.84   27.85     56.50
+ Pes2o-Abstract    BM25              32.43    32.65     32.54   53.34    11.18       17.65     13.69    46.54   26.75    32.96   29.53     57.34
+                   Dense Retrieval   31.43    29.93     30.66   52.50    20.51       47.06     28.57    57.55   25.37    32.21   28.38     56.51
+                   Random            30.14    29.93     30.03   51.72    11.17       21.57     14.72    45.75   23.73    28.09   25.73     54.91
+ Common Crawl      BM25              27.21    27.21     27.21   49.71    12.21       25.49     16.51    46.68   27.32    40.82   32.73     59.42
+                   Dense Retrieval   25.50    34.69     29.39   48.00    15.48       36.27     21.70    50.78   24.41    38.95   30.01     57.27
+ Knowledge Graph
+ Freebase          Think on Graph    26.00     8.84     13.20   49.62    23.76       23.53     23.65    55.15   42.86    12.36   19.19     54.51
+ ATLAS-Wiki                          33.33    42.18     37.24   54.98    16.45       50.00     24.76    52.75   32.82    32.21   32.51     59.43
+ ATLAS-Pes2o       HippoRAG2         39.17    31.97     35.21   56.51    21.35       40.20     27.89    57.13   30.37    15.36   20.40     54.11
+ ATLAT-CC                            33.80    48.98     40.00   56.18    18.06       52.94     26.93    55.42   24.20    25.47   24.82     54.66
+
+
+Table 10: Factuality results (%) on different domains of FELM benchmark with different Text Corporas and retrieval
+methods. P, R, F1, and Acc denote Precision, Recall, F1 score, and Balanced Accuracy, respectively.
+
+
+
+
+                                                                   22
+
+
+===== PDF PAGE 23 =====
+ Subject                            Task
+ History                            high school european history, high school us history, high school world history,
+                                    prehistory
+ Formal Logic                       formal logic, logical fallacies
+ Law                                international law, jurisprudence, professional law
+ Philosophy and Ethics              philosophy, moral disputes, moral scenarios, business ethics
+ Religion                           world religions
+ Medicine and Health                clinical knowledge, college medicine, medical genetics, professional medicine, virol-
+                                    ogy, human aging, nutrition, anatomy
+ Social Sciences                    high school geography, high school government and politics, high school psychology,
+                                    professional psychology, sociology, human sexuality, us foreign policy, security
+                                    studies
+ Economics                          high school macroeconomics, high school microeconomics, econometrics
+ Business and Management            management, marketing, professional accounting, public relations
+ Math                               abstract algebra, college mathematics, elementary mathematics, high school mathe-
+                                    matics, high school statistics
+ Natural Sciences                   astronomy, college biology, college chemistry, college physics, conceptual physics,
+                                    high school biology, high school chemistry, high school physics
+ Computer Science and Engineering   college computer science, high school computer science, computer security, electrical
+                                    engineering, machine learning
+ Global Facts                       global facts, miscellaneous
+                           Table 11: The correspondence between subjects and tasks.
+
+
+
+
+                                                      MMLU
+Corpus
+               overall History Law Religion PaE MaH GF BaM SS Logic Econ Math NS CSaE
+None            69.18 76.59 66.86 83.04 63.55 70.38 66.72 72.20 79.74 64.35 68.35 57.31 65.27 66.70
+Freebase-ToG    70.36 78.42 69.00 75.44 65.67 72.65 67.27 73.67 76.00 66.03 67.34 60.56 69.39 68.23
+                                              Random + KB
+Wikipedia       68.06 76.64 66.82 79.53 59.26 70.34 66.46 67.34 77.78 59.21 65.35 60.91 67.52 61.87
+Common Crawl 67.93 74.89 66.52 79.53 61.74 69.82 68.11 67.67 77.52 59.30 64.20 59.80 67.42 62.22
+Pes2o-Abstract 68.07 76.24 64.16 80.70 62.01 70.62 66.59 69.27 77.16 62.39 64.70 60.07 66.41 62.18
+                                               BM25 + KB
+Wikipedia       68.99 76.67 67.35 78.36 63.34 69.35 61.98 71.39 76.99 62.30 65.56 61.67 69.31 65.60
+Common Crawl 68.33 76.15 66.36 80.12 60.43 69.58 64.67 69.47 76.71 63.18 68.22 62.26 65.55 65.04
+Pes2o-Abstract 69.04 78.01 65.89 78.95 63.83 71.01 65.78 68.29 77.07 59.34 68.87 61.20 67.73 65.74
+                                           Dense Retrieval + KB
+Wikipedia       69.37 73.59 69.60 79.53 63.58 70.82 62.41 72.57 76.83 62.21 67.35 61.79 69.81 65.39
+Common Crawl 67.03 74.47 68.98 79.53 60.46 69.29 64.09 68.88 75.21 61.86 62.27 57.13 64.54 64.47
+Pes2o-Abstract 69.07 75.79 61.82 78.36 65.15 69.72 66.77 69.02 76.47 63.05 63.07 63.92 69.53 67.86
+                                            HippoRAG2 + KG
+Wikipedia       68.22 76.73 67.38 84.21 66.01 70.82 68.36 72.35 79.16 63.65 64.53 50.09 65.45 62.10
+Common Crawl 68.26 78.16 70.85 83.04 65.60 71.28 63.95 68.84 78.16 65.42 67.51 52.87 63.32 63.40
+Pes2o-Abstract 69.19 77.13 68.41 81.29 65.05 72.75 65.67 72.32 81.19 62.98 65.29 54.24 65.41 64.04
+
+Table 12: Performance comparison of our knowledge graph (KG) integrated with HippoRAG2 against baseline
+retrieval methods (Random, BM25, Dense Retrieval) across Wikipedia, Common Crawl, and Pes2o-Abstract corpora
+on MMLU benchmarks. Tasks are classified according to subjects, with bold and underline indicating the highest and
+the second highest performance. PaE, MaH, GF, BaM, SS, Econ, NS and CSaE represent Philosophy_and_Ethics,
+Medicine_and_Health, Global_Facts, Business_and_Management, Social_Sciences, Economics, Natural_Sciences
+and Computer_Science_and_Engineering respectively.
+
+
+
+
+                                                          23
+
+
+===== PDF PAGE 24 =====
+   Multiple-Choice Question Generation and Answering
+
+   MCQ Generation Prompt:
+   You are an expert in generating multiple-choice ques-
+   tions (MCQs) from scientific texts. Your task is to
+   generate 5 multiple-choice questions based on the
+   following passage.
+   Each question should:
+      - Focus on factual claims, numerical data, defini-
+   tions, or relational knowledge from the passage.
+      - Have 4 options (one correct answer and three
+   plausible distractors).
+      - Clearly indicate the correct answer.
+   The output should be in JSON format, with each
+   question as a dictionary containing:
+      - "question": The MCQ question.
+      - "options": A list of 4 options (e.g., ["A: ..", "B:
+   ..", "C: ..", "D: .."]).
+      - "answer": The correct answer (e.g., "A").
+   Output Example:
+   [
+      {
+         "question": "What is the primary role of a cata-
+   lyst in a chemical reaction?",
+         "options": [
+            "A: To make a thermodynamically unfavor-
+   able reaction proceed",
+            "B: To provide a lower energy pathway be-
+   tween reactants and products",
+            "C: To decrease the rate of a chemical reac-
+   tion",
+            "D: To change the overall reaction itself"
+         ],
+         "answer": "B"
+      }
+   ]
+   Passage: {passage}
+
+   MCQ Answering Prompt:
+   Given the contexts or evidences: {contexts}
+   Here is a multiple-choice question:
+   Question: {question}
+   Options: A. {options_0} B. {options_1} C. {op-
+   tions_2} D. {options_3}
+   Please select the correct answer by choosing A, B, C,
+   or D. Respond with only the letter of your choice.
+
+
+Figure 8: The prompts for generating and answering
+MCQ questions for evaluating knowledge retention in
+knowledge graph.
+
+
+
+
+                                                              24
+
+
+===== PDF PAGE 25 =====
+Question: When did the country the top-ranking Warsaw Pact operatives came from, despite it being
+headquartered in the country where A Generation is set, agree to a unified Germany inside NATO?
+
+
+        Combined Command                       [headquater]
+        of Pact Armed                                                                            Warsaw
+        Forces
+                                                                            [Participated]
+                                   the Combined Command of Pact
+                                   Armed Forces controlled the
+                                   assigned multi-national                           [Located in]
+                                   forces, with headquarters in
+                                   Warsaw, Poland
+                                                                            [Participated]
+
+            A Generation                                                                         Poland
+                                                 [set in]
+
+  Figure 9: Event Node (green) offers enriched context over triplets (blue); dotted line indicates missing edge
+
+
+
+
+Question: Who won the Indy Car Race in the largest populated city of the state where the performer of
+Mingus Three is from?
+                     [Concept]                   [Concept]
+  United State                         State                    Arizona       [is the capital]         Myth
+
+                                                                                                     [Concept]
+
+                     [Concept]
+    Champion                                   race                                           Phoenix
+                                                                             [Concept]
+
+
+                        Country                   [Concept]          City
+         [Concept]
+                                                                                                 [Participated]
+                                        The final
+                                        career victory                                 Phoenix has a
+ Mario Andretti                         for Indy legend                                rich history of
+                  [Participated]        Mario Andretti        [At the same time]       open wheel races
+                                        (1993)
+
+
+Figure 10: Concept nodes (orange) provide alternate pathways to access information beyond entities and events.
+
+
+
+
+                                                       25
