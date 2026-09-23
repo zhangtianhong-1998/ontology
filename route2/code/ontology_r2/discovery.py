@@ -5,6 +5,7 @@ All joins compare original CSV values; no normalization is applied implicitly.
 """
 
 from collections import defaultdict
+from contextlib import nullcontext
 from itertools import combinations
 import re
 
@@ -80,7 +81,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
                        max_indexed_fields=64,
                        max_indexed_values_per_field=128,
                        max_value_length=96,
-                       max_fields_per_common_value=32):
+                       max_fields_per_common_value=32, on_step=None, on_note=None):
     """Recall directional field pairs from declarations, names and raw values.
 
     Returns ``{"candidates": [...], "coverage": {...}}``. The value index is
@@ -110,6 +111,8 @@ def propose_candidates(data, *, max_candidates_total=2000,
         for target in fields:
             if _metadata_pair(source, target, data):
                 metadata_by_source[source].append(target)
+        if on_step is not None:
+            on_step(f"字段名 {source[0]}.{source[1]}")
     omitted_metadata = 0
     for source, targets in metadata_by_source.items():
         # A declared key and an observed primary key are useful *ranking*
@@ -149,9 +152,13 @@ def propose_candidates(data, *, max_candidates_total=2000,
     inverted = defaultdict(list)
     truncated_fields = []
     for field in indexed_fields:
+        if on_note is not None:
+            on_note(f"值样本 {field[0]}.{field[1]} 查询中")
         values, truncated = _sample_values(data, *field,
                                            max_indexed_values_per_field,
                                            max_value_length)
+        if on_step is not None:
+            on_step(f"值样本 {field[0]}.{field[1]}")
         if truncated:
             truncated_fields.append(f"{field[0]}.{field[1]}")
         for value in values:
@@ -376,7 +383,7 @@ def validate_candidate(data, candidate, *, selector=None, scope_bindings=None,
     }
 
 
-def discover_and_check(data, options=None):
+def discover_and_check(data, options=None, progress=None):
     """Run bounded recall and exact checks; retain every unverified candidate.
 
     This stage does not create a RelationPlan. It can run without an LLM and
@@ -386,8 +393,15 @@ def discover_and_check(data, options=None):
     allowed = ("max_candidates_total", "max_per_source_per_channel",
                "max_indexed_fields", "max_indexed_values_per_field",
                "max_value_length", "max_fields_per_common_value")
-    found = propose_candidates(data, **{key: options[key] for key in allowed
-                                      if key in options})
+    fields = len(_fields(data))
+    index_limit = options.get("max_indexed_fields", 64)
+    total = fields + min(fields, index_limit) if isinstance(index_limit, int) and index_limit > 0 else None
+    recall_task = progress.task("字段候选召回", total) if progress else nullcontext(None)
+    with recall_task as stage:
+        found = propose_candidates(data, **{key: options[key] for key in allowed
+                                          if key in options},
+                                   on_step=(lambda detail: stage.advance(detail=detail)) if stage else None,
+                                   on_note=stage.note if stage else None)
     candidates = found["candidates"]
     max_validations = options.get("max_candidate_validations", 12)
     max_per_unit = options.get("max_validations_per_source_table", 3)
@@ -417,18 +431,25 @@ def discover_and_check(data, options=None):
                 ordered.append(by_source[table][index])
     selected = ordered[:max_validations]
     checks = []
-    for candidate in selected:
-        try:
-            checked = validate_candidate(data, candidate,
-                                         sample_limit=options.get("max_counterexamples", 5))
-            candidate["decision"] = checked["decision"]
-            checks.append(checked)
-        except Exception as exc:
-            candidate["decision"] = {"status": "check_error",
-                                     "semantic_relation": "unresolved"}
-            checks.append({"candidate_id": candidate["candidate_id"],
-                           "decision": candidate["decision"],
-                           "error_type": type(exc).__name__})
+    check_task = progress.task("字段关联核验", len(selected)) if progress else nullcontext(None)
+    with check_task as stage:
+        for candidate in selected:
+            if stage:
+                stage.note(f"{candidate['source']['table']}.{candidate['source']['field']} → "
+                           f"{candidate['target']['table']}.{candidate['target']['field']}")
+            try:
+                checked = validate_candidate(data, candidate,
+                                             sample_limit=options.get("max_counterexamples", 5))
+                candidate["decision"] = checked["decision"]
+                checks.append(checked)
+            except Exception as exc:
+                candidate["decision"] = {"status": "check_error",
+                                         "semantic_relation": "unresolved"}
+                checks.append({"candidate_id": candidate["candidate_id"],
+                               "decision": candidate["decision"],
+                               "error_type": type(exc).__name__})
+            if stage:
+                stage.advance(detail=candidate["candidate_id"])
     coverage = found["coverage"]
     omitted_fields = set(coverage["fields_not_value_indexed"])
     indexed = [(table, column) for table, column in _fields(data)

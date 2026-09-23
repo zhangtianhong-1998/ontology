@@ -2,6 +2,7 @@
 import asyncio
 import json
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -9,6 +10,7 @@ from dotenv import load_dotenv
 from .discovery import discover_and_check
 from .incremental import construct
 from .llm import BudgetExceeded, StructuredLLM
+from .progress import ProgressReporter
 from .relations import Extractor
 from .storage import Dataset, Sink, digest, read_yaml, write_yaml
 
@@ -81,16 +83,17 @@ async def build(config, output):
     output.mkdir(parents=True, exist_ok=False)
     (output / "work").mkdir()
     start = time.monotonic()
-    data = sink = llm = None
+    data = sink = llm = progress = None
     code_hash = digest({p.name: p.read_text() for p in sorted(p for p in Path(__file__).parent.iterdir() if p.suffix in (".py", ".html"))})
     manifest = {"status": "failed", "implementation": "rigor_adapted_incremental_yaml_prototype", "implementation_code_hash": code_hash, "config_hash": digest(config), "data_scope": config.get("data_scope", "sample"), "synthetic": config.get("synthetic", False)}
     manifest.update(input_root=config["dataset"], experiment_profile=config.get("experiment_profile"), source_channels={"mcp": config.get("mcp", {}).get("enabled", False), "external": config.get("external", {}).get("enabled", False)}, runtime_limits={"llm": {k: v for k, v in config["llm"].items() if k.startswith("max_") or k in ("mode", "timeout_seconds")}, "processing": config.get("processing", {}), "memory_limit": config.get("memory_limit", "1GB")})
     try:
+        progress = ProgressReporter(config.get("progress"))
         load_dotenv(config.get("env_file"), override=False)
         profile = read_yaml(config["model_profile"])
         profiling = {**config.get("profiling", {}), "input_scope": config.get("data_scope", "unknown")}
         data = Dataset(config["dataset"], output / "work", config.get("memory_limit", "1GB"),
-                       profiling)
+                       profiling, progress=progress)
         sink = Sink(output, config.get("shard_size", 5000))
         llm = StructuredLLM(config["llm"], output)
         manifest.update(snapshot_id=data.snapshot_id, input_files=data.files, input_tables=len(data.tables), input_records=sum(t["rows"] for t in data.tables.values()), model_profile_hash=digest(profile))
@@ -98,7 +101,7 @@ async def build(config, output):
         write_yaml(output / "profiles.yaml", {name: t["profiles"] for name, t in data.tables.items()})
         discovery = {"candidates": [], "checks": [], "coverage": {"status": "disabled", "partial": False}}
         if config.get("discovery", {}).get("enabled", True):
-            discovery = discover_and_check(data, config.get("discovery", {}))
+            discovery = discover_and_check(data, config.get("discovery", {}), progress=progress)
             discovery["coverage"]["input_scope"] = config.get("data_scope", "unknown")
         write_yaml(output / "field_candidates.yaml", discovery["candidates"])
         write_yaml(output / "association_checks.yaml", discovery["checks"])
@@ -108,21 +111,34 @@ async def build(config, output):
                                        "partial": discovery["coverage"]["partial"]}
         plan, ontology, knowledge = await construct(data, profile, config, output, llm, manifest,
                                                     discovery_checks=discovery["checks"],
-                                                    discovery_candidates=discovery["candidates"])
+                                                    discovery_candidates=discovery["candidates"],
+                                                    progress=progress)
         for ev in data.evidence.values():
             sink.put("evidence", ev)
-        extractor = Extractor(data, sink, plan, llm, config.get("processing", {}))
+        extractor = Extractor(data, sink, plan, llm, config.get("processing", {}), progress=progress)
         materialized = 0
         if config.get("processing", {}).get("materialize_all_objects", True):
             cap = config.get("processing", {}).get("max_object_records", 1000000)
-            for t in plan.tables:
-                for row in data.rows(t.table):
-                    if materialized >= cap:
-                        manifest["object_materialization_partial"] = True
-                        break
-                    extractor.object(t.table, row)
-                    materialized += 1
-        stats = await extractor.execute()
+            total = min(cap, sum(data.tables[t.table]["rows"] for t in plan.tables))
+            object_task = progress.task("对象物化", total) if progress else nullcontext(None)
+            with object_task as stage:
+                pending = 0
+                for t in plan.tables:
+                    if stage:
+                        stage.note(t.table)
+                    for row in data.rows(t.table):
+                        if materialized >= cap:
+                            manifest["object_materialization_partial"] = True
+                            break
+                        extractor.object(t.table, row)
+                        materialized += 1
+                        pending += 1
+                        if stage and pending >= 1000:
+                            stage.advance(pending)
+                            pending = 0
+                if stage and pending:
+                    stage.advance(pending)
+        stats = await extractor.execute(progress=progress)
         write_yaml(output / "coverage.yaml", {"tables": [{"table": name, "input_records": t["rows"], "object_plan": name in extractor.tables, "source_relation_plans": [p.id for p in plan.relations if p.source_table == name]} for name, t in data.tables.items()], "relation_plans": stats["plans"], "implicit_relation_recall": "unknown; absent plans do not prove absence of business relations"})
         unmodeled_tables = sorted(data.tables.keys() - {t.table for t in plan.tables})
         manifest["unmodeled_tables"] = unmodeled_tables
@@ -130,8 +146,12 @@ async def build(config, output):
             sink.put("unresolved", {"id": "unmodeled:" + table, "reason": "unmodeled_table", "table": table, "count": data.tables[table]["rows"]})
         for table in manifest.get("incremental_units_not_accepted", []):
             sink.put("unresolved", {"id": "semantic_unit:" + table, "reason": "semantic_increment_not_accepted", "table": table, "count": data.tables[table]["rows"]})
-        counts = sink.export()
-        validation = check_output(sink)
+        counts = sink.export(progress=progress)
+        check_task = progress.task("结果校验", 1) if progress else nullcontext(None)
+        with check_task as stage:
+            validation = check_output(sink)
+            if stage:
+                stage.advance()
         write_yaml(output / "validation.yaml", validation)
         write_yaml(output / "metrics.yaml", {"counts": counts, "extraction": stats, "materialized_records": materialized, "llm": llm.metrics(), "semantic_quality": "synthetic_only" if config.get("synthetic") else "unjudged"})
         partial = unmodeled_tables or stats["unprocessed_records"] or stats["semantic_budget_exhausted"] or manifest.get("object_materialization_partial") or manifest.get("knowledge_questions_not_processed") or any(k["status"] in ("error", "unavailable", "budget_exhausted") for k in knowledge) or manifest.get("external_import_incomplete") or manifest.get("incremental_units_not_accepted") or manifest.get("external_alignment_errors") or manifest["field_discovery"]["partial"]
@@ -144,7 +164,7 @@ async def build(config, output):
         if llm:
             llm.trace({"stage": "run_error", **manifest["error"]})
         if sink:
-            sink.export()
+            sink.export(progress=progress)
     finally:
         if llm:
             manifest["llm"] = llm.metrics()
@@ -160,7 +180,11 @@ async def build(config, output):
         if config.get("visualization", {}).get("enabled", True):
             from .visualization import render_viewer
             try:
-                render_viewer(output, config.get("visualization", {}).get("max_nodes", 200))
+                viewer_task = progress.task("生成可视化", 1) if progress else nullcontext(None)
+                with viewer_task as stage:
+                    render_viewer(output, config.get("visualization", {}).get("max_nodes", 200))
+                    if stage:
+                        stage.advance()
                 manifest["viewer"] = "viewer.html"
             except Exception as exc:
                 manifest["viewer_error"] = type(exc).__name__

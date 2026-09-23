@@ -2,6 +2,7 @@
 import ast
 import json
 import re
+from contextlib import nullcontext
 from functools import lru_cache
 
 from .llm import BudgetExceeded
@@ -51,8 +52,8 @@ def terms(value):
 
 
 class Extractor:
-    def __init__(self, data, sink, plan, llm, config):
-        self.data, self.sink, self.plan, self.llm, self.config = data, sink, plan, llm, config
+    def __init__(self, data, sink, plan, llm, config, progress=None):
+        self.data, self.sink, self.plan, self.llm, self.config, self.progress = data, sink, plan, llm, config, progress
         self.tables = {t.table: t for t in plan.tables}
         self.stats = {"records_examined": 0, "not_applicable": 0, "empty_reference": 0, "accepted": 0, "unresolved": 0, "text_groups": 0, "unprocessed_records": 0, "semantic_budget_exhausted": False, "plans": []}
         self.text_cache, self.indexed = {}, set()
@@ -85,9 +86,18 @@ class Extractor:
     def search(self, plan, row):
         table = plan.target_table
         if table not in self.indexed:
-            for target in self.data.rows(table):
-                text = " ".join(terms(" ".join(str(v or "") for v in target.values())))
-                self.sink.db.execute("INSERT INTO search VALUES (?,?,?)", (table, text, json.dumps(target, ensure_ascii=False)))
+            index_task = self.progress.task("构建文本索引", self.data.tables[table]["rows"]) if self.progress else nullcontext(None)
+            with index_task as stage:
+                pending = 0
+                for target in self.data.rows(table):
+                    text = " ".join(terms(" ".join(str(v or "") for v in target.values())))
+                    self.sink.db.execute("INSERT INTO search VALUES (?,?,?)", (table, text, json.dumps(target, ensure_ascii=False)))
+                    pending += 1
+                    if stage and pending >= 1000:
+                        stage.advance(pending, detail=table)
+                        pending = 0
+                if stage and pending:
+                    stage.advance(pending, detail=table)
             self.indexed.add(table)
         query_terms = terms(row[plan.source_column])[:20]
         if not query_terms:
@@ -130,8 +140,24 @@ class Extractor:
             return None, "invalid_link_quote"
         return selected, "model_semantic_match"
 
-    async def execute(self):
-        for p in self.plan.relations:
+    async def execute(self, progress=None):
+        if progress is None:
+            return await self._execute()
+        cap = self.config.get("max_relation_records", 1000000)
+        total = min(cap, sum(self.data.tables[p.source_table]["rows"] for p in self.plan.relations))
+        with progress.task("关系记录处理", total) as stage:
+            result = await self._execute(stage)
+            remainder = result["records_examined"] % 1000
+            if remainder:
+                stage.advance(remainder)
+            return result
+
+    async def _execute(self, stage=None):
+        plan_count = len(self.plan.relations)
+        for plan_index, p in enumerate(self.plan.relations):
+            if stage and (plan_count <= 30 or plan_index == 0 or
+                          plan_index * 10 // plan_count > (plan_index - 1) * 10 // plan_count):
+                stage.note(f"计划 {plan_index + 1}/{plan_count}: {p.id}")
             processed = 0
             coverage = {"plan_id": p.id, "total_source_records": self.data.tables[p.source_table]["rows"], "examined": 0, "selector_true": 0, "selector_unknown": 0, "nonempty_applicable_records": 0, "matched_records": 0, "references": 0, "matched_references": 0}
             self.stats["plans"].append(coverage)
@@ -144,6 +170,8 @@ class Extractor:
                 processed += 1
                 coverage["examined"] += 1
                 self.stats["records_examined"] += 1
+                if stage and self.stats["records_examined"] % 1000 == 0:
+                    stage.advance(1000, detail=p.id)
                 applies = evaluate(p.selector, row)
                 if applies is False:
                     self.stats["not_applicable"] += 1

@@ -15,6 +15,7 @@ def main():
     run.add_argument("--dataset")
     run.add_argument("--llm-mode", choices=["mock", "agentscope"])
     run.add_argument("--profile", choices=["E2L", "E2O", "E2K", "E2F"], help="Explicit knowledge-source switches")
+    run.add_argument("--no-progress", action="store_true", help="Disable stderr progress output")
     demo = sub.add_parser("make-demo")
     demo.add_argument("--output", required=True)
     demo.add_argument("--rows", type=int, default=8)
@@ -52,6 +53,8 @@ def main():
         config["experiment_profile"] = args.profile
         config.setdefault("mcp", {})["enabled"] = args.profile in ("E2K", "E2F")
         config.setdefault("external", {})["enabled"] = args.profile in ("E2O", "E2F")
+    if args.no_progress:
+        config.setdefault("progress", {})["enabled"] = False
     result = asyncio.run(build(config, args.output))
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result["status"] == "failed":

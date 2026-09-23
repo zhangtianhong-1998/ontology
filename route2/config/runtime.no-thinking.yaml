@@ -7,6 +7,9 @@ model_profile: ../ontologies/internal_model.yaml
 env_file: ../.env
 memory_limit: 1GB
 shard_size: 5000
+progress:
+  enabled: true
+  min_interval_seconds: 1.0
 llm:
   stream: true
   thinking:

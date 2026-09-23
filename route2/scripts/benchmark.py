@@ -25,7 +25,7 @@ def main():
     make_demo(dataset, args.rows, "linked")
     project = Path(__file__).resolve().parents[1]
     config = load_config(project / "config/runtime.mock.yaml")
-    config.update(dataset=str(dataset), memory_limit="512MB", data_scope="complete_synthetic_fixture")
+    config.update(dataset=str(dataset), memory_limit="512MB", data_scope="complete_export")
     config["llm"].update(responses=str(dataset / "mock_llm.yaml"), max_calls=30)
     config["mcp"].update(command=sys.executable, args=["-m", "ontology_r2.mock_mcp", "--documents", str(dataset / "mock_documents.yaml")])
     config["processing"].update(materialize_all_objects=args.rows <= args.record_cap, max_relation_records=args.record_cap)

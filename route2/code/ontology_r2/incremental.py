@@ -140,9 +140,9 @@ def ontology_from_plan(plan, profile, data, mapping, steps):
 
 
 async def construct(data, profile, config, output, llm, manifest,
-                    discovery_checks=(), discovery_candidates=()):
+                    discovery_checks=(), discovery_candidates=(), progress=None):
     """RIGOR-style enrich/judge/validate/merge; failed deltas never replace core."""
-    from contextlib import AsyncExitStack
+    from contextlib import AsyncExitStack, nullcontext
     from .embedding import LocalEmbedder, settings as embedding_settings
     from .external import ExternalIndex
     from .knowledge import connect, retrieve
@@ -164,11 +164,25 @@ async def construct(data, profile, config, output, llm, manifest,
     max_evidence_per_unit = config.get("discovery", {}).get("max_evidence_per_unit", 3)
     if not isinstance(max_evidence_per_unit, int) or max_evidence_per_unit < 0:
         raise ValueError("discovery.max_evidence_per_unit must be nonnegative")
+    max_repairs = config["llm"].get("max_repairs", 2)
+    if isinstance(max_repairs, bool) or not isinstance(max_repairs, int) or max_repairs < 0:
+        raise ValueError("llm.max_repairs must be a nonnegative integer")
+    max_attempts = max_repairs + 1
+    iteration_policy = {"table_passes": 1, "units": len(order),
+                        "max_attempts_per_unit": max_attempts,
+                        "revisit_rejected_units": False}
+    manifest["incremental_iteration_policy"] = iteration_policy
     write_yaml(output / "direct_mapping.yaml", mapping)
     write_yaml(output / "ontology.yaml", ontology_from_plan(core, profile, data, mapping, steps))
     mcp = config.get("mcp", {})
     embedding_config = embedding_settings(config.get("embedding", {}))
-    embedding = LocalEmbedder(embedding_config) if embedding_config["enabled"] else None
+    embedding = None
+    if embedding_config["enabled"]:
+        model_task = progress.task("加载向量模型", 1) if progress else nullcontext(None)
+        with model_task as stage:
+            embedding = LocalEmbedder(embedding_config)
+            if stage:
+                stage.advance()
     manifest["embedding"] = embedding.report() if embedding is not None else {"enabled": False}
     manifest["source_channels"]["embedding"] = embedding is not None
     async with AsyncExitStack() as stack:
@@ -179,10 +193,15 @@ async def construct(data, profile, config, output, llm, manifest,
             except Exception as exc:
                 unavailable = type(exc).__name__
         if config.get("external", {}).get("enabled"):
-            ext = ExternalIndex(config["external"], output / "work", embedding=embedding)
+            import_task = progress.task("载入外部本体", 1) if progress else nullcontext(None)
+            with import_task as stage:
+                ext = ExternalIndex(config["external"], output / "work", embedding=embedding)
+                if stage:
+                    stage.advance(detail=f"{ext.report['cards']} 张卡")
             stack.callback(ext.close)
             write_yaml(output / "external_import.yaml", ext.report)
             manifest["external_import_incomplete"] = not ext.report["complete"]
+        unit_stage = stack.enter_context(progress.task("本体增量构建", len(order))) if progress else None
         for index, unit in enumerate(order):
             before = digest(core.model_dump())
             context = unit_context(data, unit)
@@ -212,6 +231,8 @@ async def construct(data, profile, config, output, llm, manifest,
                 elif index >= mcp.get("max_units", mcp.get("max_questions", 10)):
                     result = {"unit": unit, "status": "budget_exhausted", "claims": [], "stop_reason": "max_knowledge_units"}
                 else:
+                    if unit_stage:
+                        unit_stage.note(f"{unit} 企业文档检索")
                     source = {"unit": unit, **context, "current_core": core_context(core, unit, data, core_hits), "root_model": profile}
                     result = await retrieve("补充当前源定义在本体增量构建中尚缺少的定义、关系含义及适用条件；已有证据足够时不重复。", source, session, mcp, llm, embedding=embedding)
                 knowledge.append(result)
@@ -224,6 +245,8 @@ async def construct(data, profile, config, output, llm, manifest,
                     local_knowledge = [{"status": result["status"], "claims": result["claims"]}]
             if ext is not None:
                 try:
+                    if unit_stage:
+                        unit_stage.note(f"{unit} 外部本体对齐")
                     name = data.tables[unit].get("table_comment") or unit
                     queries = await llm.ask("external_queries", {"internal_term": name, "columns": data.tables[unit]["columns"]}, ExternalQueries)
                     cards = ext.search_many([name, *queries.queries], 5)
@@ -250,13 +273,17 @@ async def construct(data, profile, config, output, llm, manifest,
                       "field_association_evidence": field_association_evidence,
                       "field_association_limits": "Raw-value equality on this input only. No selector or scope was inferred; overlap is not a declared FK or business relation. Candidate pairs without exact checks are omitted."}
             errors, previous = [], None
-            for attempt in range(config["llm"].get("max_repairs", 2) + 1):
+            for attempt in range(max_attempts):
                 record = {"number": attempt + 1}
                 try:
+                    if unit_stage:
+                        unit_stage.note(f"{unit} 生成 {attempt + 1}/{max_attempts}")
                     task = "plan" if attempt == 0 else "final_plan"
                     delta = await llm.ask(task, {**packet, "errors": errors, "previous_delta": previous}, BuildPlan)
                     record["delta"] = previous = delta.model_dump()
                     candidate = merge_delta(core, delta, unit, data, profile)
+                    if unit_stage:
+                        unit_stage.note(f"{unit} 校验 {attempt + 1}/{max_attempts}")
                     review = await llm.ask("review", {**packet, "delta": delta.model_dump(), "candidate_core": core_context(candidate, unit, data, core_hits)}, Review)
                     record["judge"] = review.model_dump()
                     if not review.accepted or review.errors:
@@ -288,12 +315,15 @@ async def construct(data, profile, config, output, llm, manifest,
             llm.trace({"stage": "incremental_unit", "unit": unit, "status": step["status"], "core_before": before, "core_after": step["core_after"]})
             write_yaml(output / "extraction_plan.yaml", core.model_dump())
             write_yaml(output / "ontology.yaml", ontology_from_plan(core, profile, data, mapping, steps))
+            if unit_stage:
+                unit_stage.advance(detail=f"{unit}: {step['status']}")
     errors = validate_plan(core, data, profile)
     if errors:
         raise ValueError("Final core validation failed: " + "; ".join(errors))
     write_yaml(output / "knowledge.yaml", knowledge)
     write_yaml(output / "alignments.yaml", alignments)
     write_yaml(output / "construction.yaml", {"table_order": order, "cyclic_or_blocked_dependencies": cyclic,
+        "iteration_policy": iteration_policy,
         "steps": steps, "direct_mapping_tables": len(mapping["tables"]), "direct_mapping_columns": sum(len(t["columns"]) for t in mapping["tables"]),
         "final_core_valid": True, "final_core_hash": digest(core.model_dump())})
     manifest["incremental_units_not_accepted"] = [s["unit"] for s in steps if s["status"] != "accepted"]

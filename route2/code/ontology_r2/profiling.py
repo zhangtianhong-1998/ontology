@@ -51,7 +51,7 @@ def _column_expressions(column):
     return clauses
 
 
-def profile_fields(data, config=None):
+def profile_fields(data, config=None, on_group=None, on_group_start=None):
     """Profile every imported field; one aggregate and one bounded sample per group.
 
     Returns the legacy table -> list-of-fields shape, with additional P01
@@ -72,6 +72,8 @@ def profile_fields(data, config=None):
         profiles = []
         for start in range(0, len(columns), group_size):
             group = columns[start:start + group_size]
+            if on_group_start is not None:
+                on_group_start(table_name, start, start + len(group))
             measures = ["count(*)"]
             names = []
             for column in group:
@@ -116,5 +118,7 @@ def profile_fields(data, config=None):
                     "sample_scope": f"first_{min(rows, SAMPLE_ROWS)}_input_rows",
                 }
                 profiles.append(profile)
+            if on_group is not None:
+                on_group(table_name)
         result[table_name] = profiles
     return result

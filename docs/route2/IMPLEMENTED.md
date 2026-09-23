@@ -6,6 +6,10 @@
 
 实际流程：导入与分组字段统计 → 有界字段候选及精确核验 → 全表全字段直接映射 → 按声明依赖遍历工作单元 → 候选证据、原生 ReAct/MCP 知识和外部模型对齐 → 生成 delta → 候选合并与程序校验 → Judge/修正复核 → 接受增量或保留旧 core → 批量记录抽取 → 本地结果页面。候选统计不是已接受的业务关系。
 
+增量构建只遍历一次表目录，每张表对应一个工作单元；23 张表就是 23 个单元，不存在反复遍历全图直至收敛的外层循环。每表最多尝试 `llm.max_repairs + 1` 次；当前 `runtime.real.example.yaml` 为 `max_repairs: 1`，即最多 2 次。每次先生成并校验增量，校验通过后再交给 Judge；成功后立即进入下一表，失败则保留原 core，运行结束也不会自动回访。`manifest.yaml` 和 `construction.yaml` 的 `iteration_policy`、`steps[*].attempts` 记录配置与实际尝试。MCP ReAct 的检索轮数是另一层预算，默认最多 3 轮、可配置至 5 轮，另有结构化收尾；这些调用与生成、Judge、外部对齐和文本关联共享 `llm.max_calls`。若 23 张表均尝试 2 次且每次都进入 Judge，仅生成与 Judge 理论上就需 92 次调用，真实示例总预算为 100 次，可能提前耗尽。
+
+运行时默认向 **stderr** 输出导入 CSV、字段统计、候选召回及核验、增量工作单元、对象物化、关系记录、按需构建文本索引、YAML 分片、结果校验和页面生成进度；stdout 保留最终 JSON。终端显示单行进度条，日志/管道环境按阶段或里程碑输出，避免逐行刷屏。可在 YAML 中设置 `progress.enabled: false`，或用 `build --no-progress` 关闭；`progress.min_interval_seconds` 控制终端刷新间隔。记录进度的总量以本次配置的记录上限为界，显示 100% 不代表预算外记录也已处理，未处理范围仍以 `manifest.yaml` 和 `coverage.yaml` 为准。
+
 企业检索使用 **AgentScope 2.0.8 的 `Agent` + `ReActConfig`**。该版本已没有 `ReActAgent` 类名；当前使用框架原生的工具调用循环，模型自主决定查询、读取、改写与收尾。仅注册两个只读 MCP 工具，并共享本次运行的模型预算。
 
 RIGOR 原版以 SentenceTransformer/FAISS 检索企业文档、外部本体和累积 core。路线2已补上三个可控的本地向量环节：外部本体卡以 FTS + 精确余弦取候选并集，按倒数排名融合排序；已接受表的表注释、字段注释和对象类型组成文本卡，相似表仅作为后续单元的上下文；企业 MCP 已返回的标题/片段做本地余弦重排。客户端未给企业文档建立全量本地向量索引，实际服务端的召回方式须另行确认。配置见 [LLM 与 embedding](LLM_CONFIGURATION.md)，验证边界见 [STATUS.md](STATUS.md)。

@@ -7,6 +7,9 @@ model_profile: ../ontologies/internal_model.yaml
 env_file: ../.env
 memory_limit: 2GB
 shard_size: 5000
+progress:
+  enabled: true
+  min_interval_seconds: 1.0
 profiling:
   sql_columns_per_group: 32
 discovery:
