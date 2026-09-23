@@ -1,4 +1,4 @@
-# LLM 接口、流式输出与思考模式
+# LLM 接口、思考模式与本地向量检索
 
 本文中的代码、配置路径及命令均以仓库的 `route2/` 目录为基准；文档链接可直接点击。
 
@@ -68,3 +68,24 @@ SDK 负责拼接工具调用的分片。主程序在收到完整响应后才解�
 一次接口调用包含连接和消费完整响应的统一超时；token 用量只统计最终累计值一次。流式过程将可见工具参数写入 `llm_stream_delta` 事件，最终结果继续保留完整结构化输出。隐藏的思考字段不写入轨迹；Agent 内需要继续调用工具的消息仍交由 SDK 处理。
 
 `tests/test_transport.py` 用本地 HTTP 服务验证 JSON/SSE、分片拼接、思考开关的实际请求字段、环境变量覆盖、ReAct 共用配置、超时和不完整响应。它验证接口行为，不能证明某个在线模型确实遵从了关闭指令。
+
+## 本地 embedding 配置
+
+Embedding 模型与上面的生成式 LLM 分开配置。先执行 `uv sync --locked --extra embedding` 安装可选依赖，再将 `env.example` 复制为 `.env`。`ONTOLOGY_EMBEDDING_MODEL_PATH` 指向**完整的本地模型目录**；模板写的是用户现有 macOS 路径。Windows 离线机器须先复制模型文件和相应依赖轮子，再把该变量改为本机路径，例如 `C:/models/Qwen3-Embedding-0.6B`。`ONTOLOGY_EMBEDDING_ENABLED=true/false` 可覆盖 YAML 开关，留空则使用 YAML。运行时以本地路径加载，不自动下载模型；未复制模型时保持默认 `enabled: false`，模拟配置也默认关闭。
+
+```yaml
+embedding:
+  enabled: true
+  model_path: null  # 留空时读取 ONTOLOGY_EMBEDDING_MODEL_PATH
+  batch_size: 16
+  max_cards: 20000
+  core_top_k: 5
+  min_cosine_similarity: 0.35
+  query_prompt: null  # 留空时使用模型自带的 query prompt
+```
+
+开启后有三个本地向量环节：外部本体卡分别从 FTS5 和精确余弦召回，取并集后按倒数排名融合排序；逐表构建时，把**已接受表**的表注释、字段注释和对象类型组成文本卡，取相似表作为当前单元上下文；企业 MCP 搜索返回候选后，以标题和片段的余弦相似度重排。外部本体候选记录检索通道、融合分数、余弦相似度及模型哈希；core 邻居记录相似度；MCP 候选保留原始名次。它们均不直接成为已接受的本体关系。
+
+`max_cards` 是外部本体卡的硬上限，超限直接报错，不会静默只索引一部分。`core_top_k` 限制进入当前工作单元的相似表数，不裁剪 core 本身。`min_cosine_similarity` 只过滤外部本体的低分向量候选，默认 0.35 是待业务样本校准的启发式门槛；FTS 候选不受影响。`embedding_report.yaml` 记录模型文件哈希、维度、文档及查询的编码次数。百万行 CSV 不逐行编码，也不为每条记录调用 embedding 或 LLM。Qwen3-Embedding-0.6B 在本机离线加载的 smoke 测试得到 1024 维；“营业收入的定义”对相关收入文本和无关天气文本的余弦分别为 0.7564/0.1215，只验证模型可加载并能区分该测试对，不能证明真实业务检索质量。
+
+企业 MCP 的候选集合仍由服务端决定。客户端 ReAct Agent 控制查询改写、循环检索和摘要；本地重排只调整已返回候选的顺序，无法扩大服务端召回，也无法保证 MCP 本身采用向量搜索。真实企业 MCP 的召回效果仍需单独评估，见 [实现状态](STATUS.md) 和 [测试说明](TESTING.md)。

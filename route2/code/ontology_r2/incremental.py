@@ -44,16 +44,41 @@ def unit_context(data, name):
     return context
 
 
-def core_context(core, unit, data):
+def core_context(core, unit, data, semantic_neighbors=()):
     neighbors = {unit} | {f["referenced_schema"] + "." + f["referenced_table"] for f in data.tables[unit]["foreign_keys"]}
     for relation in core.relations:
         if unit in (relation.source_table, relation.target_table):
             neighbors.update((relation.source_table, relation.target_table))
+    neighbors.update(hit["table"] for hit in semantic_neighbors)
     return {"object_types": [t.model_dump() for t in core.object_types], "relation_types": [t.model_dump() for t in core.relation_types],
             "tables": [t.model_dump() for t in core.tables if t.table in neighbors],
             "table_bindings": [{"table": t.table, "object_type": t.object_type} for t in core.tables],
             "relations": [r.model_dump() for r in core.relations if r.source_table in neighbors or r.target_table in neighbors],
-            "context_scope": "all_type_definitions_and_selected_table_neighborhood", "full_core_hash": digest(core.model_dump())}
+            "context_scope": "all_type_definitions_and_selected_table_neighborhood",
+            "semantic_neighbors": list(semantic_neighbors), "full_core_hash": digest(core.model_dump())}
+
+
+def semantic_core_hits(core, data, unit, accepted, embedding, limit):
+    """Recall previously accepted table definitions; similarity is context, not a relation."""
+    from .embedding import top_cosine
+
+    names = sorted(set(accepted) - {unit})
+    if not names:
+        return []
+
+    def description(name):
+        metadata = data.tables[name]
+        model = next(t for t in core.tables if t.table == name)
+        columns = " ".join((c.get("column_comment") or c["column_name"]) for c in metadata["columns"])
+        return "\n".join((name, metadata.get("table_comment") or "", model.object_type, columns))
+
+    current = data.tables[unit]
+    query = "\n".join((unit, current.get("table_comment") or "",
+                        " ".join((c.get("column_comment") or c["column_name"]) for c in current["columns"])))
+    vectors = embedding.documents([description(name) for name in names])
+    return [{"table": names[index], "cosine_similarity": score,
+             "model_sha256": embedding.model_sha256}
+            for index, score in top_cosine(vectors, embedding.query(query), limit)]
 
 
 def merge_delta(core, delta, unit, data, profile):
@@ -118,6 +143,7 @@ async def construct(data, profile, config, output, llm, manifest,
                     discovery_checks=(), discovery_candidates=()):
     """RIGOR-style enrich/judge/validate/merge; failed deltas never replace core."""
     from contextlib import AsyncExitStack
+    from .embedding import LocalEmbedder, settings as embedding_settings
     from .external import ExternalIndex
     from .knowledge import connect, retrieve
     from .llm import BudgetExceeded
@@ -141,6 +167,10 @@ async def construct(data, profile, config, output, llm, manifest,
     write_yaml(output / "direct_mapping.yaml", mapping)
     write_yaml(output / "ontology.yaml", ontology_from_plan(core, profile, data, mapping, steps))
     mcp = config.get("mcp", {})
+    embedding_config = embedding_settings(config.get("embedding", {}))
+    embedding = LocalEmbedder(embedding_config) if embedding_config["enabled"] else None
+    manifest["embedding"] = embedding.report() if embedding is not None else {"enabled": False}
+    manifest["source_channels"]["embedding"] = embedding is not None
     async with AsyncExitStack() as stack:
         session, unavailable, ext = None, None, None
         if mcp.get("enabled"):
@@ -149,7 +179,7 @@ async def construct(data, profile, config, output, llm, manifest,
             except Exception as exc:
                 unavailable = type(exc).__name__
         if config.get("external", {}).get("enabled"):
-            ext = ExternalIndex(config["external"], output / "work")
+            ext = ExternalIndex(config["external"], output / "work", embedding=embedding)
             stack.callback(ext.close)
             write_yaml(output / "external_import.yaml", ext.report)
             manifest["external_import_incomplete"] = not ext.report["complete"]
@@ -157,6 +187,11 @@ async def construct(data, profile, config, output, llm, manifest,
             before = digest(core.model_dump())
             context = unit_context(data, unit)
             step = {"unit": unit, "index": index, "core_before": before, "status": "rejected", "attempts": []}
+            core_hits = semantic_core_hits(core, data, unit,
+                                           [s["unit"] for s in steps if s["status"] == "accepted"],
+                                           embedding, embedding_config["core_top_k"]) if embedding is not None else []
+            if embedding is not None:
+                step["semantic_core_neighbors"] = core_hits
             checked_pairs = checks_by_source.get(unit, [])[:max_evidence_per_unit]
             field_association_evidence = [{
                 "candidate_id": candidate["candidate_id"],
@@ -177,8 +212,8 @@ async def construct(data, profile, config, output, llm, manifest,
                 elif index >= mcp.get("max_units", mcp.get("max_questions", 10)):
                     result = {"unit": unit, "status": "budget_exhausted", "claims": [], "stop_reason": "max_knowledge_units"}
                 else:
-                    source = {"unit": unit, **context, "current_core": core_context(core, unit, data), "root_model": profile}
-                    result = await retrieve("补充当前源定义在本体增量构建中尚缺少的定义、关系含义及适用条件；已有证据足够时不重复。", source, session, mcp, llm)
+                    source = {"unit": unit, **context, "current_core": core_context(core, unit, data, core_hits), "root_model": profile}
+                    result = await retrieve("补充当前源定义在本体增量构建中尚缺少的定义、关系含义及适用条件；已有证据足够时不重复。", source, session, mcp, llm, embedding=embedding)
                 knowledge.append(result)
                 for claim in result.get("claims", []):
                     data.evidence[claim["id"]] = {"id": claim["id"], "origin": "enterprise_document", "raw_fragment": claim["quote"],
@@ -210,7 +245,7 @@ async def construct(data, profile, config, output, llm, manifest,
                 except Exception as exc:
                     step["external_error"] = type(exc).__name__
                     alignments.append({"internal_id": unit, "mapping_kind": "unmapped", "reason": "retrieval_error", "error_type": type(exc).__name__})
-            packet = {"unit": unit, "sources": context, "root_model": profile, "current_core": core_context(core, unit, data),
+            packet = {"unit": unit, "sources": context, "root_model": profile, "current_core": core_context(core, unit, data, core_hits),
                       "knowledge": local_knowledge, "external_context": external_context,
                       "field_association_evidence": field_association_evidence,
                       "field_association_limits": "Raw-value equality on this input only. No selector or scope was inferred; overlap is not a declared FK or business relation. Candidate pairs without exact checks are omitted."}
@@ -222,7 +257,7 @@ async def construct(data, profile, config, output, llm, manifest,
                     delta = await llm.ask(task, {**packet, "errors": errors, "previous_delta": previous}, BuildPlan)
                     record["delta"] = previous = delta.model_dump()
                     candidate = merge_delta(core, delta, unit, data, profile)
-                    review = await llm.ask("review", {**packet, "delta": delta.model_dump(), "candidate_core": core_context(candidate, unit, data)}, Review)
+                    review = await llm.ask("review", {**packet, "delta": delta.model_dump(), "candidate_core": core_context(candidate, unit, data, core_hits)}, Review)
                     record["judge"] = review.model_dump()
                     if not review.accepted or review.errors:
                         raise ValueError("Judge rejected: " + "; ".join(review.errors or ["insufficient_semantic_evidence"]))
@@ -263,5 +298,8 @@ async def construct(data, profile, config, output, llm, manifest,
         "final_core_valid": True, "final_core_hash": digest(core.model_dump())})
     manifest["incremental_units_not_accepted"] = [s["unit"] for s in steps if s["status"] != "accepted"]
     manifest["external_alignment_errors"] = [s["unit"] for s in steps if s.get("external_error")]
+    if embedding is not None:
+        manifest["embedding"] = embedding.report()
+        write_yaml(output / "embedding_report.yaml", manifest["embedding"])
     manifest["construction_mode"] = "rigor_adapted_incremental_yaml"
     return core, ontology_from_plan(core, profile, data, mapping, steps), knowledge

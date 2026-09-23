@@ -189,6 +189,34 @@ def test_local_external_rdf_import(tmp_path):
     assert link_rows(tmp_path / "run") == set()
 
 
+def test_optional_embedding_wires_external_and_core_retrieval(tmp_path, monkeypatch):
+    class FakeEmbedder:
+        def __init__(self, config):
+            self.config, self.model_sha256 = config, "test-model"
+
+        def documents(self, texts, *, cache=True):
+            return [[1.0, 0.0] for _ in texts]
+
+        def query(self, text):
+            return [1.0, 0.0]
+
+        def report(self):
+            return {"enabled": True, "model_sha256": self.model_sha256}
+
+    monkeypatch.setattr("ontology_r2.embedding.LocalEmbedder", FakeEmbedder)
+    config = setup(tmp_path, "unrelated", mcp=False)
+    config["embedding"] = {"enabled": True, "model_path": str(tmp_path), "max_cards": 1000,
+                           "core_top_k": 2}
+    config["external"] = {"enabled": True, "sources": [{"id": "gist", "format": "rdf",
+                           "path": str(PROJECT / "ontologies/gist/ontologies/gistCore.ttl")}]}
+    result = asyncio.run(build(config, tmp_path / "run"))
+    assert result["status"] == "complete", result
+    assert read_yaml(tmp_path / "run/manifest.yaml")["embedding"]["enabled"]
+    assert read_yaml(tmp_path / "run/external_import.yaml")["embedding"]["mode"] == "hybrid_fts_cosine"
+    steps = read_yaml(tmp_path / "run/construction.yaml")["steps"]
+    assert any(step.get("semantic_core_neighbors") for step in steps[1:])
+
+
 def test_agentscope_sdk_with_local_openai_compatible_mock(tmp_path, monkeypatch):
     config = setup(tmp_path, "unrelated", mcp=False)
     responses = read_yaml(config["llm"]["responses"])

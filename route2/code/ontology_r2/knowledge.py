@@ -12,6 +12,7 @@ from agentscope.tool import FunctionTool, Toolkit
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from .embedding import top_cosine
 from .llm import BudgetExceeded
 from .models import KnowledgeSummary
 from .storage import digest
@@ -110,7 +111,20 @@ class RetrievalModel(ChatModelBase):
         return ChatResponse(content=[ToolCallBlock(id=f"mock-{self.calls}-{i}", name=a["name"], input=json.dumps(a["input"], ensure_ascii=False)) for i, a in enumerate(actions)], is_last=True)
 
 
-async def retrieve(question, source_context, session, config, llm):
+def rerank_hits(query, hits, embedding):
+    """Rerank MCP candidates by local cosine; the MCP server still controls recall."""
+    if not hits:
+        return hits
+    texts = ["\n".join((str(hit.get("title", "")), str(hit.get("snippet", "")))) for hit in hits]
+    if not any(text.strip() for text in texts):
+        return hits
+    ranked = top_cosine(embedding.documents(texts), embedding.query(query), len(hits))
+    return [{**hits[index], "client_rerank": {"method": "local_cosine_on_mcp_snippet",
+             "original_rank": index + 1, "cosine_similarity": score,
+             "model_sha256": embedding.model_sha256}} for index, score in ranked]
+
+
+async def retrieve(question, source_context, session, config, llm, embedding=None):
     state = {"docs": {}, "hits": {}, "queries": [], "tool_calls": 0, "failure": None}
     maximum = min(5, max(1, config.get("max_rounds", 3)))
     allowed = {e["id"] for e in source_context.get("evidence", [])}
@@ -139,6 +153,9 @@ async def retrieve(question, source_context, session, config, llm):
                 raise ValueError("query required and limit must be 1..5")
             state["queries"].append(query)
             result = await call(config.get("search_tool", "search"), {"query": query, "limit": limit})
+            if embedding is not None and result.get("hits"):
+                result = {**result, "hits": rerank_hits(query, result["hits"], embedding),
+                          "retrieval_limit": "MCP candidate recall; local vectors rerank returned snippets only"}
             for hit in result.get("hits", []):
                 state["hits"][hit["id"]] = hit
             return json.dumps(result, ensure_ascii=False)

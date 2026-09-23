@@ -13,6 +13,7 @@
 | P06 对照评估 | 未实现 | A0/A1/A2/A3 候选召回、关系质量与成本对照尚未运行 |
 | RIGOR 式增量、本体 YAML、记录关系执行 | 已实现原型 | `incremental.py`、`relations.py`；真实数据语义质量和百万行全量完成率尚未验证 |
 | 企业检索与外部模型 | 已实现原型 | AgentScope ReAct/stdio MCP、RDF/CDM 导入、来源与未决项保留；真实 MCP 契约未验证 |
+| 可选本地 embedding | 已实现原型 | `embedding.py` 本地加载 Qwen3；`external.py` 对外部本体卡用 FTS5 + 精确余弦并集及 RRF 排序；`incremental.py` 只召回已接受表作上下文；`knowledge.py` 只重排 MCP 已返回的标题/片段。不会扩大未知 MCP 服务端的文档召回，也不编码全部 CSV 记录。真实业务检索质量未验证 |
 | LLM 双接口、思考开关、本地可视化 | 已实现 | `transport.py`、`visualization.py`；实际模型服务仍需用户配置 |
 | DataHub 离线互操作 | 已实现可选适配器 | `export-datahub` 输出表/列的 metadata-file；合成样本经 DataHub CLI 校验并写入/读回 Lite。Lite 不提供图遍历/血缘；路线2仍使用本地图 |
 

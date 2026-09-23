@@ -34,8 +34,14 @@ llm:
   max_total_tokens: 8000000
 embedding:
   enabled: false
-  model: null
-# 先完成词法基线；开启语义召回时必须填写并记录 embedding 模型版本。
+  model_path: null
+  batch_size: 16
+  max_cards: 20000
+  core_top_k: 5
+  min_cosine_similarity: 0.35
+  query_prompt: null
+# 此文件仍是旧版设计草案。运行配置中的本地模型路径优先由 .env 的
+# ONTOLOGY_EMBEDDING_MODEL_PATH 提供；不会自动下载模型。
 external_ontology:
   enabled: true
   allow_network_imports: false

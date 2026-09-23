@@ -24,6 +24,10 @@ def load_config(path):
             config["llm"][key] = str((path.parent / config["llm"][key]).resolve())
     for source in config.get("external", {}).get("sources", []):
         source["path"] = str((path.parent / source["path"]).resolve())
+    embedding = config.get("embedding", {})
+    if embedding.get("model_path"):
+        model_path = Path(embedding["model_path"]).expanduser()
+        embedding["model_path"] = str((path.parent / model_path).resolve())
     mcp = config.get("mcp", {})
     if mcp.get("mock_documents"):
         import sys

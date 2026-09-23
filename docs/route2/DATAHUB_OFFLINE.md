@@ -73,6 +73,8 @@ Copy-Item .\.env.example .\.env
 
 在 `.env` 中填写 `ONTOLOGY_LLM_MODEL`、`ONTOLOGY_LLM_BASE_URL`、`ONTOLOGY_LLM_API_KEY`；本地模型服务需兼容 Chat Completions 的结构化工具调用，并在运行前启动。`stream` 和 `thinking` 参数要按服务实际支持情况设置。示例真实配置默认关闭企业 MCP 和外部本体；启用 MCP 时，其服务也须在离线环境可达。[LLM 配置说明](LLM_CONFIGURATION.md)
 
+可选的本地向量召回还需把完整的 Qwen3-Embedding-0.6B 模型目录复制到 Windows，并将 `.env` 的 `ONTOLOGY_EMBEDDING_MODEL_PATH` 改为该机器上的路径，再开启 `embedding.enabled`。现有 Windows 离线 bundle 是路线2基础依赖闭包，**尚未包含 embedding 所需的模型文件及其单独依赖**；需要为 Windows x64 / Python 3.14.7 准备并实机验证兼容轮子。没有这些材料时保持默认关闭，基础模拟运行仍不需要向量模型。路线2不对百万行记录逐行编码；本地向量检索的范围和上限见 [LLM 与向量配置](LLM_CONFIGURATION.md)。
+
 ```powershell
 .\.venv\Scripts\python.exe -m ontology_r2.cli build --config .\local_config\runtime.real.yaml --output .\runs\win-real-001
 ```

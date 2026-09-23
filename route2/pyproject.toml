@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]
+embedding = ["numpy>=2,<3", "sentence-transformers>=5.7,<7"]
 
 [project.scripts]
 ontology-r2 = "ontology_r2.cli:main"

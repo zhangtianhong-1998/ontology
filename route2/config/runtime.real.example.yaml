@@ -27,6 +27,16 @@ llm:
   max_output_tokens: 4096
   max_repairs: 1
   timeout_seconds: 60
+# Optional local semantic recall for external ontology cards and accepted core. Set enabled to
+# true after placing the model at ONTOLOGY_EMBEDDING_MODEL_PATH in .env.
+embedding:
+  enabled: false
+  model_path: null
+  batch_size: 16
+  max_cards: 20000
+  core_top_k: 5
+  min_cosine_similarity: 0.35
+  query_prompt: null
 mcp:
   enabled: false
 external:
