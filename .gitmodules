@@ -1,27 +1,27 @@
 [submodule "route1-a-rigor"]
-	path = 路线1/子路线1/code/RIGOR
+	path = route1/metadata_only/code/RIGOR
 	url = https://github.com/NadeenAhmad/RIGOR.git
 [submodule "route1-b-rigor"]
-	path = 路线1/子路线2/code/RIGOR
+	path = route1/metadata_with_ontology/code/RIGOR
 	url = https://github.com/NadeenAhmad/RIGOR.git
 [submodule "route2-rigor"]
-	path = 路线2/code/RIGOR
+	path = route2/code/RIGOR
 	url = https://github.com/NadeenAhmad/RIGOR.git
 [submodule "route2-agentscope"]
-	path = 路线2/code/AgentScope
+	path = route2/code/AgentScope
 	url = https://github.com/agentscope-ai/agentscope.git
 [submodule "route3-rigor"]
-	path = 路线3/code/RIGOR
+	path = route3/code/RIGOR
 	url = https://github.com/NadeenAhmad/RIGOR.git
 [submodule "route3-agentscope"]
-	path = 路线3/code/AgentScope
+	path = route3/code/AgentScope
 	url = https://github.com/agentscope-ai/agentscope.git
 [submodule "route3-sand"]
-	path = 路线3/code/SAND
+	path = route3/code/SAND
 	url = https://github.com/usc-isi-i2/sand.git
 [submodule "route3-grams"]
-	path = 路线3/code/GRAMS
+	path = route3/code/GRAMS
 	url = https://github.com/usc-isi-i2/GRAMS.git
 [submodule "route3-steiner-tree"]
-	path = 路线3/code/steiner-tree
+	path = route3/code/steiner-tree
 	url = https://github.com/binh-vu/steiner-tree.git

@@ -1,0 +1,286 @@
+# 路线2：字段统计与关联发现设计
+
+更新：2026-09-23。状态：下一阶段设计，尚未接入运行管线。代码现状和新增内容分别列出，业务表名和字段例子均为合成示例。
+
+## 1. 本阶段交付什么
+
+字段统计服务于两个问题：**哪些字段值得尝试关联；关联在哪些记录和条件下成立。** 最终交付有来源、有适用范围的关联计划，再由程序验证具体记录。元数据已经说明的字段含义直接复用，不要求 LLM 重新逐列解释。
+
+输出分为四层，避免将数值重叠直接当作本体关系：
+
+| 层次 | 产物 | 能说明什么 |
+|---|---|---|
+| 单字段 | `FieldProfile` | 缺失、取值数量、格式、结构和可用样本 |
+| 字段对/字段组 | `FieldAssociationCandidate` | 哪些来源值可能连接哪些目标键；仍是技术候选 |
+| 关联计划 | `RelationPlan` | 引用用途、提取方式、作用域、selector 与依据 |
+| 记录 | accepted / unresolved 及证据 | 当前输入中具体哪条记录与哪条记录关联 |
+
+“两个字段都表示同一种编码”“源字段引用目标定义”“两个字段内容相似”分别记为 `same_domain`、`reference_candidate`、`semantic_similarity`；只有证据充分的引用候选才能编译为记录关系。它们是分析状态，不增加内部一级本体关系。
+
+## 2. 当前实现与本次增量
+
+| 项目 | 当前代码 | 本次设计 |
+|---|---|---|
+| 输入范围 | CSV 导入 DuckDB，全列按字符串读取 | 保持；补导出空值约定和解析策略记录 |
+| 基础统计 | 总行数、非 NULL 数、近似不同值数 | 补空字符串/空白、长度、格式、来源范围和统计状态 |
+| 样本 | 去重排序前 16 个值、每表前 3 行 | 高频值、稳定哈希样本、结构分层、稀有模式和反例 |
+| 候选发现 | LLM 直接提出字段映射 | 程序多通道召回，LLM 只处理语义不足的候选组 |
+| 包含率/多义 | 执行既有计划时报告记录结果 | 在生成计划前，测候选字段组的方向包含率、唯一性和条件覆盖 |
+| JSON/公式 | 按计划解析，已有源定位 | 先探测可用模式；抽出带来源的虚拟字段再参与关联 |
+| 执行 | 快照身份、条件、作用域、有界 LLM | 复用现有执行器；先补统计/发现，不重写框架 |
+
+当前实现位置：[storage.py](code/ontology_r2/storage.py)、[models.py](code/ontology_r2/models.py)、[relations.py](code/ontology_r2/relations.py)。本文件中的新配置见 [profiling.design.yaml](config/profiling.design.yaml)，**现有 CLI 不读取这些选项**。
+
+## 3. 统计路径：便宜的先全量，昂贵的按候选计算
+
+```text
+核对输入与空值约定
+  → 全字段基础聚合
+  → 选定字段的取值频次/格式/结构统计
+  → 稳定样本与稀有模式样本
+  → 字段候选召回
+  → 候选字段组的精确匹配、作用域和条件验证
+  → LLM 补充语义判断
+  → 程序编译及批量执行计划
+```
+
+### 3.1 输入口径与原值
+
+- 用 `(schema, table, column, source_path)` 标识字段；不要只用列名。同名字段、同表内自引用也可以成为候选。
+- 保留 CSV 文件、哈希、逻辑记录位置及 YAML 声明；估算行数不能代替 CSV 实际行数。
+- 固定 `delimiter/quote/encoding/nullstr/allow_quoted_nulls` 等导入参数，写入 manifest。导出没有区分数据库 NULL 与空字符串时，只能记录 `null_semantics: unknown`，不能从文件恢复已丢失的区别。
+- `all_varchar` 只避免类型自动转换，不能保证 NULL 和空字符串无损。DuckDB 的空值转换受独立参数控制，见[CSV 官方文档](https://duckdb.org/docs/current/data/csv/overview)。
+- 原值保持 `001`、大小写和空白。另建带版本的规范化视图；trim、casefold、Unicode 归一化、数值转码均不能悄悄应用于身份匹配。每种变换先统计碰撞，来源约定明确后才能用于关联。
+- 范围有两个维度：`input_scope: complete_export/sample/unknown` 表示 CSV 对原库的覆盖；`scan_scope: full_input/sampled/partial` 表示本次扫描范围。扫描完样本 CSV 仍不能宣称全库唯一。
+
+### 3.2 P1：所有字段的低成本聚合
+
+按表、每组最多 32 列生成一条聚合 SQL，减少当前逐列两次查询的重复扫描。这里是执行设计，不承诺数据库只进行一次物理扫描；用实际查询计划与耗时检查。
+
+| 指标 | 实现口径 | 用途 |
+|---|---|---|
+| `row_count` | `COUNT(*)`，精确 | 分母和范围检查 |
+| `null_count` | `COUNT(*) - COUNT(c)` | 缺失情况 |
+| `empty_count` | `c = ''`，排除 NULL | 区分空字符串 |
+| `whitespace_only_count` | 非空且约定的空白清理后为空；清理字符集有版本 | 空白异常 |
+| `usable_count` | 按已记录的空值策略；默认不把 `0`、`-1`、`N/A` 自动当缺失 | 引用分母 |
+| `approx_distinct` | HLL 估计，注明 `exact: false` | 决定是否进一步算频次/精确唯一性 |
+| 字符/字节长度 | 最小、最大；长度分位数可选 | 编码、文本和结构化值的粗筛 |
+| 类型/格式计数 | 固定规则：纯数字、带前导零、UUID 形态、JSON 起始符、一般短文本等 | 决定候选通道，不判业务含义 |
+
+P1 的单列 SQL 模板如下，多列版由程序按字段清单安全引用标识符后合并生成；空白示例只覆盖空格，实际字符集需在策略中声明：
+
+```sql
+SELECT count(*) AS rows,
+       count(*) FILTER (WHERE c IS NULL) AS null_count,
+       count(*) FILTER (WHERE c = '') AS empty_count,
+       count(*) FILTER (WHERE c <> '' AND trim(c) = '') AS space_only_count,
+       count(*) FILTER (WHERE c IS NOT NULL AND trim(c) <> '') AS usable_count,
+       approx_count_distinct(c) FILTER
+         (WHERE c IS NOT NULL AND trim(c) <> '') AS approx_distinct_usable,
+       min(length(c)) AS min_chars,
+       max(length(c)) AS max_chars
+FROM source_table;
+```
+
+`usable` 的过滤策略只影响统计分母，不修改原始值；不能在后续 JOIN 中不经说明就 trim。
+
+格式计数可多标签；无法归类写 `other`。JSON 起始符只是进一步解析的入口，不能当作 JSON 已合法。疑似公式也不能只因有减号就确认，日期和编码同样可能包含减号。
+
+`approx_count_distinct` 和 `approx_top_k` 是 DuckDB 提供的近似聚合；前者不用于证明键唯一，后者只返回候选高频值，选中值需再精确计数。[官方聚合说明](https://www.duckdb.org/docs/current/sql/functions/aggregates)
+
+不默认计算所有数值列的均值、方差或相关系数：它们对当前引用发现的帮助有限，两个数值列分布接近也不能证明有业务关系。
+
+### 3.3 P2：候选字段的精确取值摘要
+
+字段注释/声明键、轻量格式以及 P1 共同选择候选。角色包括标识、引用、名称、说明、作用域、枚举、结构化载体；可多选或 unknown，不能强制互斥。
+
+对短标识、枚举、拟用作作用域的列，按需在 DuckDB 建 `field_id, raw_value, frequency` 频次表：
+
+1. 基数较小（初始参考值为 4,096）时优先做完整精确频次。该数值只决定执行策略，不决定是否能关联。
+2. 高基数字段先用近似高频候选和稳定取值样本；进入精确字段对验证后，再建相关值域/目标键索引。
+3. 对拟用作目标键的字段组，精确算非空键数、不同元组数、重复键组数和最大重复数；保留重复的全部来源位置。重复不能通过 `DISTINCT` 隐藏。
+4. 标注唯一性为 `declared`、`observed_in_input` 或 `not_unique`。一个字段不唯一时，仍可能与作用域列组成有效键。
+5. 长说明字段只保存有限的完整代表记录与去重文本索引；不为所有长文本强制建全量取值倒排。
+
+超时或磁盘预算耗尽记 `partial/not_computed` 和已检查范围；没有精确算出的指标用 null，不能用 0 冒充。近似基数也不能代替候选元组的精确校验。
+
+### 3.4 P3：结构化值变成带来源的虚拟字段
+
+程序先取代表样本决定是否值得展开，再在已选字段上分批解析。抽样未见某种结构只能说明“未观察到”；元数据明确声明的 JSON/公式字段继续进入专用通道。
+
+| 输入形态 | 新统计 | 提取后用于关联的值 |
+|---|---|---|
+| JSON 对象 | 合法/非法数、路径出现数、缺路径数、值类型 | `(原列, 键路径, 原行, 原值)` |
+| JSON 数组或显式分隔列表 | 列表长度、重复元素、元素类型、溢出数 | 每个引用元素及其位置 |
+| 已支持语法的公式 | AST 解析成功/失败、结构指纹、引用符号和次数 | 符号及原文位置；函数、常数排除 |
+| 普通编码/名称 | 格式、前导零、规范化碰撞 | 原值与可选、可追溯的规范化值 |
+
+为 JSON 深度、路径数、单值字节数和每行元素数设置上限。超过上限保留原值并记 `unsupported/budget_exhausted`；不将截断列表解释为完整允许域。分隔符不确定时不拆。
+
+虚拟字段的统计必须区分“源记录数”“路径出现记录数”“引用元素数”。一个记录引用三个对象不能按三条源记录计算覆盖率。
+
+### 3.5 P4：替换前 3 行的样本策略
+
+每表初始预算最多 48 条完整记录，按问题拆包发送，不必一次塞进 LLM：
+
+| 配额起点 | 选择方法 |
+|---:|---|
+| 16 | 固定种子的内容哈希采样，覆盖普通记录 |
+| 8 | 候选字段的高频值代表记录 |
+| 16 | 已发现结构/类型标记/空值模式中的稀有组 |
+| 8 | 解析失败、冲突、多义或未匹配等反例；候选验证后补齐 |
+
+先去重并共享同一行，空配额可转给其他类别。组数量超预算时记录未选组及其记录数，后续候选请求可以定向补样；不能承诺任意稀有模式都能进入固定大小样本。
+
+哈希使用固定序列化、固定算法和种子，不用 Python 内置 `hash()`。没有稳定业务键时，以字段原值和明确字段顺序构成内容哈希；同内容重复记录共享采样内容，但每个来源位置仍独立保存。这样可以比较重排后的样本内容，不声称当前快照记录 ID 在重排后不变。DuckDB 内置 `hash()` 也不保证跨版本一致，见[官方说明](https://duckdb.org/docs/current/sql/functions/utility)。
+
+新增一次有界补样：缺少某个候选对应的结构、作用域或反例时，程序执行受限过滤补样；字段统计不交给自由探索 Agent。随机样本用于估计总体比例；高频/稀有/反例样本是目的性抽样，不能直接混起来估计总体频率。
+
+## 4. 如何建立候选字段关联
+
+### 4.1 多通道召回，先不判断最终业务关系
+
+| 通道 | 候选产生方式 | 保留边界 |
+|---|---|---|
+| 元数据 | 声明 FK、注释中的明确目标、表/列名称和说明的词法检索 | 明确声明优先；注释里“编码”两个字不足以认定引用 |
+| 原值 | 选定短值建立 `值 → 字段集合` 倒排，累计共享不同值数 | 高频公共值降权；不把 `0/1`、日期、自增 ID 重叠直接接受 |
+| 结构引用 | JSON 路径/列表元素/公式符号参与同一值域检索 | 每种路径、类型条件独立统计，不与整列所有值混算 |
+| 文本 | 字段说明及少量完整定义作 FTS 召回；必要时加 embedding | 相似用于召回；字段是引用还是同类描述需要后续判断 |
+| 疑难补召回 | 已有候选缺作用域、名称不一致或元数据不完整时，LLM 提议有限字段对 | 只能引用输入字段，随后同样做程序验证 |
+
+初始每个字段每个非声明通道保留至多 20 个候选，取并集并记来源。不能先按列名或类型角色排除所有 unknown；为其保留有限的值域/文本候选额度。类型不匹配先查是否存在可解释的文本编码，不直接把元数据类型当硬排除。
+
+倒排按字段集合生成候选，不生成全量记录笛卡尔积。某个值出现在过多字段时，其字段两两组合可能爆炸：记录 `high_fanout`，只影响候选排序或进入备用队列；元数据明确的候选不能因这一限制丢失。
+
+返回的候选包含方向。`A ⊆ B` 与 `B ⊆ A` 分别计算；两个集合相同也不能决定引用方向。完全没有共同编码时继续走文本通道。
+
+### 4.2 精确验证的单位是“有条件的字段组”
+
+一个待验证候选可写成：
+
+```text
+source: (table, reference_field/path, selector, source_scope_fields)
+target: (table, key_fields, target_scope_fields)
+bindings: 源值/作用域字段如何对应目标键各列
+normalization: identity 或有出处的转换规则
+```
+
+先验证单字段候选，再只对有语义依据的命名空间、版本、父对象等列扩展复合键。初始最多三列；已有声明复合键不能静默拆成三列，其超限状态应明确记录。当前 `RelationPlan` 的 `source_column + scope_bindings` 可以表达一部分复合键，任意多列/跨 JSON 路径组合需要扩展绑定契约。
+
+使用 SQL 元组、结构值或长度编码序列化比较键，不能把 `('a|b','c')` 与 `('a','b|c')` 拼成同一个字符串。任何哈希候选最终都回到原值和完整作用域做相等验证。
+
+目标先按完整键 `GROUP BY` 计算 `target_count`，再与源引用做 LEFT JOIN，避免目标重复导致覆盖率被重复计数。计数为 0/1/>1 分别代表缺目标、可唯一定位、多义；目标的频次表不等于已确定业务实体身份。
+
+### 4.3 必须同时报告的指标
+
+设 P 为 selector，U 为在 P=true 且作用域齐全时提取出的引用集合；同一行相同引用按一个绑定计，重复出现位置另留证据。K(r) 为某个引用的值与完整作用域元组，T 为目标键集合。
+
+| 指标 | 定义 |
+|---|---|
+| 整列不同值包含率 | 未限定 P 的源不同值与目标值交集 / 源不同值数；仅用于诊断 |
+| 条件内不同键包含率 | `\|distinct K(U) ∩ T\| / \|distinct K(U)\|` |
+| 引用命中率 | 目标计数 > 0 的引用数 / 可验证引用数 |
+| 唯一定位率 | 目标计数 = 1 的引用数 / 可验证引用数 |
+| 多义率 | 目标计数 > 1 的引用数 / 可验证引用数 |
+| 缺目标率 | 目标计数 = 0 的引用数 / 可验证引用数 |
+| 记录覆盖 | 至少命中一个目标的源记录数；全部引用已绑定的源记录数分别报告 |
+
+必须同时输出原始分子分母，并区分：selector true/false/unknown、空引用、缺作用域、解析失败、没有引用元素、超限未处理。分母为零时比率为 null，不是 0 或 1。样本数据的未匹配记 `missing_in_input`，不能断言原库缺目标。
+
+**包含率解决候选的数值支持问题；它不能给出“依赖”“指向”等关系含义。** 近似不同值数不用于精确包含率分母，样本频率不用于估计全库唯一性。
+
+### 4.4 只有部分记录关联：条件化验证
+
+1. 先采用注释、显式类型标记或配置已经提供的 selector；也可根据确定的 JSON 路径/格式划分技术子集。
+2. 引用用途有依据、整体匹配率低时，检查实际存在的低基数范围列及其值。先单条件，再有限两条件组合；不遍历全部列组合。
+3. 条件候选只用真实源字段和值，不得用“能匹配上目标”直接定义业务 selector；也不允许逐行 ID 枚举凑出完美覆盖。
+4. 数据驱动的新条件先记 `observed_subset`，保存条件内外的命中、歧义和反例。用未参与条件生成的概念族/作用域留出数据验证；样本不足则不宣称可推广。
+5. 仅凭统计发现的规则不能变成企业允许域或全表约束；要执行为业务规则，仍需引用用途和条件含义证据。可以先保留当前快照内有独立证据的记录关系。
+
+例如 1,000 行里只有 20 行具备某种引用，正确目标全命中时，整列包含率可能仅 2%，条件内唯一定位率却为 100%。默认不以全列 95% 包含率作为唯一入口，也不为了提高比例而删掉负例。这个例子的数值口径已经用[合成 SQL](design/field_association/cases.sql)验证，未使用真实业务数据。
+
+## 5. LLM 的位置与接受条件
+
+程序先产出 `FieldProfile + Candidate + ExactChecks + Examples/Counterexamples`，再按相关字段组打包给模型。调用数量受候选问题组和全局预算控制，不随记录数逐行增加。
+
+| LLM 可以做 | 程序负责 |
+|---|---|
+| 说明不足时补字段角色；判断引用/同域/相似；提出作用域与条件；映射根/派生关系 | 统计、候选索引、字段存在检查、范围绑定、精确匹配、重复处理、引用出处、批量执行 |
+| 提议新的比较方案或补样需求 | 仅执行受限操作；新变换/新条件必须重新验证 |
+
+候选状态按 `proposed → checked → semantic_supported → executable` 推进，也可到 `unresolved/rejected/not_processed`。接受某条记录关系至少需要：引用用途有来源、范围与条件已核对、当前记录匹配满足身份要求、无未解决的反证。数据关系 `has` 仍由字段映射输出，字段相似不直接生成对象关系。
+
+排序用可解释分项：声明依据、字段语义、原值交集、条件覆盖、目标多义、转换碰撞、作用域缺失。首版不把它们随意加权成一个“置信度 0.93”，也不将 LLM 自评分当作概率。允许只形成字段候选而无法接受业务关系。
+
+## 6. 数据契约与文件
+
+每项统计至少带 `method, value, exact, population, rows_scanned, status`。整体保存 `schema_version, snapshot_id, source_hashes, csv_policy, normalization_version, profiler_version, seed`。
+
+```yaml
+schema_version: field-discovery-0.1
+implementation_status: design_only
+synthetic: true
+field_id: demo.source.ref
+input_scope: sample
+scan_scope: full_input
+statistics:
+  usable_count: {value: 1000, exact: true, method: count, status: complete}
+  approx_distinct: {value: 998, exact: false, method: hll, status: complete}
+roles: [{role: reference_candidate, source: column_comment, evidence_id: schema:demo.source:ref}]
+sample_refs: []  # 指向完整记录与选择原因，不复制无界文本
+```
+
+```yaml
+schema_version: field-discovery-0.1
+implementation_status: design_only
+synthetic: true
+candidate_id: illustrative_candidate
+source: {table: demo.source, field: ref, source_path: []}
+target: {table: demo.target, key_fields: [namespace, code]}
+selector: {op: eq, field: kind, value: linked}
+bindings: {code: {source_field: ref}, namespace: {source_field: namespace}}
+normalization: identity
+retrieval_channels: [metadata, value_overlap]
+checks:
+  eligible_references: 20
+  unique_matches: 20
+  ambiguous_matches: 0
+  missing_in_input: 0
+  unique_match_ratio: 1.0
+decision: {status: checked, semantic_relation: unresolved}
+evidence_refs: []  # 示例未提供证据，不能直接执行
+```
+
+计划新增 `field_profiles.yaml`、`sample_manifest.yaml`、`field_candidates.yaml`、`association_checks.yaml`、`discovery_coverage.yaml`；大候选/证据用分片或工作数据库，YAML 只保存有限摘要和定位。保持旧 `profiles.yaml` 兼容一版，不能直接覆盖旧运行结果。
+
+缓存键包含相关源文件哈希、字段/路径、选择条件、转换、统计/解析器版本及种子；记录级展开仍使用当前快照来源。跨表来源改变时，与其相关的候选和精确验证重新计算。
+
+## 7. 工程拆分与预算
+
+保留已有导入器，新增两个小模块即可：
+
+```python
+# profiling.py：SQL 聚合、结构探测和样本策略
+profile_fields(data, config) -> ProfileIndex
+sample_evidence(data, profiles, request, budget) -> SampleBundle
+
+# discovery.py：字段候选召回、精确验证、条件提案
+propose_candidates(metadata, profiles, config) -> CandidateIterator
+verify_candidate(data, candidate, config) -> AssociationCheck
+compile_plan(candidate, semantic_decision) -> RelationPlan | Unresolved
+```
+
+`pipeline.py` 在初次 LLM plan 之前调用统计与候选发现；模型提出新增字段对时，只追加这些候选的检查。现有 `relations.py` 复用验证后的计划执行记录关联。AgentScope 仍用于有限语义调用；无需另建统计 Agent。
+
+初始工作内存上限 1 GB；P1 按列组聚合；精确频次、排序和 JOIN 可落盘。JSON/公式只扫描被选字段，控制输入字节和输出元素。候选对、键宽、补样轮次、SQL 时长和临时磁盘都有预算，阈值见配置草案。候选数量上限耗尽时保存队列范围和数量，不能标记“没有关联”。
+
+若 C 是字段数、N 是输入行数、R 是获选精确候选数：基础扫描成本取决于总输入单元格/字节数；倒排成本取决于不同值及其字段分布；精确验证成本取决于 R 和键表大小。短值高频会放大候选，复合键和条件会扩大搜索空间。因此不承诺单纯 O(N)，也不以“百万行”推导必须使用分布式算法。
+
+## 8. 实施与验收顺序
+
+详细任务见 [implementation.md](implementation.md) 的 P01—P06。先完成 P1 统计、分层样本、单列/作用域关联与低比例引用，再评估文本语义和近似索引是否必要。
+
+验收增加：空值约定、前导零/规范化碰撞、重排样本内容一致性、全值包含但语义无关、2% 条件引用、复合键、多义、JSON 稀有路径、公式符号、缺目标样本、候选预算耗尽、公共低基数值、空分母。候选召回与最终业务关系正确性分别统计；真实模型和真实输入仍需单独验证。
+
+研究比较、原始来源和合成实验结果见[字段关联方案评估](FIELD_ASSOCIATION_EVALUATION.md)。

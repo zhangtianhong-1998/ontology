@@ -1,0 +1,49 @@
+config_version: "0.1"
+route: route3
+profile: E3
+model_profile: ../ontologies/internal_model.yaml
+parent_run: "${ROUTE2_RUN_DIR}"
+input:
+  root: "${DATASET_DIR}"
+  metadata_dir: schema
+  data_dir: data
+  read_csv: true
+  scope: sample
+ontology:
+  freeze_from_parent: true
+  allow_new_types_during_mapping: false
+  allow_new_instances_of_existing_types: true
+mapping:
+  rules_file: "${MAPPING_RULES_FILE}"
+  enforce_generalization_scope: true
+  unverified_scope_action: unresolved
+fusion:
+  preserve_source_ids: true
+  merge_on_name_similarity: false
+  require_scope_compatibility: true
+  preserve_conditions: true
+incremental: {enabled: true, fallback_without_stable_key: recompute_file_partition}
+batch: {rows: 10000, memory_limit: 4GB, use_disk_spill: true}
+llm:
+  stream: false
+  thinking:
+    mode: disabled
+    parameter: chat_template_kwargs
+    effort: medium
+  model: "${ONTOLOGY_LLM_MODEL}"
+  base_url: "${ONTOLOGY_LLM_BASE_URL}"
+  api_key_env: ONTOLOGY_LLM_API_KEY
+  temperature: 0
+  max_repairs: 2
+  timeout_seconds: 60
+  max_calls: 2000
+  max_total_tokens: 3000000
+enterprise_rag: {enabled: false, reuse_parent_evidence: true}
+external_ontology: {enabled: false, reuse_parent_alignments: true}
+sand:
+  enabled: false
+  repo_commit: "64af21af23202d7b4fe374f82996edb367f7e9b8"
+  algorithm: null
+  max_representative_rows: 100
+  reject_lossy_roundtrip: true
+output: {root: ../runs, shard_size: 5000}
