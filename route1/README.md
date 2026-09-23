@@ -11,9 +11,9 @@
 
 最小产出：`ontology.yaml`、源结构覆盖清单、映射候选、来源依据、未决项、验证及成本报告。某个指标定义只存在于 CSV 时，这条路线无法生成该具体指标及其度量依赖。
 
-- [需求与用户故事](requirements.md)
-- [软件详细设计](SDD.md)
-- [开发任务和完成标准](implementation.md)
+- [需求与用户故事](../docs/route1/requirements.md)
+- [软件详细设计](../docs/route1/SDD.md)
+- [开发任务和完成标准](../docs/route1/implementation.md)
 - 配置：[1A](metadata_only/config/no_external.yaml)、[1B](metadata_with_ontology/config/with_external.yaml)
 
 当前是设计工程，尚无可运行引擎。代码要求：少量函数实现输入适配、生成、校验和合并；不复制上游的全部脚本、评测框架和 UI。

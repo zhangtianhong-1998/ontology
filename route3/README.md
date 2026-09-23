@@ -6,9 +6,9 @@
 
 默认实现本地候选匹配、条件映射与证据融合。SAND 是可选算法接入实验，需要先证明自定义目标模型、批处理和语义往返可用，不能成为主流程的前置依赖。
 
-- [需求与用户故事](requirements.md)
-- [软件详细设计](SDD.md)
-- [开发任务和完成标准](implementation.md)
+- [需求与用户故事](../docs/route3/requirements.md)
+- [软件详细设计](../docs/route3/SDD.md)
+- [开发任务和完成标准](../docs/route3/implementation.md)
 - [配置](config/example.yaml)
 - [条件映射示例](config/mapping.example.yaml)
 

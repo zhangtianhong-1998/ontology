@@ -15,7 +15,7 @@ git -c core.precomposeunicode=false submodule update --init --recursive
 ## 运行路线2
 
 ```bash
-cd 路线2
+cd route2
 uv sync --locked --extra test
 uv run ontology-r2 make-demo --output fixtures/linked --rows 8 --scenario linked
 uv run ontology-r2 build --config config/runtime.mock.yaml --output runs/my-mock-001

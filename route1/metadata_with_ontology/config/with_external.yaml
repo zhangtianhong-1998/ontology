@@ -32,6 +32,6 @@ external_ontology:
       path: "../ontologies/KPIOnto/kpionto.ttl"
       version: "1c36644a40123447fb6469b9832865b4b4c2f7ba"
       sha256: "1cb6a3a81ecaeb76d2ef592181d80339ce98c09bac60f8558e8f37a0b7cebef2"
-# 默认只试一个模型；其他模型通过同一 sources 列表配置，见 shared/sources.md。
+# 默认只试一个模型；其他模型通过同一 sources 列表配置，见 docs/shared/sources.md。
 enterprise_rag: {enabled: false}
 output: {root: ../runs, shard_size: 5000}

@@ -1,5 +1,7 @@
 # LLM 接口、流式输出与思考模式
 
+本文中的代码、配置路径及命令均以仓库的 `route2/` 目录为基准；文档链接可直接点击。
+
 配置对增量生成、Judge、关系判定、外部对齐及 ReAct 检索统一生效。实现见 `code/ontology_r2/transport.py`、`llm.py` 和 `knowledge.py`。
 
 ## 配置

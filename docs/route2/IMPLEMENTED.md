@@ -1,6 +1,8 @@
 # 路线2实现范围与运行说明
 
-代码位于 [code/ontology_r2](code/ontology_r2)。本轮按上游 RIGOR 的直接映射、逐表增量、当前 core 上下文、Judge 修正及合并校验逐项改造，详细差异见 [RIGOR 对照](RIGOR_COMPARISON.md)。上游源码保留原样，内部仍采用用户定义的 YAML 模型。
+本文中的代码、配置路径及命令均以仓库的 `route2/` 目录为基准；文档链接可直接点击。
+
+代码位于 [code/ontology_r2](../../route2/code/ontology_r2)。本轮按上游 RIGOR 的直接映射、逐表增量、当前 core 上下文、Judge 修正及合并校验逐项改造，详细差异见 [RIGOR 对照](RIGOR_COMPARISON.md)。上游源码保留原样，内部仍采用用户定义的 YAML 模型。
 
 实际流程：导入与基础统计 → 全表全字段直接映射 → 按声明依赖遍历工作单元 → 原生 ReAct/MCP 知识补充和外部模型对齐 → 生成 delta → 候选合并与程序校验 → Judge/修正复核 → 接受增量或保留旧 core → 批量记录抽取 → 本地结果页面。
 
@@ -21,7 +23,7 @@
 
 ## 2. 安装与模拟运行
 
-要求 Python 3.11+。以下命令在本目录执行：
+要求 Python 3.11+。以下命令在仓库的 `route2/` 目录执行：
 
 ```bash
 uv sync --locked --extra test

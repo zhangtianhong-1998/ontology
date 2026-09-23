@@ -12,4 +12,4 @@
 uv run python design/field_association/verify.py --output design/field_association/results-local.yaml
 ```
 
-已有结果不会覆盖。该实验不证明自动发现能找到所有候选，不证明 LLM 能识别引用含义，也不代表新统计模块已经实现。设计与方案比较见[字段统计设计](../../FIELD_PROFILING_DESIGN.md)和[方案评估](../../FIELD_ASSOCIATION_EVALUATION.md)。
+已有结果不会覆盖。该实验不证明自动发现能找到所有候选，不证明 LLM 能识别引用含义，也不代表新统计模块已经实现。设计与方案比较见[字段统计设计](../../../docs/route2/FIELD_PROFILING_DESIGN.md)和[方案评估](../../../docs/route2/FIELD_ASSOCIATION_EVALUATION.md)。

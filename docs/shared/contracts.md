@@ -4,7 +4,7 @@
 
 ## 1. 内部模型
 
-[internal_model.yaml](internal_model.yaml) 中的五类对象和五类关系来自用户确认。以下类型派生、文件布局及字段约定是本原型的实现设计。
+[internal_model.yaml](../../shared/internal_model.yaml) 中的五类对象和五类关系来自用户确认。以下类型派生、文件布局及字段约定是本原型的实现设计。
 
 | 层次 | 内容 | 例子 |
 |---|---|---|

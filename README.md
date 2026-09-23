@@ -2,7 +2,7 @@
 
 本仓库仅保存三条路线的代码、需求、SDD、配置示例和测试代码。路线2的实现与运行状态见其 README；路线1、3的改造引擎仍按设计任务推进。更新日期：2026-09-23。
 
-上游代码用 9 个 Git 子模块固定版本。内部 YAML 模型作为代码契约保留；外部本体、模拟数据、真实数据、运行产物和论文均不打包。模拟输入由代码生成。获取方法见 [Git 管理](GIT_GUIDE.md)。
+上游代码用 9 个 Git 子模块固定版本。内部 YAML 模型作为代码契约保留；外部本体、模拟数据、真实数据、运行产物和论文均不打包。模拟输入由代码生成。获取方法见 [Git 管理](docs/GIT_GUIDE.md)。
 
 本分支从实现提交 `fdf82b9a` 导出，有独立提交历史。原研究资料保留在仓库的 `main` 分支。
 
@@ -28,17 +28,19 @@
 
 建议实现顺序：1A → 1B → 2 的通用发现与适用提取器 → 外部模型与 MCP → 3 的映射和融合。所有业务例子仅用于可选合成测试，不作为真实数据的前置要求。
 
-“直接运行 RIGOR”在路线1中具体指**保留其按表迭代、生成增量、Judge 复核的流程，做必要的 YAML 与内部模型移植**。上游生成和校验围绕 OWL，无法只换输出后缀就满足本项目；所以不把路线1称为未经修改的论文复现。修改点见[源码核对](shared/sources.md)。
+“直接运行 RIGOR”在路线1中具体指**保留其按表迭代、生成增量、Judge 复核的流程，做必要的 YAML 与内部模型移植**。上游生成和校验围绕 OWL，无法只换输出后缀就满足本项目；所以不把路线1称为未经修改的论文复现。修改点见[源码核对](docs/shared/sources.md)。
 
 ## 3. 阅读入口
 
+完整分类见 [文档目录](docs/README.md)。
+
 | 工程 | 需求与 US | 详细设计 | 开发任务 |
 |---|---|---|---|
-| 路线1 | [requirements.md](route1/requirements.md) | [SDD.md](route1/SDD.md) | [implementation.md](route1/implementation.md) |
-| 路线2 | [requirements.md](route2/requirements.md) | [SDD.md](route2/SDD.md) | [implementation.md](route2/implementation.md) |
-| 路线3 | [requirements.md](route3/requirements.md) | [SDD.md](route3/SDD.md) | [implementation.md](route3/implementation.md) |
+| 路线1 | [requirements.md](docs/route1/requirements.md) | [SDD.md](docs/route1/SDD.md) | [implementation.md](docs/route1/implementation.md) |
+| 路线2 | [requirements.md](docs/route2/requirements.md) | [SDD.md](docs/route2/SDD.md) | [implementation.md](docs/route2/implementation.md) |
+| 路线3 | [requirements.md](docs/route3/requirements.md) | [SDD.md](docs/route3/SDD.md) | [implementation.md](docs/route3/implementation.md) |
 
-共同设计资料：[模型与数据契约](shared/contracts.md)、[内部一级模型](shared/internal_model.yaml)、[合成示例](shared/example_result.yaml)、[实验设计](shared/evaluation.md)、[报告及上游依据](shared/sources.md)。
+共同设计资料：[模型与数据契约](docs/shared/contracts.md)、[内部一级模型](shared/internal_model.yaml)、[合成示例](shared/example_result.yaml)、[实验设计](docs/shared/evaluation.md)、[报告及上游依据](docs/shared/sources.md)。
 
 ## 4. 原型代码要求
 
@@ -51,17 +53,22 @@
 ## 5. 资源布局
 
 ```text
+docs/        # 需求、SDD、开发任务、运行说明与公共设计
+  route1/
+  route2/
+  route3/
+  shared/
 route1/
-  子route1/  # RIGOR、内部模型；不提供外部本体
-  子route2/  # RIGOR、内部模型、外部参考模型清单
+  metadata_only/  # RIGOR、内部模型；不提供外部本体
+  metadata_with_ontology/  # RIGOR、内部模型、外部参考模型清单
 route2/      # RIGOR、AgentScope、原型代码、内部模型、外部参考模型清单
 route3/      # RIGOR、AgentScope、SAND、GRAMS、steiner-tree、内部模型、外部参考模型清单
 ```
 
 上游代码位于各路线的 `code/`，克隆后初始化子模块即可取得固定版本。`ontologies/` 只包含内部契约和外部模型清单；`resources.yaml` 记录来源及版本。gist、KPIOnto、Valueflows、Microsoft CDM 的数据文件按需另行下载。
 
-路线1父目录保留共同需求和 SDD，两个子路线拥有独立配置与资源。路线1、路线2不配置 SAND。RIGOR 自带的演示文档、本体和输出留在上游源码中，但不会自动进入本项目实验。
+三个路线的需求、SDD 和开发任务集中在 `docs/`；路线1的两个子路线保留独立配置与资源。路线1、路线2不配置 SAND。RIGOR 自带的演示文档、本体和输出留在上游源码中，但不会自动进入本项目实验。
 
 设计文件、资源下载与算法运行分别验证；源码齐全不表示已适配内部模型。具体运行结果见路线2说明。
 
-路线2的安装、模拟运行和代码包测试见 [运行说明](route2/IMPLEMENTED.md) 与 [测试说明](route2/TESTING.md)。历史运行记录留在原工作区。
+路线2的安装、模拟运行和代码包测试见 [运行说明](docs/route2/IMPLEMENTED.md) 与 [测试说明](docs/route2/TESTING.md)。历史运行记录留在原工作区。

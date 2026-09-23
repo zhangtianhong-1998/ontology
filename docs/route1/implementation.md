@@ -1,5 +1,7 @@
 # 路线1：开发顺序与完成标准
 
+本文中的代码、配置路径及命令均以仓库的 `route1/` 目录为基准；文档链接可直接点击。
+
 本文件是实施清单，不是已完成记录。每个任务先完成可运行的小范围端到端结果，再扩大输入。
 
 | 任务 | 关联 US | 要写的最少代码 | 完成标准 |
@@ -14,8 +16,8 @@
 计划命令，待实现后才可运行：
 
 ```bash
-python -m r1 build --config 子route1/config/no_external.yaml --run-id e1a-001
-python -m r1 build --config 子route2/config/with_external.yaml --run-id e1b-001
+python -m r1 build --config metadata_only/config/no_external.yaml --run-id e1a-001
+python -m r1 build --config metadata_with_ontology/config/with_external.yaml --run-id e1b-001
 python -m r1 evaluate --run runs/e1a-001 --gold fixtures/schema_gold.yaml
 ```
 

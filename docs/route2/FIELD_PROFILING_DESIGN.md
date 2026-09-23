@@ -1,5 +1,7 @@
 # 路线2：字段统计与关联发现设计
 
+本文中的代码、配置路径及命令均以仓库的 `route2/` 目录为基准；文档链接可直接点击。
+
 更新：2026-09-23。状态：下一阶段设计，尚未接入运行管线。代码现状和新增内容分别列出，业务表名和字段例子均为合成示例。
 
 ## 1. 本阶段交付什么
@@ -29,7 +31,7 @@
 | JSON/公式 | 按计划解析，已有源定位 | 先探测可用模式；抽出带来源的虚拟字段再参与关联 |
 | 执行 | 快照身份、条件、作用域、有界 LLM | 复用现有执行器；先补统计/发现，不重写框架 |
 
-当前实现位置：[storage.py](code/ontology_r2/storage.py)、[models.py](code/ontology_r2/models.py)、[relations.py](code/ontology_r2/relations.py)。本文件中的新配置见 [profiling.design.yaml](config/profiling.design.yaml)，**现有 CLI 不读取这些选项**。
+当前实现位置：[storage.py](../../route2/code/ontology_r2/storage.py)、[models.py](../../route2/code/ontology_r2/models.py)、[relations.py](../../route2/code/ontology_r2/relations.py)。本文件中的新配置见 [profiling.design.yaml](../../route2/config/profiling.design.yaml)，**现有 CLI 不读取这些选项**。
 
 ## 3. 统计路径：便宜的先全量，昂贵的按候选计算
 
@@ -198,7 +200,7 @@ normalization: identity 或有出处的转换规则
 4. 数据驱动的新条件先记 `observed_subset`，保存条件内外的命中、歧义和反例。用未参与条件生成的概念族/作用域留出数据验证；样本不足则不宣称可推广。
 5. 仅凭统计发现的规则不能变成企业允许域或全表约束；要执行为业务规则，仍需引用用途和条件含义证据。可以先保留当前快照内有独立证据的记录关系。
 
-例如 1,000 行里只有 20 行具备某种引用，正确目标全命中时，整列包含率可能仅 2%，条件内唯一定位率却为 100%。默认不以全列 95% 包含率作为唯一入口，也不为了提高比例而删掉负例。这个例子的数值口径已经用[合成 SQL](design/field_association/cases.sql)验证，未使用真实业务数据。
+例如 1,000 行里只有 20 行具备某种引用，正确目标全命中时，整列包含率可能仅 2%，条件内唯一定位率却为 100%。默认不以全列 95% 包含率作为唯一入口，也不为了提高比例而删掉负例。这个例子的数值口径已经用[合成 SQL](../../route2/design/field_association/cases.sql)验证，未使用真实业务数据。
 
 ## 5. LLM 的位置与接受条件
 
