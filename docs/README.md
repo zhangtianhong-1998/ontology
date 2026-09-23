@@ -19,8 +19,10 @@
 - [字段统计与关联发现设计](route2/FIELD_PROFILING_DESIGN.md)
 - [字段关联方案评估](route2/FIELD_ASSOCIATION_EVALUATION.md)
 - [测试说明](route2/TESTING.md)
+- [Windows 无 Docker 离线运行与 DataHub 导出](route2/DATAHUB_OFFLINE.md)
+- [验证报告](route2/VALIDATION_REPORT.md)
 
-字段统计的 SQL 验证代码及就地说明保留在 [route2/design/field_association](../route2/design/field_association/README.md)。该实验仅验证统计口径，候选发现模块 P01—P06 仍待实现。
+字段统计的 SQL 验证代码及就地说明保留在 [route2/design/field_association](../route2/design/field_association/README.md)。P01、P03、P04 已有首版代码，其他范围见[完成状态](route2/STATUS.md)。
 
 ## 公共资料
 

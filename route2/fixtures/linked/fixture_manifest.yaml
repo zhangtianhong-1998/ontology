@@ -1,0 +1,11 @@
+synthetic: true
+scenario: linked
+source_records: 8
+meaning: Hand-authored fixtures and mock outputs; not user data or a learned result
+expected_links_first_eight:
+- - 1
+  - 1
+- - 2
+  - 2
+- - 8
+  - 3

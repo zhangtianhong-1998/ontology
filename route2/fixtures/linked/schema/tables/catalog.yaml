@@ -1,0 +1,26 @@
+schema: demo
+table_name: catalog
+table_comment: 合成定义条目；包含命名空间和可能重复的编码
+relkind: r
+estimated_rows: null
+total_size: null
+data_size: null
+columns:
+- column_name: code
+  ordinal_position: 1
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: 定义编码，不保证单独唯一
+- column_name: namespace
+  ordinal_position: 2
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: 编码命名空间
+- column_name: title
+  ordinal_position: 3
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: 定义名称

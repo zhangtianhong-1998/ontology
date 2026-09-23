@@ -1,16 +1,17 @@
 # 路线2实现范围与运行说明
 
-本文中的代码、配置路径及命令均以仓库的 `route2/` 目录为基准；文档链接可直接点击。
+本文中的代码、配置路径及命令均以 `prototypes/route2/` 为基准。
 
 代码位于 [code/ontology_r2](../../route2/code/ontology_r2)。本轮按上游 RIGOR 的直接映射、逐表增量、当前 core 上下文、Judge 修正及合并校验逐项改造，详细差异见 [RIGOR 对照](RIGOR_COMPARISON.md)。上游源码保留原样，内部仍采用用户定义的 YAML 模型。
 
-实际流程：导入与基础统计 → 全表全字段直接映射 → 按声明依赖遍历工作单元 → 原生 ReAct/MCP 知识补充和外部模型对齐 → 生成 delta → 候选合并与程序校验 → Judge/修正复核 → 接受增量或保留旧 core → 批量记录抽取 → 本地结果页面。
+实际流程：导入与分组字段统计 → 有界字段候选及精确核验 → 全表全字段直接映射 → 按声明依赖遍历工作单元 → 候选证据、原生 ReAct/MCP 知识和外部模型对齐 → 生成 delta → 候选合并与程序校验 → Judge/修正复核 → 接受增量或保留旧 core → 批量记录抽取 → 本地结果页面。候选统计不是已接受的业务关系。
 
 企业检索使用 **AgentScope 2.0.8 的 `Agent` + `ReActConfig`**。该版本已没有 `ReActAgent` 类名；当前使用框架原生的工具调用循环，模型自主决定查询、读取、改写与收尾。仅注册两个只读 MCP 工具，并共享本次运行的模型预算。
 
 ## 1. 实际实现
 
-- 三目录 YAML 和 CSV 导入；原值保留为字符串，保存文件哈希、原始约束、字段说明和快照记录位置。字段统计包含非空数、近似不同值数和有范围标记的枚举样本。
+- 三目录 YAML 和 CSV 导入；原值保留为字符串，保存文件哈希、原始约束、字段说明和快照记录位置。字段统计按最多 32 列分组，区分 CSV 空字段、空字符串、空白及可用值，近似基数和样本范围明确标记。
+- 有界字段候选发现：声明外键、字段名、有限原值倒排取并集；对选中字段对精确报告匹配、目标重复和缺失，并把少量已核验摘要加入逐表 LLM 上下文。未检查范围写入 `discovery_coverage.yaml`；不自动把值重叠编译为关系。
 - 元数据图、全字段直接映射和根模型约束；逐表生成增量、校验临时合并结果、接受或回滚。失败单元仍保留直接映射并标记 partial。
 - 按条件执行的引用匹配；目标索引含作用域，歧义保留，空条件采用三值逻辑。
 - 有限公式语法及符号原文位置、JSON 键路径、字符串/JSON 成员列表、SQLite FTS 文本候选与有预算的模型判断。显式允许成员单独输出规则；观察样本不会自动成为允许域。
@@ -23,25 +24,24 @@
 
 ## 2. 安装与模拟运行
 
-要求 Python 3.11+。以下命令在仓库的 `route2/` 目录执行：
+要求 Python 3.11+。以下命令在本目录执行。Windows 11 / Python 3.14.7 无 Docker 的离线安装另见[专项说明](DATAHUB_OFFLINE.md)：
 
 ```bash
 uv sync --locked --extra test
-uv run ontology-r2 make-demo --output fixtures/linked --rows 8 --scenario linked
 uv run ontology-r2 build --config config/runtime.mock.yaml --output runs/my-mock-001
 uv run pytest -q
 ```
 
-本代码包不包含数据文件；上面的 `make-demo` 命令在本地生成 `fixtures/linked`。已存在的结果目录不会覆盖，重跑时换一个输出名称。模拟数据和手写模拟模型响应均明确标记，不代表真实业务中存在这些字段或关系。
+`fixtures/linked` 已提供，可以直接运行。已存在的结果目录不会覆盖，重跑时换一个输出名称。模拟数据和手写模拟模型响应均明确标记，不代表真实业务中存在这些字段或关系。
 
 生成其他模拟输入用 `uv run ontology-r2 make-demo --output fixtures/my-data --rows 10000 --scenario linked`；还可选 `unrelated` 或 `formula`。新夹具配套的模型响应和 MCP 文档路径也应同步修改。规模脚本会自动完成这些设置。
 
 ## 3. 配置真实 LLM
 
-流式、非流式和思考模式见 [LLM_CONFIGURATION.md](LLM_CONFIGURATION.md)；`config/runtime.no-thinking.yaml` 为显式关闭思考的真实模型配置，运行前需按服务选择控制参数。
+流式、非流式和思考模式的配置见 [LLM_CONFIGURATION.md](LLM_CONFIGURATION.md)。使用 `config/runtime.no-thinking.yaml` 可启动显式关闭思考的真实模型流程；服务参数和环境变量覆盖规则见该文档。
 
 
-先执行 `cp -n .env.example .env`，再填写 `ONTOLOGY_LLM_MODEL`、`ONTOLOGY_LLM_BASE_URL`、`ONTOLOGY_LLM_API_KEY`，变量格式见 `.env.example`。模型服务需兼容 Chat Completions 的结构化工具输出。
+本目录已预留 `.env`，填写 `ONTOLOGY_LLM_MODEL`、`ONTOLOGY_LLM_BASE_URL`、`ONTOLOGY_LLM_API_KEY`，变量格式见 `.env.example`。模型服务需兼容 Chat Completions 的结构化工具输出。
 
 ```bash
 uv run ontology-r2 build --config config/runtime.mock.yaml --llm-mode agentscope --output runs/llm-001
@@ -49,7 +49,7 @@ uv run ontology-r2 build --config config/runtime.mock.yaml --llm-mode agentscope
 
 这个命令保留模拟数据和模拟 MCP，只将模型调用替换成真实服务。`--dataset /绝对路径/数据目录` 可换成真实输入。真实数据不应沿用 `synthetic: true` 的标记：复制配置为自己的运行配置，并改为 `synthetic: false`。
 
-`--profile E2L/E2O/E2K/E2F` 分别选择本地、加外部本体、加 MCP、两者都加。E2O / E2F 需要先取得对应的外部本体文件，下载来源见 [Git 管理](../GIT_GUIDE.md)。默认模拟流程关闭外部本体，保留模拟 MCP。运行 manifest 保存实际开关；`external.sources` 选择参与实验的模型，约定路径见 `ontologies/sources.yaml`。
+`--profile E2L/E2O/E2K/E2F` 分别选择本地、加外部本体、加 MCP、两者都加。例如增加 `--profile E2F` 可同时试用本地 KPIOnto 和模拟 MCP。运行 manifest 保存实际开关。`external.sources` 选择参与实验的模型；四套已下载模型的路径见 `ontologies/sources.yaml`，无需每次全量加载。
 
 接企业 MCP 时，将 `mock_documents` 去掉，配置 `command`、`args`、`search_tool` 和 `fetch_tool`。首版适配 `search(query, limit) -> {hits:[...]}`、`fetch(document_id) -> {id,text,scope,version}`；不同参数形式需要一个薄适配器。当前只实现 stdio 传输。
 
@@ -71,18 +71,18 @@ uv run python scripts/benchmark.py --output runs/my-scale-text --rows 1000000 --
 ## 5. 明确的实现边界
 
 - 每个增量使用当前表及声明邻居的元数据、最多三行示例、全表字段目录、已有类型定义及选定的 core 邻域。没有外键时按表名稳定遍历；循环依赖单独记录。完整单元超过预算时保留直接映射并标为 partial。复杂表的自动分组与稀有模式采样仍需补充，不能声称覆盖所有隐含关系。
-- 字段统计仍是基础计数、近似基数和排序取值样本；尚无自动跨字段包含率/候选发现模块。下一步设计见[字段统计与关联发现设计](FIELD_PROFILING_DESIGN.md)，本次文档更新没有改变这些运行行为。
+- 字段候选与单列精确核验已有首版，但只对预算内字段/候选执行。精确频次、稀有/反例采样、结构化引用、文本候选、自动条件/复合键提案和安全计划编译仍待实现；见[状态表](STATUS.md)及[详细设计](FIELD_PROFILING_DESIGN.md)。
 - 本轮已采用逐表 delta，并保留全局程序校验。YAML 根模型、按计划确定的关系端点及声明约束替代 OWL 结构；没有引入 OWL 推理，也没有把 SQL UNIQUE 解释成非空要求。
 - 记录身份限定在来源快照，尚无跨快照稳定业务身份和全局融合。路线3的功能没有提前宣称完成。
 - 成员提取支持已有字符串/JSON 列表和 JSON 键路径。允许规则要求显式配置及来源说明，无法只凭观察值建立。自由文本中的复杂范围、否定条件、JSON 通配符或任意公式语法尚不支持；会保留原文和未决原因。
 - 使用本地词法 FTS，未实现 embedding 通道。外部 CDM 仅提取实体及直接父引用，复杂 traits/属性组未解释。
 - 字节数加输出上限用于保守预留预算；provider token 数另记。模拟调用与真实调用分开统计。结构检查不等于语义正确性。
-- 本代码包不携带历史运行结果；百万条完整端到端性能不能由小样本测试代替。
+- 本次运行结果以验证报告为准；百万条完整端到端性能不能由小样本测试代替。
 - 当前每个表计划指定一个基本对象类型；没有跨表身份合并或同表多类型条件分派。没有充分依据时可以选择一般对象或保留未建模状态，不强制归入指标/维度。
 
 代码保持普通函数、小型数据模型和一个企业检索 Agent。生成、Judge、外部对齐使用各自的任务提示；ReAct 检索使用独立 system prompt。`max_rounds` 限制原生迭代，`max_units` 限制企业检索工作单元数，模型调用和 MCP 工具调用另设硬上限。
 
-需求与代码对应关系见 [implementation.md](implementation.md)，代码包验证方法见 [测试说明](TESTING.md)。
+需求与代码对应关系见 [implementation.md](implementation.md)，实测记录见 [VALIDATION_REPORT.md](VALIDATION_REPORT.md)。
 
 ## 6. 查看抽取结果
 

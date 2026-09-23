@@ -1,0 +1,43 @@
+# Run with a locally reachable OpenAI-compatible model and explicit CSV/YAML input.
+# Copy this file to local_config/runtime.real.yaml and set dataset to your input directory.
+synthetic: false
+dataset: ../local_data/input
+data_scope: unknown
+model_profile: ../ontologies/internal_model.yaml
+env_file: ../.env
+memory_limit: 2GB
+shard_size: 5000
+profiling:
+  sql_columns_per_group: 32
+discovery:
+  enabled: true
+  max_indexed_fields: 64
+  max_candidate_validations: 12
+  max_evidence_per_unit: 3
+llm:
+  mode: agentscope
+  stream: false
+  thinking:
+    mode: disabled
+    parameter: chat_template_kwargs
+    effort: medium
+  max_calls: 100
+  max_reserved_tokens: 2000000
+  max_input_bytes: 100000
+  max_output_tokens: 4096
+  max_repairs: 1
+  timeout_seconds: 60
+mcp:
+  enabled: false
+external:
+  enabled: false
+processing:
+  materialize_all_objects: true
+  max_object_records: 1000000
+  max_relation_records: 100000
+  max_text_groups: 100
+  candidate_top_k: 10
+  max_references_per_record: 100
+visualization:
+  enabled: true
+  max_nodes: 200

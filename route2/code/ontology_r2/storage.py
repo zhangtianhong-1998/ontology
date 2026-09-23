@@ -52,7 +52,7 @@ def qi(name):
 
 
 class Dataset:
-    def __init__(self, root, work, memory="1GB"):
+    def __init__(self, root, work, memory="1GB", profiling_config=None):
         self.root, self.tables, self.evidence, self.files = Path(root), {}, {}, {}
         self.indexes = set()
         self.db = duckdb.connect(str(Path(work) / "sources.duckdb"))
@@ -97,13 +97,8 @@ class Dataset:
                 raise ValueError(f"CSV columns differ from YAML: {name}")
             self.files[str(path.relative_to(self.root))] = file_hash(path)
             table["csv_path"], table["csv_hash"] = str(path), file_hash(path)
-            self.db.execute(f"CREATE TABLE {qi(table['sql_name'])} AS SELECT row_number() OVER () AS __r2_row, * FROM read_csv(?, header=true, all_varchar=true)", [str(path)])
+            self.db.execute(f"CREATE TABLE {qi(table['sql_name'])} AS SELECT row_number() OVER () AS __r2_row, * FROM read_csv(?, header=true, all_varchar=true, nullstr='', allow_quoted_nulls=false)", [str(path)])
             table["rows"] = self.db.execute(f"SELECT count(*) FROM {qi(table['sql_name'])}").fetchone()[0]
-            table["profiles"] = []
-            for col in columns:
-                non_null, distinct = self.db.execute(f"SELECT count({qi(col)}), approx_count_distinct({qi(col)}) FROM {qi(table['sql_name'])}").fetchone()
-                values = [r[0] for r in self.db.execute(f"SELECT DISTINCT {qi(col)} FROM {qi(table['sql_name'])} WHERE {qi(col)} IS NOT NULL ORDER BY {qi(col)} LIMIT 17").fetchall()]
-                table["profiles"].append({"column": col, "non_null": non_null, "approx_distinct": distinct, "distinct_sample": values[:16], "sample_exhaustive_in_input": len(values) <= 16})
         if not self.tables:
             raise ValueError("No schema/tables/*.yaml inputs")
         bare_names = [t["table_name"] for t in self.tables.values()]
@@ -111,10 +106,15 @@ class Dataset:
             if bare_names.count(t["table_name"]) > 1 and Path(t["csv_path"]).parent.name != t["schema"]:
                 raise ValueError("Duplicate bare table names require data/<schema>/<table>.csv")
         self.snapshot_id = digest(self.files)
+        from .profiling import profile_fields
+        for name, profiles in profile_fields(self, profiling_config).items():
+            self.tables[name]["profiles"] = profiles
 
     def context(self, tables=None):
         selected = set(self.tables) if tables is None else set(tables)
-        return {"tables": [{"name": name, "comment": t.get("table_comment"), "columns": t["columns"], "constraints": t["constraints"], "foreign_keys": t["foreign_keys"], "profiles": t["profiles"], "sample": list(self.rows(name, limit=3))} for name, t in self.tables.items() if name in selected], "evidence": [e for e in self.evidence.values() if e["source_ref"].get("table") in selected]}
+        # Keep the LLM context compact; full P01 statistics stay in profiles.yaml.
+        context_keys = ("column", "non_null", "approx_distinct", "distinct_sample", "sample_exhaustive_in_input", "null_count", "empty_count", "usable_count")
+        return {"tables": [{"name": name, "comment": t.get("table_comment"), "columns": t["columns"], "constraints": t["constraints"], "foreign_keys": t["foreign_keys"], "profiles": [{k: p[k] for k in context_keys} for p in t["profiles"]], "sample": list(self.rows(name, limit=3))} for name, t in self.tables.items() if name in selected], "evidence": [e for e in self.evidence.values() if e["source_ref"].get("table") in selected]}
 
     def rows(self, table, limit=None):
         info = self.tables[table]

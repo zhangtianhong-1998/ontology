@@ -1,0 +1,7 @@
+schema: demo
+table_name: records
+constraints:
+- constraint_name: records_pkey
+  constraint_type: p
+  constraint_type_name: PRIMARY KEY
+  definition: PRIMARY KEY (rid)

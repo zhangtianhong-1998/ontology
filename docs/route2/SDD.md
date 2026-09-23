@@ -1,6 +1,6 @@
 # 路线2：软件详细设计
 
-本文中的代码、配置路径及命令均以仓库的 `route2/` 目录为基准；文档链接可直接点击。
+本文中的代码、配置路径及命令均以 `prototypes/route2/` 为基准。
 
 本文中的对象、字段、公式和地区等均为假设性例子，不说明真实输入包含这些内容。运行时先检测证据和适用性；没有相应内容就不启用该提取器。目标模型的五类根也不要求输入覆盖全部类别。
 
@@ -8,9 +8,9 @@
 
 本轮已按 [RIGOR 对照与本轮改造](RIGOR_COMPARISON.md)实现确定性直接映射、逐表增量与回滚、AgentScope 原生 ReAct 检索及本地结果浏览。运行代码位于 `code/ontology_r2`，配置入口为 `config/runtime.mock.yaml`。
 
-`storage.py` 导入及统计；`pipeline.py` 调度和实例校验；`incremental.py` 建立直接映射、选择 core 邻域并处理 delta；`models.py/validation.py` 定义计划及校验；`relations.py` 执行记录关联；`knowledge.py` 使用 AgentScope `Agent` + `ReActConfig`，`llm.py` 管理共享模型预算；`external.py` 导入参考模型；`visualization.py/viewer.html` 生成本地浏览页面。下文未落地的 `r2/*` 接口仍为职责草案，字段统计增强按独立设计推进。
+`storage.py/profiling.py` 导入并统计；`discovery.py` 召回和核验字段候选；`pipeline.py` 调度和实例校验；`incremental.py` 建立直接映射、选择 core 邻域并处理 delta；`models.py/validation.py` 定义计划及校验；`relations.py` 执行记录关联；`knowledge.py` 使用 AgentScope `Agent` + `ReActConfig`，`llm.py` 管理共享模型预算；`external.py` 导入参考模型；`visualization.py/viewer.html` 生成本地浏览页面。`datahub_adapter.py` 可把现有技术图导出为 DataHub metadata-file。下文未落地的 `r2/*` 接口仍为职责草案。
 
-2026-09-23 新增[字段统计与关联发现详细设计](FIELD_PROFILING_DESIGN.md)及[字段关联方案评估](FIELD_ASSOCIATION_EVALUATION.md)。字段统计、采样、候选生成、精确验证和预算以该详细设计为准；其中的新模块尚未实现。原型现状仍是基础统计和前 3 行样本，已有原型测试不能用于证明这次新增设计已经完成。
+2026-09-23 新增[字段统计与关联发现详细设计](FIELD_PROFILING_DESIGN.md)及[字段关联方案评估](FIELD_ASSOCIATION_EVALUATION.md)。P01、P03、P04 已实现首版，P05 已把有限的已核验候选注入增量上下文；分层取样、结构化引用/文本候选、条件自动发现和自动计划编译仍未实现。准确范围见[状态表](STATUS.md)。
 
 ## 1. 总体执行
 
@@ -29,7 +29,7 @@ CSV → 分批导入、快照定位、全字段基础统计
   → 定义对象、带条件关系、本体、证据与未决项
 ```
 
-输入契约、根模型、状态和 YAML 分片遵守[共同设计](../shared/contracts.md)。本路线的工作单元由“单张表”扩展为“一个相关定义/关联问题的证据包”。同一公式或定义可包含多个源表，不能因按表切分丢掉引用链。
+输入契约、根模型、状态和 YAML 分片遵守[共同设计](../shared/contracts.md)。当前增量构建工作单元仍按表组织；每个单元另外接收最多三条已核验字段候选摘要。将跨表定义/关联问题组装为完整证据包仍是后续设计，不能声称已避免按表切分的引用链遗漏。
 
 ## 2. 模块与接口
 
@@ -39,8 +39,9 @@ CSV → 分批导入、快照定位、全字段基础统计
 |---|---|---|
 | `r2/ingest.py` | `ingest_csv(snapshot, config) -> ImportManifest` | CSV 流式导入、源行定位、类型辅助列、DuckDB 索引 |
 | `r2/meta_graph.py` | `build_graph(snapshot) -> MetaGraph` | 技术节点、声明边、来源与邻居查询 |
-| `ontology_r2/profiling.py`（待实现） | `profile_fields`、`sample_evidence` | 分组 SQL 聚合、取值频次、结构探测、稳定及稀有样本 |
-| `ontology_r2/discovery.py`（待实现） | `propose_candidates`、`verify_candidate`、`compile_plan` | 字段候选、精确统计、条件检查及可执行计划 |
+| `ontology_r2/profiling.py`（首版） | `profile_fields` | 分组 SQL 聚合、空值/格式计数及有限取值样本；精确频次和分层取样待做 |
+| `ontology_r2/discovery.py`（首版） | `propose_candidates`、`validate_candidate`、`discover_and_check` | 声明/名称/原值候选及单列精确核验；结构化引用、条件提案与计划编译待做 |
+| `ontology_r2/datahub_adapter.py`（可选） | `export_datahub_metadata` | 将表、列、声明主键和来源写入 DataHub metadata-file；不替代本地图或实现血缘 |
 | `r2/plans.py` | `propose_plans(schema, summaries) -> list[ExtractionPlan]` | LLM 有界角色判别、计划验证、条件覆盖检查 |
 | `r2/relations.py` | `discover(plans, store) -> CandidateIterator` | 标识匹配、候选召回、公式/条件解析和关联统计 |
 | `r2/knowledge.py` | `retrieve(question, adapter, budget) -> KnowledgeResult` | MCP Agent 循环、摘要和证据定位 |
@@ -50,13 +51,15 @@ CSV → 分批导入、快照定位、全字段基础统计
 
 ## 3. 元数据图
 
-技术节点：`DatasetSnapshot`、`Table`、`Column`、`Constraint`、`SourceDocument`。技术边：`table_has_column`、`constraint_on_column`、`declared_fk`、`document_describes_source`。这些名字属于元数据层，不是新增内部一级业务关系。
+当前技术节点：`DatasetSnapshot`、`Table`、`Column`、`Constraint`、`Source`。当前技术边包括 `table_has_column`、`has_declared_constraint`、`declared_fk`、`documented_by`、`sample_from`、`includes_source`。这些名字属于元数据层，不是新增内部一级业务关系。
 
 每个节点和边都有来源、提取方法和状态。`declared_fk` 只能来自声明外键；候选引用放在 `candidate_record_reference` 中，不能回写成声明。无外键时根据表列角色和检索建立工作邻居，它只表示“值得一起分析”。
 
 CSV 记录不全部变成内存图节点。元数据图引用 DuckDB 中的记录集合、统计和候选边；仅选定证据包取少量完整相关记录。
 
-新增 `candidate_field_association` 技术边，保存候选通道、统计范围、检查状态与关联计划 ID。数值同域、文本相似、潜在引用分开存储；它们不会直接变成 `points_to` 或声明外键。
+目标电脑为无 Docker 的 Windows 11，因此运行时保留本地技术图与 DuckDB。DataHub 仅作为可选互操作格式：导出表/列 metadata-file，另用隔离环境中的 Lite 做本地存储和读回。Lite 不支持关系图遍历或血缘；完整 DataHub 服务不属于此离线原型的运行依赖。安装与验证命令见[离线说明](DATAHUB_OFFLINE.md)。
+
+设计目标是增加 `candidate_field_association` 技术边，保存候选通道、统计范围和检查状态。首版先把候选与核验写在 `field_candidates.yaml`、`association_checks.yaml`，未并入 `meta_graph.yaml`，更未直接变成 `points_to` 或声明外键。
 
 ### 3.1 字段统计路径
 

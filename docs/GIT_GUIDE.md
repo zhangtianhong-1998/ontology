@@ -1,6 +1,6 @@
 # 获取和维护三个路线
 
-本分支只包含代码、需求设计和运行所需的契约、配置示例。独立提交历史从代码包开始；原研究资料保留在 `main` 分支。当前默认分支为 `xuanyue`。
+本分支包含代码、需求设计、运行契约、配置示例和路线2的手写合成夹具。独立提交历史从代码包开始；原研究资料保留在 `main` 分支。当前默认分支为 `xuanyue`。
 
 ## 获取代码
 
@@ -10,19 +10,18 @@ cd ontology
 git -c core.precomposeunicode=false submodule update --init --recursive
 ```
 
-9 个子模块固定了 RIGOR、AgentScope，以及仅用于路线3的 SAND、GRAMS、steiner-tree。子模块保留各自的许可证和来源；GitHub 的 ZIP 下载不包含子模块正文，应使用上述命令获取。`core.precomposeunicode` 用于兼容 RIGOR 的 Unicode 文件名。
+9 个子模块固定了 RIGOR、AgentScope，以及仅用于路线3的 SAND、GRAMS、steiner-tree。子模块保留各自的许可证和来源；GitHub 的 ZIP 下载不包含子模块正文，需要研究上游源码时执行上述初始化命令。路线2的本地原型及合成测试不依赖子模块。`core.precomposeunicode` 用于兼容 RIGOR 的 Unicode 文件名。
 
 ## 运行路线2
 
 ```bash
 cd route2
 uv sync --locked --extra test
-uv run ontology-r2 make-demo --output fixtures/linked --rows 8 --scenario linked
 uv run ontology-r2 build --config config/runtime.mock.yaml --output runs/my-mock-001
 uv run pytest -q
 ```
 
-默认流程使用模拟模型和模拟 MCP，不需要外部本体或 LLM 密钥。查看结果时打开 `runs/my-mock-001/viewer.html`。真实模型配置见 [运行说明](route2/IMPLEMENTED.md)。
+`fixtures/linked` 已随分支提供，默认流程使用模拟模型和模拟 MCP，不需要外部本体或 LLM 密钥。查看结果时打开 `runs/my-mock-001/viewer.html`。无 Docker 的 Windows 离线安装见[专项说明](route2/DATAHUB_OFFLINE.md)。
 
 ## 按需取得外部模型
 
@@ -40,4 +39,4 @@ printf '%s\n' '1cb6a3a81ecaeb76d2ef592181d80339ce98c09bac60f8558e8f37a0b7cebef2 
 
 本仓库直接管理自研代码、测试、内部模型和设计文档。上游源码用子模块提交号管理，不复制其 Git 历史到主仓库。修改自研代码后正常提交；更改子模块版本时一并更新版本清单。
 
-`.env`、私有配置、虚拟环境、模拟或真实数据、外部本体和运行结果均被忽略。`.env.example` 是空值模板。原工作区中的数据和结果保留在本地。
+`.env`、私有配置、虚拟环境、真实数据、外部本体和运行结果均被忽略；新生成的模拟数据也默认忽略，只有明确提交的 `fixtures/linked` 合成夹具例外。`.env.example` 是空值模板。原工作区中的数据和结果保留在本地。

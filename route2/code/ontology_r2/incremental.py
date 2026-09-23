@@ -114,7 +114,8 @@ def ontology_from_plan(plan, profile, data, mapping, steps):
             "core_hash": digest(plan.model_dump()), "accepted_units": [s["unit"] for s in steps if s["status"] == "accepted"]}}
 
 
-async def construct(data, profile, config, output, llm, manifest):
+async def construct(data, profile, config, output, llm, manifest,
+                    discovery_checks=(), discovery_candidates=()):
     """RIGOR-style enrich/judge/validate/merge; failed deltas never replace core."""
     from contextlib import AsyncExitStack
     from .external import ExternalIndex
@@ -126,6 +127,17 @@ async def construct(data, profile, config, output, llm, manifest):
     core, mapping = direct_mapping(data)
     order, cyclic = traversal(data)
     steps, knowledge, alignments = [], [], []
+    candidate_by_id = {c["candidate_id"]: c for c in discovery_candidates}
+    checks_by_source = {}
+    for check in discovery_checks:
+        if check.get("decision", {}).get("status") != "checked":
+            continue
+        candidate = candidate_by_id.get(check["candidate_id"])
+        if candidate:
+            checks_by_source.setdefault(candidate["source"]["table"], []).append((candidate, check))
+    max_evidence_per_unit = config.get("discovery", {}).get("max_evidence_per_unit", 3)
+    if not isinstance(max_evidence_per_unit, int) or max_evidence_per_unit < 0:
+        raise ValueError("discovery.max_evidence_per_unit must be nonnegative")
     write_yaml(output / "direct_mapping.yaml", mapping)
     write_yaml(output / "ontology.yaml", ontology_from_plan(core, profile, data, mapping, steps))
     mcp = config.get("mcp", {})
@@ -145,6 +157,19 @@ async def construct(data, profile, config, output, llm, manifest):
             before = digest(core.model_dump())
             context = unit_context(data, unit)
             step = {"unit": unit, "index": index, "core_before": before, "status": "rejected", "attempts": []}
+            checked_pairs = checks_by_source.get(unit, [])[:max_evidence_per_unit]
+            field_association_evidence = [{
+                "candidate_id": candidate["candidate_id"],
+                "source": candidate["source"], "target": candidate["target"],
+                "retrieval_channels": candidate["retrieval_channels"],
+                "numeric_overlap_only": candidate["numeric_overlap_only"],
+                "checks": {key: check["checks"][key] for key in (
+                    "eligible_references", "unique_matches", "ambiguous_matches",
+                    "missing_in_input", "distinct_eligible_keys",
+                    "distinct_keys_matched", "whole_column_distinct_value_inclusion_ratio")},
+                "semantic_relation": "unresolved",
+            } for candidate, check in checked_pairs]
+            step["field_association_checks_presented"] = len(field_association_evidence)
             local_knowledge, external_context = [], []
             if mcp.get("enabled"):
                 if unavailable:
@@ -186,7 +211,9 @@ async def construct(data, profile, config, output, llm, manifest):
                     step["external_error"] = type(exc).__name__
                     alignments.append({"internal_id": unit, "mapping_kind": "unmapped", "reason": "retrieval_error", "error_type": type(exc).__name__})
             packet = {"unit": unit, "sources": context, "root_model": profile, "current_core": core_context(core, unit, data),
-                      "knowledge": local_knowledge, "external_context": external_context}
+                      "knowledge": local_knowledge, "external_context": external_context,
+                      "field_association_evidence": field_association_evidence,
+                      "field_association_limits": "Raw-value equality on this input only. No selector or scope was inferred; overlap is not a declared FK or business relation. Candidate pairs without exact checks are omitted."}
             errors, previous = [], None
             for attempt in range(config["llm"].get("max_repairs", 2) + 1):
                 record = {"number": attempt + 1}

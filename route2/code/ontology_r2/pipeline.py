@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .discovery import discover_and_check
 from .incremental import construct
 from .llm import BudgetExceeded, StructuredLLM
 from .relations import Extractor
@@ -83,13 +84,27 @@ async def build(config, output):
     try:
         load_dotenv(config.get("env_file"), override=False)
         profile = read_yaml(config["model_profile"])
-        data = Dataset(config["dataset"], output / "work", config.get("memory_limit", "1GB"))
+        profiling = {**config.get("profiling", {}), "input_scope": config.get("data_scope", "unknown")}
+        data = Dataset(config["dataset"], output / "work", config.get("memory_limit", "1GB"),
+                       profiling)
         sink = Sink(output, config.get("shard_size", 5000))
         llm = StructuredLLM(config["llm"], output)
         manifest.update(snapshot_id=data.snapshot_id, input_files=data.files, input_tables=len(data.tables), input_records=sum(t["rows"] for t in data.tables.values()), model_profile_hash=digest(profile))
         write_yaml(output / "meta_graph.yaml", technical_graph(data))
         write_yaml(output / "profiles.yaml", {name: t["profiles"] for name, t in data.tables.items()})
-        plan, ontology, knowledge = await construct(data, profile, config, output, llm, manifest)
+        discovery = {"candidates": [], "checks": [], "coverage": {"status": "disabled", "partial": False}}
+        if config.get("discovery", {}).get("enabled", True):
+            discovery = discover_and_check(data, config.get("discovery", {}))
+            discovery["coverage"]["input_scope"] = config.get("data_scope", "unknown")
+        write_yaml(output / "field_candidates.yaml", discovery["candidates"])
+        write_yaml(output / "association_checks.yaml", discovery["checks"])
+        write_yaml(output / "discovery_coverage.yaml", discovery["coverage"])
+        manifest["field_discovery"] = {"candidate_count": len(discovery["candidates"]),
+                                       "checked_count": discovery["coverage"].get("candidates_checked", 0),
+                                       "partial": discovery["coverage"]["partial"]}
+        plan, ontology, knowledge = await construct(data, profile, config, output, llm, manifest,
+                                                    discovery_checks=discovery["checks"],
+                                                    discovery_candidates=discovery["candidates"])
         for ev in data.evidence.values():
             sink.put("evidence", ev)
         extractor = Extractor(data, sink, plan, llm, config.get("processing", {}))
@@ -115,7 +130,7 @@ async def build(config, output):
         validation = check_output(sink)
         write_yaml(output / "validation.yaml", validation)
         write_yaml(output / "metrics.yaml", {"counts": counts, "extraction": stats, "materialized_records": materialized, "llm": llm.metrics(), "semantic_quality": "synthetic_only" if config.get("synthetic") else "unjudged"})
-        partial = unmodeled_tables or stats["unprocessed_records"] or stats["semantic_budget_exhausted"] or manifest.get("object_materialization_partial") or manifest.get("knowledge_questions_not_processed") or any(k["status"] in ("error", "unavailable", "budget_exhausted") for k in knowledge) or manifest.get("external_import_incomplete") or manifest.get("incremental_units_not_accepted") or manifest.get("external_alignment_errors")
+        partial = unmodeled_tables or stats["unprocessed_records"] or stats["semantic_budget_exhausted"] or manifest.get("object_materialization_partial") or manifest.get("knowledge_questions_not_processed") or any(k["status"] in ("error", "unavailable", "budget_exhausted") for k in knowledge) or manifest.get("external_import_incomplete") or manifest.get("incremental_units_not_accepted") or manifest.get("external_alignment_errors") or manifest["field_discovery"]["partial"]
         manifest["status"] = "failed" if not validation["passed"] else "partial" if partial else "complete"
         manifest["ontology_hash"] = digest(ontology)
         manifest["semantic_completeness"] = "unknown; complete describes execution only"

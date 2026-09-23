@@ -1,0 +1,66 @@
+plan: &id001
+  object_types: []
+  relation_types: []
+  tables:
+  - table: demo.catalog
+    object_type: GeneralObject
+    label_column: title
+    attributes:
+      name: title
+    evidence_ids:
+    - schema:demo.catalog
+  - table: demo.records
+    object_type: GeneralObject
+    label_column: description
+    attributes:
+      description: description
+    evidence_ids:
+    - schema:demo.records
+  relations:
+  - id: synthetic_reference
+    source_table: demo.records
+    target_table: demo.catalog
+    mode: identifier
+    source_column: ref
+    target_column: code
+    scope_bindings:
+      namespace: namespace
+    selector:
+      op: eq
+      field: kind
+      value: linked
+    predicate: points_to
+    evidence_ids:
+    - schema:demo.records:ref
+  knowledge_questions:
+  - ref 的命名空间关联规则
+final_plan: *id001
+review:
+  accepted: true
+  errors: []
+knowledge:
+- queries:
+  - ref namespace
+  claims: []
+  done: false
+- queries:
+  - 关联规则
+  claims:
+  - &id002
+    document_id: join-rule
+    quote: ref 只引用相同 namespace 中的 code；重复编码不能自动选第一条。
+    statement: ref 只引用相同 namespace 中的 code；重复编码不能自动选第一条。
+    scope: 本合成样本
+  done: false
+- queries: []
+  claims:
+  - *id002
+  done: true
+link:
+  status: unresolved
+  explanation: mock does not infer semantic identity
+alignment:
+  mapping_kind: unmapped
+  explanation: mock does not claim external equivalence
+external_queries:
+  queries: []

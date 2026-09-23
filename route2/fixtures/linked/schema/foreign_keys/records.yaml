@@ -1,0 +1,3 @@
+schema: demo
+table_name: records
+foreign_keys: []

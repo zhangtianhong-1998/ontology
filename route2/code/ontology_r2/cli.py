@@ -22,7 +22,18 @@ def main():
     view = sub.add_parser("visualize", help="Generate a local result viewer")
     view.add_argument("--run", required=True)
     view.add_argument("--max-nodes", type=int, default=200)
+    export = sub.add_parser("export-datahub", help="Export local technical metadata as a DataHub metadata file")
+    export.add_argument("--run", required=True, help="Existing build output containing meta_graph.yaml")
+    export.add_argument("--output", required=True, help="Destination JSON file")
+    export.add_argument("--platform", default="postgres", help="DataHub platform key")
+    export.add_argument("--environment", default="PROD")
     args = parser.parse_args()
+    if args.command == "export-datahub":
+        from .datahub_adapter import export_datahub_metadata
+        from .storage import read_yaml
+        graph = read_yaml(Path(args.run) / "meta_graph.yaml")
+        print(json.dumps(export_datahub_metadata(graph, args.output, args.platform, args.environment), ensure_ascii=False))
+        return
     if args.command == "visualize":
         from .visualization import render_viewer
         print(render_viewer(args.run, args.max_nodes))

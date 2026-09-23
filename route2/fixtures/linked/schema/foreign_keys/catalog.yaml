@@ -1,0 +1,3 @@
+schema: demo
+table_name: catalog
+foreign_keys: []

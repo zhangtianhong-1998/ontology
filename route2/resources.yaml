@@ -43,3 +43,13 @@ resources:
   version: 2.0.8
   role: agent_framework_reference
   delivery: git_submodule
+- id: DataHub
+  kind: optional_source_archive
+  path: code/DataHub
+  url: https://github.com/datahub-project/datahub/releases/tag/v1.7.0.1
+  archive_url: https://codeload.github.com/datahub-project/datahub/tar.gz/refs/tags/v1.7.0.1
+  archive_sha256: 6cf65cd873d7914e82eb9ec196f47da287b3b5eac656212dd25be6028d6ae94d
+  version: v1.7.0.1
+  delivery: not_bundled
+  runtime_required: false
+  role: reference_for_metadata_file_and_lite_adapter

@@ -204,6 +204,8 @@ def test_native_react_with_agentscope_sdk_and_http_provider(tmp_path, monkeypatc
 
 def test_23_table_build_uses_table_budget_not_row_calls(tmp_path):
     config = setup(tmp_path, mcp=False)
+    # Isolate the incremental LLM budget from the separate discovery budget.
+    config['discovery'] = {'enabled': False}
     root = Path(config['dataset'])
     for index in range(21):
         name = 'aux_' + str(index).zfill(2)

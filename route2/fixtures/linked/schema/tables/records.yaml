@@ -1,0 +1,38 @@
+schema: demo
+table_name: records
+table_comment: 合成记录，仅用于测试
+relkind: r
+estimated_rows: null
+total_size: null
+data_size: null
+columns:
+- column_name: rid
+  ordinal_position: 1
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: 本文件内记录编码
+- column_name: namespace
+  ordinal_position: 2
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: 定义命名空间
+- column_name: kind
+  ordinal_position: 3
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: 只有 linked 表示引用，其他记录不建立引用
+- column_name: ref
+  ordinal_position: 4
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: 引用 catalog.code；namespace 必须一致；kind=linked 才适用
+- column_name: description
+  ordinal_position: 5
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: 记录说明

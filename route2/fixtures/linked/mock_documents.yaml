@@ -1,0 +1,12 @@
+synthetic: true
+documents:
+- id: join-rule
+  title: ref 关联规则
+  text: ref 只引用相同 namespace 中的 code；重复编码不能自动选第一条。
+  scope: 本合成样本
+  version: '1'
+- id: noise
+  title: 午餐安排
+  text: 食堂营业时间与记录关联无关。
+  scope: 其他话题
+  version: '1'

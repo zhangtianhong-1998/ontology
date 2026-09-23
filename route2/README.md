@@ -7,13 +7,16 @@
 - [安装、模拟运行、LLM 环境变量与实现边界](../docs/route2/IMPLEMENTED.md)
 - [RIGOR 源码对照与本轮改造](../docs/route2/RIGOR_COMPARISON.md)
 - [当前可运行配置](config/runtime.mock.yaml)
-- [测试说明与未覆盖范围](../docs/route2/TESTING.md)
+- [验证结果与未覆盖范围](../docs/route2/VALIDATION_REPORT.md)
 - [LLM 环境变量示例](.env.example)
 - [原型代码](code/ontology_r2/cli.py)
 - [需求与 US](../docs/route2/requirements.md)、[SDD](../docs/route2/SDD.md)、[开发任务](../docs/route2/implementation.md)
 - [字段统计与关联发现详细设计](../docs/route2/FIELD_PROFILING_DESIGN.md)、[方案比较与合成验证](../docs/route2/FIELD_ASSOCIATION_EVALUATION.md)
+- [Windows 11 无 Docker 离线运行与 DataHub 文件导出](../docs/route2/DATAHUB_OFFLINE.md)
 - [上游代码与模型版本](resources.yaml)、[本体文件入口](ontologies/sources.yaml)
 
-`code/RIGOR`、`code/AgentScope` 是未修改的上游源码；`code/ontology_r2` 是本项目原型。此路线没有 SAND、GRAMS 或 Steiner Tree 依赖。`config/example.yaml` 是较完整设计的配置草案，实际运行请用 `runtime.mock.yaml`。
+`code/RIGOR`、`code/AgentScope` 是未修改上游源码的 Git 子模块指针，查看源码时需在线初始化或提前转移；运行 `code/ontology_r2` 原型不需要它们。此路线没有 SAND、GRAMS 或 Steiner Tree 依赖。`config/example.yaml` 是较完整设计的配置草案，实际运行请用 `runtime.mock.yaml`。
 
-字段统计升级仍处于设计阶段，参数草案为 `config/profiling.design.yaml`；现有 CLI 不支持该文件。`design/field_association` 仅验证统计口径，不替代正式候选发现模块。
+当前 `profiling.py` 已按列组统计 CSV 快照，`discovery.py` 以有限字段倒排和精确核验提出关联候选，并在构建前给 LLM 提供证据；预算外范围单独报告。它们尚未完成结构化引用、条件自动发现和业务关系接受。`config/profiling.design.yaml` 仍是设计草案，不是运行配置。
+
+无 Docker 的目标电脑继续运行本地原型。`ontology-r2 export-datahub` 可将已有 `meta_graph.yaml` 中的表/列元数据导出为 DataHub metadata-file；需要本地查询时，可另装 DataHub Lite，但 Lite 不提供图遍历或血缘。
