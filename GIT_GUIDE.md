@@ -1,11 +1,11 @@
 # 获取和维护三个路线
 
-本分支只包含代码、需求设计和运行所需的契约、配置示例。独立提交历史从代码包开始；原研究资料保留在 `main` 分支。当前默认分支为 `codex/three-routes`。
+本分支只包含代码、需求设计和运行所需的契约、配置示例。独立提交历史从代码包开始；原研究资料保留在 `main` 分支。当前默认分支为 `xuanyue`。
 
 ## 获取代码
 
 ```bash
-git clone --branch codex/three-routes https://github.com/zhangtianhong-1998/ontology.git
+git clone --branch xuanyue https://github.com/zhangtianhong-1998/ontology.git
 cd ontology
 git -c core.precomposeunicode=false submodule update --init --recursive
 ```
