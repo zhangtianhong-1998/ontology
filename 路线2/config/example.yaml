@@ -1,0 +1,63 @@
+config_version: "0.1"
+# 完整流程的旧设计草案，不是当前 CLI 配置。
+# 字段统计与候选发现的新设计参数另见 profiling.design.yaml，尚未接入运行。
+route: route2
+profile: E2F
+model_profile: ../ontologies/internal_model.yaml
+input:
+  root: "${DATASET_DIR}"
+  metadata_dir: schema
+  data_dir: data
+  read_csv: true
+  scope: sample
+batch:
+  rows: 10000
+  memory_limit: 4GB
+  use_disk_spill: true
+  candidate_top_k_lexical: 10
+  candidate_top_k_semantic: 10
+  max_ambiguous_groups: 2000
+  max_group_input_tokens: 6000
+plans:
+  max_initial_examples_per_table: 30
+  role_filter: soft
+  uncovered_record_fallback: true
+  allowed_extractors: [identifier_lookup, formula_binding, text_match, dimension_reference, member_reference, allowed_member_rule]
+llm:
+  model: "${ONTOLOGY_LLM_MODEL}"
+  base_url: "${ONTOLOGY_LLM_BASE_URL}"
+  api_key_env: ONTOLOGY_LLM_API_KEY
+  temperature: 0
+  max_repairs: 2
+  timeout_seconds: 60
+  max_calls: 6000
+  max_total_tokens: 8000000
+embedding:
+  enabled: false
+  model: null
+# 先完成词法基线；开启语义召回时必须填写并记录 embedding 模型版本。
+external_ontology:
+  enabled: true
+  allow_network_imports: false
+  top_k: 5
+  sources:
+    - id: kpionto
+      format: rdf
+      path: "../ontologies/KPIOnto/kpionto.ttl"
+      version: "1c36644a40123447fb6469b9832865b4b4c2f7ba"
+      sha256: "1cb6a3a81ecaeb76d2ef592181d80339ce98c09bac60f8558e8f37a0b7cebef2"
+enterprise_rag:
+  enabled: true
+  adapter: mcp
+  tool_mapping_file: "${ENTERPRISE_MCP_MAPPING_FILE}"
+  target_rounds: 3
+  max_rounds: 5
+  max_questions: 100
+  queries_per_round: 2
+  hits_per_query: 5
+  max_fragments_per_round: 5
+  max_context_tokens_per_question: 6000
+  tool_timeout_seconds: 30
+  max_tool_retries: 1
+  empty_context_on_no_evidence: true
+output: {root: ../runs, shard_size: 5000}

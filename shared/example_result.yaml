@@ -1,0 +1,103 @@
+# 完全合成的契约示例，不含用户数据，也不是一次模型运行结果。
+schema_version: "0.1"
+example_only: true
+model_profile: enterprise_base_v1
+ontology:
+  attributes:
+    - id: formula
+      label: 公式
+      definition: 指标定义中记录的原始公式表达式
+      relation_type: has
+      domain: [Metric]
+      literal_type: string
+  object_types:
+    - {id: API, parent: GeneralObject, label: 接口, definition: 提供数据服务的接口}
+    - {id: DimensionMember, parent: GeneralObject, label: 维度成员, definition: 特定编码体系内的维度取值}
+  relation_types:
+    - id: calculation_depends_on
+      parent: depends_on
+      kind: object
+      domain: [Metric]
+      range: [Measure, Metric]
+      definition: 指标的公式显式引用目标度量或指标
+    - id: serves_dimension
+      parent: points_to
+      kind: object
+      domain: [API]
+      range: [Dimension]
+      definition: 接口明确提供目标维度的取值
+    - id: allows_member
+      parent: related_to
+      kind: object
+      domain: [API]
+      range: [DimensionMember]
+      definition: 在给定作用域内接口明确允许目标维度成员
+objects:
+  - {id: "demo:metric:GM:v1", type: Metric, label: 毛利额, identity_scope: "demo/v1", evidence_ids: [ev_formula]}
+  - {id: "demo:measure:REV:v1", type: Measure, label: 营业收入, identity_scope: "demo/v1", evidence_ids: [ev_measures]}
+  - {id: "demo:measure:COST:v1", type: Measure, label: 营业成本, identity_scope: "demo/v1", evidence_ids: [ev_measures]}
+  - {id: "demo:api:A01:v1", type: API, label: 区域查询接口, identity_scope: "demo/v1", evidence_ids: [ev_region_rule]}
+  - {id: "demo:dimension:REGION:v1", type: Dimension, label: 地区, identity_scope: "demo/v1", evidence_ids: [ev_regions]}
+  - {id: "demo:member:REGION:EAST:v1", type: DimensionMember, label: 华东, identity_scope: "demo/REGION/v1", evidence_ids: [ev_regions]}
+assertions:
+  - id: a_formula
+    subject: "demo:metric:GM:v1"
+    predicate: has
+    attribute: formula
+    literal: {type: string, value: "REV - COST"}
+    scope: {namespace: demo, version: v1}
+    condition: {status: not_applicable}
+    evidence_ids: [ev_formula]
+    decision: {status: accepted, method: source_copy}
+  - id: a_dep_rev
+    subject: "demo:metric:GM:v1"
+    predicate: calculation_depends_on
+    object: "demo:measure:REV:v1"
+    scope: {namespace: demo, version: v1}
+    condition: {status: not_applicable}
+    evidence_ids: [ev_formula, ev_measures]
+    decision: {status: accepted, method: parsed_symbol_binding}
+  - id: a_dep_cost
+    subject: "demo:metric:GM:v1"
+    predicate: calculation_depends_on
+    object: "demo:measure:COST:v1"
+    scope: {namespace: demo, version: v1}
+    condition: {status: not_applicable}
+    evidence_ids: [ev_formula, ev_measures]
+    decision: {status: accepted, method: parsed_symbol_binding}
+  - id: a_api_dimension
+    subject: "demo:api:A01:v1"
+    predicate: serves_dimension
+    object: "demo:dimension:REGION:v1"
+    scope: {namespace: demo, version: v1}
+    condition: {status: not_applicable}
+    evidence_ids: [ev_region_rule, ev_regions]
+    decision: {status: accepted, method: explicit_reference}
+  - id: a_api_east
+    subject: "demo:api:A01:v1"
+    predicate: allows_member
+    object: "demo:member:REGION:EAST:v1"
+    scope: {namespace: demo, api_id: A01, version: v1}
+    condition:
+      status: known
+      expression: {op: eq, field_ref: demo.api_region_rule.rule_kind, value: allowed}
+      evidence_ids: [ev_region_rule]
+    evidence_ids: [ev_region_rule, ev_regions]
+    decision: {status: accepted, method: explicit_allowed_member_rule}
+evidence:
+  - id: ev_formula
+    origin: observed_record
+    source_ref: {kind: synthetic_csv, table: demo.metric, record_key: {code: GM, version: v1}, columns: [formula]}
+    raw_fragment: "formula=REV - COST"
+  - id: ev_measures
+    origin: observed_record
+    source_ref: {kind: synthetic_csv, table: demo.measure, columns: [code, name, version], locator: "records REV/v1 and COST/v1"}
+    raw_fragment: "REV=营业收入; COST=营业成本; namespace=demo; version=v1"
+  - id: ev_region_rule
+    origin: observed_record
+    source_ref: {kind: synthetic_csv, table: demo.api_region_rule, record_key: {api_id: A01, version: v1}, columns: [dimension_code, member_code, rule_kind]}
+    raw_fragment: "dimension_code=REGION; member_code=EAST; rule_kind=allowed"
+  - id: ev_regions
+    origin: observed_record
+    source_ref: {kind: synthetic_csv, table: demo.region_definition, columns: [dimension_code, member_code, member_name], locator: "REGION and REGION/EAST definitions"}
+    raw_fragment: "REGION=地区; REGION/EAST=华东; namespace=demo; version=v1"

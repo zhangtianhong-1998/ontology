@@ -1,0 +1,11 @@
+# 路线1 / 子路线1
+
+无外部本体、无企业 MCP；仅处理 YAML 元数据。
+
+- [RIGOR 源码](code/RIGOR/README.md)
+- [本地模型清单](ontologies/sources.yaml)
+- [运行配置](config/no_external.yaml)
+- [源码和模型版本](resources.yaml)
+- [共同需求与 US](../requirements.md)、[SDD](../SDD.md)、[开发任务](../implementation.md)
+
+上游源码通过 Git 子模块获取，YAML 改造引擎尚未实现。源码附带演示材料不会自动作为实验输入；业务示例不代表真实输入内容。

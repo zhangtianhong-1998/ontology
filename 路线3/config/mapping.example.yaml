@@ -1,0 +1,40 @@
+# 合成契约示例，不能直接用于未知真实字段。
+schema_version: "0.1"
+example_only: true
+rules:
+  - id: parameter_points_to_metric
+    version: "1"
+    ontology_version: example_frozen_v1
+    source_table: catalog.api_output
+    required_columns: [api_id, api_version, parameter_path, namespace, semantic_kind, metric_code, metric_version]
+    selector:
+      op: eq
+      field_ref: catalog.api_output.semantic_kind
+      value: metric
+    subject:
+      type: Parameter
+      key_fields: [namespace, api_id, api_version, parameter_path]
+      identity_scope: source_local
+    operation: identifier_lookup
+    target:
+      type: Metric
+      table: catalog.metric_definition
+      key_fields: [namespace, metric_code, version]
+      bindings:
+        namespace: {source_field: namespace}
+        metric_code: {source_field: metric_code}
+        version: {source_field: metric_version}
+      expected_targets: one
+    predicate: points_to
+    scope:
+      namespace: {source_field: namespace}
+      api_id: {source_field: api_id}
+      api_version: {source_field: api_version}
+    condition: {status: not_applicable}
+    evidence_policy:
+      required_fields: [semantic_kind, metric_code, metric_version]
+      required_claims: [reference_role_supported, target_identity_resolved, scope_compatible]
+    generalization:
+      status: unvalidated
+      allowed_snapshot_ids: [example_snapshot]
+      outside_scope: unresolved

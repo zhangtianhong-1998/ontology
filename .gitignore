@@ -1,0 +1,32 @@
+# Local settings and generated artifacts
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.cache/
+runs/
+*.duckdb
+*.sqlite
+build/
+local_data/
+local_config/
+
+# Optional CDM data stays local.
+**/ontologies/CDM/schemaDocuments/
+
+# This repository contains code and design documents only.
+.DS_Store
+.AppleDouble
+__MACOSX/
+fixtures/
+data/
+**/ontologies/*/
+**/design/field_association/results-*.yaml
+*.csv
+*.pdf
+*.pptx
+*.zip
+*.tar.gz

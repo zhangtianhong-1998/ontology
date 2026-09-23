@@ -1,0 +1,4 @@
+# Retain source bytes so resource and fixture hashes survive checkout.
+**/ontologies/** -text
+**/fixtures/** -text
+*.csv whitespace=cr-at-eol

@@ -1,0 +1,43 @@
+schema_version: "0.1"
+profile_id: enterprise_base_v1
+origin: user_confirmed_roots
+object_roots:
+  - id: GeneralObject
+    label: 一般对象
+  - id: Measure
+    label: 度量
+  - id: Metric
+    label: 指标
+  - id: Dimension
+    label: 维度
+  - id: Term
+    label: 术语
+relation_roots:
+  - id: contains
+    label: 包含
+    kind: object
+  - id: depends_on
+    label: 依赖
+    kind: object
+  - id: related_to
+    label: 关联
+    kind: object
+  - id: points_to
+    label: 指向
+    kind: object
+  - id: has
+    label: 具有
+    kind: data
+# 以下为原型实现约定，不是新增的业务公理。
+derivation_policy:
+  allow_new_roots: false
+  single_parent: true
+  inherit_relation_kind: true
+  allow_domain_range_narrowing: true
+  allow_domain_range_widening: false
+  inferred_symmetry: false
+  inferred_transitivity: false
+  inferred_disjointness: false
+literal_types: [string, integer, decimal, boolean, date, datetime]
+constraint_operators: [required, unique_within_scope, type_in, cardinality, acyclic]
+condition_operators: [eq, in, and, or, range]

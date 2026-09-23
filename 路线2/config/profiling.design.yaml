@@ -1,0 +1,69 @@
+schema_version: field-discovery-0.1
+implementation_status: design_only
+runtime_supported: false
+# 这是下一阶段设计参数，不要作为 ontology-r2 build 的可运行配置。
+# 数值是实验起点，均不构成接受业务关系的阈值。
+input:
+  scope: sample
+  csv_null_policy: record_export_convention_or_unknown
+  preserve_raw_values: true
+  normalization: identity
+profiling:
+  sql_columns_per_group: 32
+  memory_limit: 1GB
+  sql_timeout_seconds: 60
+  max_temp_disk_gb: 10
+  candidate_exact_frequency_cardinality_hint: 4096
+  top_values: 8
+  exact_check_declared_and_candidate_keys: true
+  structured:
+    sample_then_targeted_scan: true
+    max_json_depth: 6
+    max_paths_per_column: 64
+    max_cell_bytes: 65536
+    max_elements_per_record: 100
+  samples:
+    seed: 20260923
+    content_hash_algorithm: sha256
+    max_records_per_table: 48
+    quotas: {stable_hash: 16, frequent: 8, rare_structure: 16, counterexample: 8}
+    max_supplement_rounds: 1
+    max_supplement_records_per_question: 16
+    over_budget: record_uncovered_groups
+candidate_discovery:
+  strategy: metadata_value_text_union
+  max_per_source_per_channel: 20
+  max_candidates_total: 2000
+  max_indexed_fields_per_common_value: 32
+  preserve_declared_candidates: true
+  max_inferred_key_width: 3
+  max_condition_columns_per_source: 4
+  max_values_per_condition_column: 32
+  max_condition_depth: 2
+  max_condition_hypotheses_per_candidate: 64
+  unknown_role_fallback: bounded_value_and_text
+  require_exact_validation_after_sketch: true
+  over_budget: queued_not_processed
+semantic_planning:
+  framework: agentscope
+  reuse_global_llm_budget: true
+  unit: candidate_problem_group
+  request_additional_candidates: bounded
+  record_level_llm_by_default: false
+optional_algorithms:
+  minhash_lsh_ensemble: {enabled: false, role: candidate_retrieval_only}
+  external_ind_engine: {enabled: false, candidates: [SPIDER, BINDER, SINDY]}
+  embedding: {enabled: false, role: semantic_candidate_retrieval}
+acceptance:
+  automatic_fk_declaration: false
+  statistical_overlap_is_semantic_proof: false
+  require_reference_role_evidence: true
+  require_scope_and_condition_check: true
+  require_unique_target_for_single_reference: true
+  sample_missing_means: missing_in_input
+outputs:
+  profiles: field_profiles.yaml
+  samples: sample_manifest.yaml
+  candidates: field_candidates.yaml
+  exact_checks: association_checks.yaml
+  coverage: discovery_coverage.yaml

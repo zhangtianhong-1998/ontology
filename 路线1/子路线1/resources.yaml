@@ -1,0 +1,9 @@
+schema_version: '0.1'
+package_scope: code_and_design_only
+resources:
+- id: RIGOR
+  kind: source_code
+  path: code/RIGOR
+  url: https://github.com/NadeenAhmad/RIGOR.git
+  commit: 623eedf3e68b3774f36d20215caff4319a0b988a
+  delivery: git_submodule

@@ -1,0 +1,151 @@
+"""Schema -> bounded planning/RAG -> deterministic extraction -> validated YAML."""
+import asyncio
+import json
+import time
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+from .incremental import construct
+from .llm import BudgetExceeded, StructuredLLM
+from .relations import Extractor
+from .storage import Dataset, Sink, digest, read_yaml, write_yaml
+
+
+def load_config(path):
+    path = Path(path).resolve()
+    config = read_yaml(path)
+    for key in ("dataset", "model_profile", "env_file"):
+        if key in config:
+            config[key] = str((path.parent / config[key]).resolve())
+    for key in ("responses", "cache_dir"):
+        if config.get("llm", {}).get(key):
+            config["llm"][key] = str((path.parent / config["llm"][key]).resolve())
+    for source in config.get("external", {}).get("sources", []):
+        source["path"] = str((path.parent / source["path"]).resolve())
+    mcp = config.get("mcp", {})
+    if mcp.get("mock_documents"):
+        import sys
+        mcp["command"] = sys.executable
+        mcp["args"] = ["-m", "ontology_r2.mock_mcp", "--documents", str((path.parent / mcp["mock_documents"]).resolve())]
+    return config
+
+
+def technical_graph(data):
+    nodes, edges = [{"id": "snapshot:" + data.snapshot_id, "kind": "DatasetSnapshot"}], []
+    for path, sha in sorted(data.files.items()):
+        nodes.append({"id": "source:" + path, "kind": "Source", "path": path, "sha256": sha})
+        edges.append({"source": "snapshot:" + data.snapshot_id, "type": "includes_source", "target": "source:" + path})
+    for name, t in data.tables.items():
+        metadata_file = data.evidence["schema:" + name]["source_ref"]["file"]
+        nodes.append({"id": name, "kind": "Table", **{k: t.get(k) for k in ("schema", "table_name", "table_comment", "relkind", "estimated_rows", "total_size", "data_size")}, "observed_rows": t["rows"]})
+        edges.append({"source": name, "type": "documented_by", "target": "source:" + metadata_file})
+        edges.append({"source": name, "type": "sample_from", "target": "source:" + str(Path(t["csv_path"]).relative_to(data.root))})
+        for index, constraint in enumerate(t["constraints"]):
+            cid = name + ":constraint:" + str(index)
+            nodes.append({"id": cid, "kind": "Constraint", **constraint})
+            edges.append({"source": name, "type": "has_declared_constraint", "target": cid})
+            edges.append({"source": cid, "type": "documented_by", "target": "source:" + metadata_file.replace("schema/tables/", "schema/constraints/", 1)})
+        for c in t["columns"]:
+            cid = name + "." + c["column_name"]
+            nodes.append({"id": cid, "kind": "Column", **c})
+            edges.append({"source": name, "type": "table_has_column", "target": cid})
+        for fk in t["foreign_keys"]:
+            edges.append({"source": name + "." + fk["column_name"], "type": "declared_fk", "target": fk["referenced_schema"] + "." + fk["referenced_table"] + "." + fk["referenced_column"], "raw": fk})
+    known = {node["id"] for node in nodes}
+    for edge in edges:
+        if edge["target"] not in known:
+            nodes.append({"id": edge["target"], "kind": "ExternalColumnReference", "availability": "not_in_input"})
+            known.add(edge["target"])
+    return {"nodes": nodes, "edges": edges, "lineage_source_available": False}
+
+
+def check_output(sink):
+    checks = {}
+    for field in ("subject", "object"):
+        sql = "SELECT count(*) FROM items a WHERE a.kind='assertions' AND json_extract(a.body, ?) IS NOT NULL AND NOT EXISTS (SELECT 1 FROM items o WHERE o.kind='objects' AND o.id=json_extract(a.body, ?))"
+        checks["dangling_" + field] = sink.db.execute(sql, ("$." + field, "$." + field)).fetchone()[0]
+    checks["missing_evidence"] = sink.db.execute("SELECT count(*) FROM items a, json_each(a.body, '$.evidence_ids') e WHERE a.kind IN ('assertions','objects','rules') AND NOT EXISTS (SELECT 1 FROM items v WHERE v.kind='evidence' AND v.id=e.value)").fetchone()[0]
+    checks["dangling_rule_member"] = sink.db.execute("SELECT count(*) FROM items a, json_each(a.body, '$.members') e WHERE a.kind='rules' AND NOT EXISTS (SELECT 1 FROM items v WHERE v.kind='objects' AND v.id=e.value)").fetchone()[0]
+    checks["mixed_literal_object"] = sink.db.execute("SELECT count(*) FROM items WHERE kind='assertions' AND (json_type(body,'$.object') IS NOT NULL) = (json_type(body,'$.literal') IS NOT NULL)").fetchone()[0]
+    return {"passed": not any(checks.values()), "checks": checks, "semantic_quality": "requires_independent_evaluation"}
+
+
+async def build(config, output):
+    output = Path(output).resolve()
+    output.mkdir(parents=True, exist_ok=False)
+    (output / "work").mkdir()
+    start = time.monotonic()
+    data = sink = llm = None
+    code_hash = digest({p.name: p.read_text() for p in sorted(p for p in Path(__file__).parent.iterdir() if p.suffix in (".py", ".html"))})
+    manifest = {"status": "failed", "implementation": "rigor_adapted_incremental_yaml_prototype", "implementation_code_hash": code_hash, "config_hash": digest(config), "data_scope": config.get("data_scope", "sample"), "synthetic": config.get("synthetic", False)}
+    manifest.update(input_root=config["dataset"], experiment_profile=config.get("experiment_profile"), source_channels={"mcp": config.get("mcp", {}).get("enabled", False), "external": config.get("external", {}).get("enabled", False)}, runtime_limits={"llm": {k: v for k, v in config["llm"].items() if k.startswith("max_") or k in ("mode", "timeout_seconds")}, "processing": config.get("processing", {}), "memory_limit": config.get("memory_limit", "1GB")})
+    try:
+        load_dotenv(config.get("env_file"), override=False)
+        profile = read_yaml(config["model_profile"])
+        data = Dataset(config["dataset"], output / "work", config.get("memory_limit", "1GB"))
+        sink = Sink(output, config.get("shard_size", 5000))
+        llm = StructuredLLM(config["llm"], output)
+        manifest.update(snapshot_id=data.snapshot_id, input_files=data.files, input_tables=len(data.tables), input_records=sum(t["rows"] for t in data.tables.values()), model_profile_hash=digest(profile))
+        write_yaml(output / "meta_graph.yaml", technical_graph(data))
+        write_yaml(output / "profiles.yaml", {name: t["profiles"] for name, t in data.tables.items()})
+        plan, ontology, knowledge = await construct(data, profile, config, output, llm, manifest)
+        for ev in data.evidence.values():
+            sink.put("evidence", ev)
+        extractor = Extractor(data, sink, plan, llm, config.get("processing", {}))
+        materialized = 0
+        if config.get("processing", {}).get("materialize_all_objects", True):
+            cap = config.get("processing", {}).get("max_object_records", 1000000)
+            for t in plan.tables:
+                for row in data.rows(t.table):
+                    if materialized >= cap:
+                        manifest["object_materialization_partial"] = True
+                        break
+                    extractor.object(t.table, row)
+                    materialized += 1
+        stats = await extractor.execute()
+        write_yaml(output / "coverage.yaml", {"tables": [{"table": name, "input_records": t["rows"], "object_plan": name in extractor.tables, "source_relation_plans": [p.id for p in plan.relations if p.source_table == name]} for name, t in data.tables.items()], "relation_plans": stats["plans"], "implicit_relation_recall": "unknown; absent plans do not prove absence of business relations"})
+        unmodeled_tables = sorted(data.tables.keys() - {t.table for t in plan.tables})
+        manifest["unmodeled_tables"] = unmodeled_tables
+        for table in unmodeled_tables:
+            sink.put("unresolved", {"id": "unmodeled:" + table, "reason": "unmodeled_table", "table": table, "count": data.tables[table]["rows"]})
+        for table in manifest.get("incremental_units_not_accepted", []):
+            sink.put("unresolved", {"id": "semantic_unit:" + table, "reason": "semantic_increment_not_accepted", "table": table, "count": data.tables[table]["rows"]})
+        counts = sink.export()
+        validation = check_output(sink)
+        write_yaml(output / "validation.yaml", validation)
+        write_yaml(output / "metrics.yaml", {"counts": counts, "extraction": stats, "materialized_records": materialized, "llm": llm.metrics(), "semantic_quality": "synthetic_only" if config.get("synthetic") else "unjudged"})
+        partial = unmodeled_tables or stats["unprocessed_records"] or stats["semantic_budget_exhausted"] or manifest.get("object_materialization_partial") or manifest.get("knowledge_questions_not_processed") or any(k["status"] in ("error", "unavailable", "budget_exhausted") for k in knowledge) or manifest.get("external_import_incomplete") or manifest.get("incremental_units_not_accepted") or manifest.get("external_alignment_errors")
+        manifest["status"] = "failed" if not validation["passed"] else "partial" if partial else "complete"
+        manifest["ontology_hash"] = digest(ontology)
+        manifest["semantic_completeness"] = "unknown; complete describes execution only"
+    except Exception as exc:
+        manifest["status"] = "partial" if isinstance(exc, BudgetExceeded) else "failed"
+        manifest["error"] = {"type": type(exc).__name__, "message": str(exc) if isinstance(exc, (ValueError, BudgetExceeded, FileNotFoundError)) else "See stage trace; provider/tool details are not echoed"}
+        if llm:
+            llm.trace({"stage": "run_error", **manifest["error"]})
+        if sink:
+            sink.export()
+    finally:
+        if llm:
+            manifest["llm"] = llm.metrics()
+            try:
+                await llm.close()
+            except Exception as exc:
+                manifest["cleanup_error"] = type(exc).__name__
+        manifest["elapsed_seconds"] = round(time.monotonic() - start, 3)
+        write_yaml(output / "manifest.yaml", manifest)
+        for item in (sink, data):
+            if item:
+                item.close()
+        if config.get("visualization", {}).get("enabled", True):
+            from .visualization import render_viewer
+            try:
+                render_viewer(output, config.get("visualization", {}).get("max_nodes", 200))
+                manifest["viewer"] = "viewer.html"
+            except Exception as exc:
+                manifest["viewer_error"] = type(exc).__name__
+                if manifest["status"] == "complete":
+                    manifest["status"] = "partial"
+            write_yaml(output / "manifest.yaml", manifest)
+    return manifest

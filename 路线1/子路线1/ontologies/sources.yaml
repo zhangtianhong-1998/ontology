@@ -1,0 +1,9 @@
+schema_version: '0.1'
+path_base: this_file
+models:
+- id: internal_model
+  path: internal_model.yaml
+  format: yaml
+  role: internal_contract
+  sha256: ad2a796c25260e0714c789fc1be547111be372c402d3ebc7185efe990e3699b8
+  bundled: true

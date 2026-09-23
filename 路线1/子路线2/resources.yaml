@@ -1,0 +1,37 @@
+schema_version: '0.1'
+package_scope: code_and_design_only
+resources:
+- id: RIGOR
+  kind: source_code
+  path: code/RIGOR
+  url: https://github.com/NadeenAhmad/RIGOR.git
+  commit: 623eedf3e68b3774f36d20215caff4319a0b988a
+  delivery: git_submodule
+- id: gist
+  kind: reference_model
+  path: ontologies/gist
+  url: https://github.com/semanticarts/gist.git
+  commit: c73068bfe779db2643b1e43c920cc8039b15a013
+  scope: selected_model_files
+  delivery: not_bundled
+- id: KPIOnto
+  kind: reference_model
+  path: ontologies/KPIOnto
+  url: https://github.com/KDMG/kpionto.git
+  commit: 1c36644a40123447fb6469b9832865b4b4c2f7ba
+  scope: selected_model_files
+  delivery: not_bundled
+- id: CDM
+  kind: reference_model
+  path: ontologies/CDM
+  url: https://github.com/microsoft/CDM.git
+  commit: dd21d715e05ebf740a11356c80b5c3b4c38a89c2
+  scope: selected_model_files
+  delivery: not_bundled
+- id: Valueflows
+  kind: reference_model
+  path: ontologies/Valueflows
+  url: https://w3id.org/valueflows/ont/vf.ttl
+  commit: null
+  scope: selected_model_files
+  delivery: not_bundled

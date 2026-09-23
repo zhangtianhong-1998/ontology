@@ -1,0 +1,37 @@
+schema_version: '0.1'
+path_base: this_file
+models:
+- id: internal_model
+  path: internal_model.yaml
+  format: yaml
+  role: internal_contract
+  sha256: ad2a796c25260e0714c789fc1be547111be372c402d3ebc7185efe990e3699b8
+  bundled: true
+- id: gist
+  path: gist/ontologies/gistCore.ttl
+  format: rdf
+  role: external_reference
+  version: c73068bfe779db2643b1e43c920cc8039b15a013
+  use: select_per_experiment
+  bundled: false
+- id: KPIOnto
+  path: KPIOnto/kpionto.ttl
+  format: rdf
+  role: external_reference
+  version: 1c36644a40123447fb6469b9832865b4b4c2f7ba
+  use: select_per_experiment
+  bundled: false
+- id: CDM
+  path: CDM/schemaDocuments
+  format: cdm_json
+  role: external_reference
+  version: dd21d715e05ebf740a11356c80b5c3b4c38a89c2
+  use: select_per_experiment
+  bundled: false
+- id: Valueflows
+  path: Valueflows/vf.ttl
+  format: rdf
+  role: external_reference
+  version: 14f55dbbde163645f0bfbdce03190704f929a82223d7f40417d5aa041b2ac2ca
+  use: select_per_experiment
+  bundled: false
