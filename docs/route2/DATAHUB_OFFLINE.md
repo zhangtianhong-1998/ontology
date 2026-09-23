@@ -95,6 +95,8 @@ Copy-Item .\.env.example .\.env
 .\.venv-datahub\Scripts\python.exe .\scripts\import_datahub_lite.py .\runs\win-mock-001\datahub-metadata.json --catalog .\runs\win-mock-001\datahub-lite.duckdb
 ```
 
+该脚本在导入 DataHub SDK 前显式设置 `DATAHUB_TELEMETRY_ENABLED=false`。开发阶段用本机安装的 `datahub check metadata-file` 命令检查过导出格式：CLI 是本地程序，并非上传接口；但上游 CLI 默认启用使用情况遥测。若自行运行 CLI，请先在 PowerShell 执行 `$env:DATAHUB_TELEMETRY_ENABLED='false'`。路线2构建和 Lite 导入脚本都不要求运行 CLI。
+
 DataHub 官方也提供 [Lite 导入 metadata-file 的命令](https://github.com/datahub-project/datahub/blob/master/docs/datahub_lite.md#importing-from-a-file)。Lite 的本地导入只能验证文件互操作，不能验证图遍历或血缘。目标轮子的跨平台下载、依赖闭包检查和本地 Lite 读回已完成；**以上 Windows 安装、构建及导入命令尚未在 Windows 真机验证**。真机运行时应保留两个环境的 `pip check`、构建 `manifest.yaml` 和 Lite 导入结果。
 
 本机验证 DataHub CLI 时还出现了“Python 3.11 以上版本尚未积极测试”的上游提示。目标电脑的 Python 3.14.7 因而需要实机确认 Lite 行为；若 Lite 不兼容，可只为 Lite 另装 Python 3.11，路线2本地构建不依赖 Lite。

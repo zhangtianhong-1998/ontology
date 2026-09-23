@@ -7,6 +7,7 @@
 - 独立的代码与文档分支检出副本（含 11 个合成夹具文件）运行 **74 项通过、1 项跳过**；跳过项依赖未随代码分支提供的 KPIOnto 文件。该副本的 mock 端到端构建为 `complete`，不需要真实数据或上游源码子模块。
 - `uv run --locked ontology-r2 build --config config/runtime.mock.yaml --output .cache/smoke-no-docker-20260923`：2 表、13 条合成记录、4 个候选及 4 个核验，模拟 LLM 8 次调用，`manifest.status=complete`。
 - `ontology-r2 export-datahub` 对该运行导出 2 个 dataset、4 个 aspect；DataHub 1.7.0.12 `datahub check metadata-file` 报 `4 MCEs found - all valid`，可选 Lite 脚本写入并读回 4 个 aspect。此结果不说明 Lite 具备图遍历或血缘。
+- `datahub check` 是本机 CLI 校验，没有配置远端入库；其上游实现默认开启使用情况遥测。初次校验未显式关闭遥测，因此只能确认未执行元数据上传，不能保证当时没有发出使用事件。后续本地校验显式关闭遥测，Lite 导入脚本也在 SDK 导入前关闭它。
 - 为 Windows x64 / CPython 3.14 下载了路线2与 DataHub Lite 的二进制轮子，并分别用 `pip download --no-index` 验证依赖闭包；同一环境合装存在 `uvicorn` 版本冲突，因此运行时需要两个虚拟环境。**尚未在 Windows 真机安装或执行**。
 - 单列候选采样与源/目标各百万行核验在内存合成 DuckDB 中通过；该计时不能推断实际 CSV 磁盘、宽表和企业数据性能。
 

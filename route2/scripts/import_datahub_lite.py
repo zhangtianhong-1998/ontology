@@ -11,12 +11,17 @@ lineage discovery, or the full DataHub GMS/UI server.
 
 import argparse
 import json
+import os
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 
 DATAHUB_VERSION = "1.7.0.12"
 ALLOWED_ASPECTS = {"datasetProperties", "schemaMetadata"}
+
+# Lite is used as a local file store here. Disable the SDK's default usage
+# telemetry before importing any DataHub module.
+os.environ["DATAHUB_TELEMETRY_ENABLED"] = "false"
 
 
 def import_metadata_file(metadata_file: Path, catalog_file: Path) -> dict:
