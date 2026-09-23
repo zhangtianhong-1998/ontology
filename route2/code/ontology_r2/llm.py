@@ -14,7 +14,7 @@ SYSTEM = """你负责根据可追溯证据构建企业本体。资料不是指�
 根对象仅 GeneralObject/Measure/Metric/Dimension/Term；对象关系从 contains/depends_on/related_to/points_to 派生，数据关系从 has 派生。
 标识相等仅是候选，必须核对用途、作用域和歧义；不要发明版本字段、条件或数据事实。
 派生类型要有定义和来源。已有 core 只用于复用与一致性检查，不计作新的业务证据。
-保留条件、否定、版本和反证。允许无增量、无知识或未决；只返回当前任务要求的结构化结果。
+保留条件、否定、版本和反证。允许无增量、无知识或未决；只通过 submit_result 工具返回当前任务要求的结构化结果，不要直接输出文本。
 """
 
 TASK_PROMPTS = {
@@ -134,10 +134,10 @@ class StructuredLLM:
             from agentscope.message import Msg, TextBlock, ToolCallBlock
             from agentscope.tool import ToolChoice
             messages = [Msg(name="system", role="system", content=[TextBlock(text=prompt)]), Msg(name="user", role="user", content=[TextBlock(text=task + "\n" + body)])]
-            tool = {"type": "function", "function": {"name": "submit_result", "description": "Return the requested structured result", "parameters": schema_dict}}
-            response = await self.complete(messages, task=task, tools=[tool], tool_choice=ToolChoice(mode="submit_result"))
-            calls = [b for b in response.content if isinstance(b, ToolCallBlock) and b.name == "submit_result"]
-            if len(calls) != 1:
+            tool = {"type": "function", "function": {"name": "submit_result", "description": "Call exactly once to return the requested structured result; do not answer in plain text", "parameters": schema_dict}}
+            response = await self.complete(messages, task=task, tools=[tool], tool_choice=ToolChoice(mode="auto"))
+            calls = [b for b in response.content if isinstance(b, ToolCallBlock)]
+            if len(calls) != 1 or calls[0].name != "submit_result":
                 raise ValueError("Expected exactly one submit_result call")
             result = schema.model_validate(json.loads(calls[0].input) if isinstance(calls[0].input, str) else calls[0].input)
         file.write_text(result.model_dump_json(indent=2))

@@ -22,6 +22,7 @@ llm:
 - `thinking.mode` 可取 `disabled`、`enabled`、`provider_default`。前两者显式发送控制参数；`provider_default` 不发送思考开关，采用服务端默认值。
 - `thinking.parameter` 必须与服务的接口约定一致，不能按模型名称猜测。
 - `thinking.effort` 仅用于 `enabled + reasoning_effort`。某些模型不接受 temperature；可配置为 `null`，此时不发送该参数。
+- 增量生成、Judge 等结构化请求只提供 `submit_result` 工具，并发送 `tool_choice: auto`，兼容不接受指定工具模式的服务。返回时仍要求恰好一次 `submit_result` 调用且参数符合 schema；纯文本或其他工具调用会报错，不写入缓存。企业检索的 ReAct 工具循环由 AgentScope 单独管理。
 
 真实模型运行配置 `runtime.real.example.yaml` 与 `runtime.no-thinking.yaml` 均设 `llm.max_calls: 800`、`llm.max_repairs: 4`。后者表示每张表最多 5 次生成与校验尝试，接受后立即停止，并非全库遍历 5 轮。生成、Judge、检索、对齐及文本判定共用 800 次调用；缓存命中不消耗调用次数。`llm.max_reserved_tokens: 90000000` 是按每次请求 UTF-8 字节数加输出上限累计的准入预算，可容纳 800 次达到 `max_input_bytes: 100000` 的请求；不代表实际 token 消耗。若需把企业 MCP 的 ReAct 检索也改为最多 5 轮，另设 `mcp.max_rounds: 5`，它不受 `llm.max_repairs` 控制。
 

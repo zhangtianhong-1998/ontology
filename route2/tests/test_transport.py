@@ -42,9 +42,11 @@ def provider(monkeypatch, answer, *, finish="tool_calls", delay=0, reject=False)
             common = {"id": "response-" + str(len(requests)), "created": 1, "model": "local-test"}
             usage = {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
             if not body["stream"]:
+                message = {"role": "assistant", "content": arguments} if name is None else {
+                    "role": "assistant", "content": None, "reasoning_content": "hidden-reasoning-marker",
+                    "tool_calls": [{"id": "call-" + str(len(requests)), "type": "function", "function": {"name": name, "arguments": arguments}}]}
                 payload = {**common, "object": "chat.completion", "choices": [{"index": 0, "finish_reason": finish,
-                    "message": {"role": "assistant", "content": None, "reasoning_content": "hidden-reasoning-marker",
-                    "tool_calls": [{"id": "call-" + str(len(requests)), "type": "function", "function": {"name": name, "arguments": arguments}}]}}], "usage": usage}
+                    "message": message}], "usage": usage}
                 raw = json.dumps(payload).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -125,6 +127,7 @@ def test_full_extraction_json_and_sse_with_explicit_thinking_disabled(tmp_path, 
     assert len(requests) == result["llm"]["calls"] == 4
     assert result["llm"]["provider_reported_tokens"] == 80
     assert all(b["stream"] is stream and all(b[k] == v for k, v in expected.items()) for b in requests)
+    assert all(b["tool_choice"] == "auto" for b in requests)
     events = (tmp_path / "run/trace.jsonl").read_text()
     assert "hidden-reasoning-marker" not in events and "local-test-secret" not in events
     assert ("llm_stream_delta" in events) is stream
@@ -171,6 +174,16 @@ def test_incomplete_outputs_are_rejected_without_cache(tmp_path, monkeypatch, st
             asyncio.run(ask_once(llm))
     assert len(requests) == llm.calls == 1
     assert not list(llm.cache.glob("*.json"))
+
+
+@pytest.mark.parametrize("name,finish", [(None, "stop"), ("unexpected_tool", "tool_calls")])
+def test_auto_choice_rejects_non_result_responses(tmp_path, monkeypatch, name, finish):
+    with provider(monkeypatch, lambda body, number: (name, {"accepted": True}), finish=finish) as requests:
+        llm = StructuredLLM({"mode": "agentscope", "stream": False}, tmp_path)
+        with pytest.raises(ValueError, match="Expected exactly one submit_result call"):
+            asyncio.run(ask_once(llm))
+    assert requests[0]["tool_choice"] == "auto"
+    assert llm.calls == 1 and not list(llm.cache.glob("*.json"))
 
 
 def test_stream_consumption_deadline_and_provider_rejection_do_not_fallback(tmp_path, monkeypatch):
