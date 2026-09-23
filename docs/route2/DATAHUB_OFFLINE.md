@@ -20,7 +20,7 @@
 
 ## 1. 准备离线材料
 
-在联网机器用有权限的账户下载私有仓库的 `xuanyue` 分支，例如 `git clone --branch xuanyue --single-branch https://github.com/zhangtianhong-1998/ontology.git`，并准备 Windows 11 x64 的 Python 3.14.7 安装包。路线2运行不需要初始化 RIGOR、AgentScope 等参考源码子模块。把代码和离线依赖包复制到目标 Windows 机器。安装脚本的 `-Bundle` 参数指向如下目录：
+在联网机器直接克隆公开仓库的 `xuanyue` 分支，例如 `git clone --branch xuanyue --single-branch https://github.com/zhangtianhong-1998/ontology.git`，并准备 Windows 11 x64 的 Python 3.14.7 安装包。路线2运行不需要初始化 RIGOR、AgentScope 等参考源码子模块。把代码和离线依赖包复制到目标 Windows 机器。安装脚本的 `-Bundle` 参数指向如下目录：
 
 ```text
 bundle\
