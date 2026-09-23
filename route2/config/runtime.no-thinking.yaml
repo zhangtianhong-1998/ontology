@@ -18,11 +18,13 @@ llm:
     effort: medium
   mode: agentscope
   responses: ../fixtures/linked/mock_llm.yaml
-  max_calls: 30
-  max_reserved_tokens: 2000000
+  # Live-model budget; the deterministic mock config retains its smaller limit.
+  max_calls: 800
+  max_reserved_tokens: 90000000
   max_input_bytes: 100000
   max_output_tokens: 4096
-  max_repairs: 1
+  # One initial attempt plus four repairs per table.
+  max_repairs: 4
   timeout_seconds: 60
 mcp:
   enabled: true

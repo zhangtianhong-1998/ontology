@@ -6,7 +6,9 @@
 
 实际流程：导入与分组字段统计 → 有界字段候选及精确核验 → 全表全字段直接映射 → 按声明依赖遍历工作单元 → 候选证据、原生 ReAct/MCP 知识和外部模型对齐 → 生成 delta → 候选合并与程序校验 → Judge/修正复核 → 接受增量或保留旧 core → 批量记录抽取 → 本地结果页面。候选统计不是已接受的业务关系。
 
-增量构建只遍历一次表目录，每张表对应一个工作单元；23 张表就是 23 个单元，不存在反复遍历全图直至收敛的外层循环。每表最多尝试 `llm.max_repairs + 1` 次；当前 `runtime.real.example.yaml` 为 `max_repairs: 1`，即最多 2 次。每次先生成并校验增量，校验通过后再交给 Judge；成功后立即进入下一表，失败则保留原 core，运行结束也不会自动回访。`manifest.yaml` 和 `construction.yaml` 的 `iteration_policy`、`steps[*].attempts` 记录配置与实际尝试。MCP ReAct 的检索轮数是另一层预算，默认最多 3 轮、可配置至 5 轮，另有结构化收尾；这些调用与生成、Judge、外部对齐和文本关联共享 `llm.max_calls`。若 23 张表均尝试 2 次且每次都进入 Judge，仅生成与 Judge 理论上就需 92 次调用，真实示例总预算为 100 次，可能提前耗尽。
+增量构建只遍历一次表目录，每张表对应一个工作单元；23 张表就是 23 个单元，不存在反复遍历全图直至收敛的外层循环。每表最多尝试 `llm.max_repairs + 1` 次；两个真实模型配置 `runtime.real.example.yaml`、`runtime.no-thinking.yaml` 都设为 `max_repairs: 4`，即每表最多 5 次。每次先生成并校验增量，校验通过后交给 Judge；成功后立即进入下一表，失败则保留原 core，不会自动回访。`manifest.yaml` 和 `construction.yaml` 的 `iteration_policy`、`steps[*].attempts` 记录配置与实际尝试。
+
+两个真实模型配置的共享调用上限为 800 次。若 23 张表都用满 5 次且每次都进入 Judge，仅生成与 Judge 最多需 230 次；成功提前结束时调用数更少。MCP ReAct 检索轮数是另一层预算，当前默认最多 3 轮、可配置至 5 轮；其调用与生成、Judge、外部对齐和文本关联共用这 800 次。`max_reserved_tokens: 90000000` 避免旧的 200 万预留额度先于 800 次调用耗尽；预留按请求字节数加输出上限计算，并非实际 token 用量或费用。模拟配置仍保持较小预算。
 
 运行时默认向 **stderr** 输出导入 CSV、字段统计、候选召回及核验、增量工作单元、对象物化、关系记录、按需构建文本索引、YAML 分片、结果校验和页面生成进度；stdout 保留最终 JSON。终端显示单行进度条，日志/管道环境按阶段或里程碑输出，避免逐行刷屏。可在 YAML 中设置 `progress.enabled: false`，或用 `build --no-progress` 关闭；`progress.min_interval_seconds` 控制终端刷新间隔。记录进度的总量以本次配置的记录上限为界，显示 100% 不代表预算外记录也已处理，未处理范围仍以 `manifest.yaml` 和 `coverage.yaml` 为准。
 

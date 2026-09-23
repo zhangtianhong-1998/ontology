@@ -24,11 +24,15 @@ llm:
     mode: disabled
     parameter: chat_template_kwargs
     effort: medium
-  max_calls: 100
-  max_reserved_tokens: 2000000
+  # Shared by generation, Judge, retrieval, alignment, and semantic matching.
+  max_calls: 800
+  # admit() reserves UTF-8 request bytes + max_output_tokens per call.
+  # 90M covers 800 calls even at the 100K input-byte limit.
+  max_reserved_tokens: 90000000
   max_input_bytes: 100000
   max_output_tokens: 4096
-  max_repairs: 1
+  # One initial attempt plus four repairs per table; the table pass remains one.
+  max_repairs: 4
   timeout_seconds: 60
 # Optional local semantic recall for external ontology cards and accepted core. Set enabled to
 # true after placing the model at ONTOLOGY_EMBEDDING_MODEL_PATH in .env.
