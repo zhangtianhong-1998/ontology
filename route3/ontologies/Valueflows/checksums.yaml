@@ -1,0 +1,15 @@
+algorithm: sha256
+tree_sha256: 14f55dbbde163645f0bfbdce03190704f929a82223d7f40417d5aa041b2ac2ca
+files:
+- path: LICENSE.txt
+  sha256: b5515c67dcc017db21ddc300bfa86198b8f9d6d1648869f14bd2f1dba5430707
+  bytes: 20130
+- path: README.md
+  sha256: 1654f949db4ecab48758689cf57c4b183311662b69d7b16a035bf1dca21a2a7f
+  bytes: 2399
+- path: source.yaml
+  sha256: 18533e883133f050b54145f043662aa8e8dca380ceb354e2361db8280ede3501
+  bytes: 1003
+- path: vf.ttl
+  sha256: 47cada8122561100520702e2998c2949f6f4f42ba550c36797791882cbc48ece
+  bytes: 87877

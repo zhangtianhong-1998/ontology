@@ -17,16 +17,19 @@ local_config/
 route2/code/DataHub/
 route2/offline/
 
-# Optional CDM data stays local.
+# Full CDM corpus stays local; seven selected, tracked entities are documented.
 **/ontologies/CDM/schemaDocuments/
 
-# This repository contains code and design documents only.
+# Local KPIOnto copies stay out of Git until redistribution terms are identified.
+**/ontologies/KPIOnto/*
+!**/ontologies/KPIOnto/ACQUISITION.md
+
+# Keep business inputs and generated artifacts out of the package.
 .DS_Store
 .AppleDouble
 __MACOSX/
 fixtures/
 data/
-**/ontologies/*/
 **/design/field_association/results-*.yaml
 *.csv
 *.pdf

@@ -1,0 +1,21 @@
+algorithm: sha256
+tree_sha256: 320a46d3e5d4096767572ef01c45aa1aa760577ccad5c8ffa80bf89cfa5721b3
+files:
+- path: LICENSE.txt
+  sha256: 9e5f1b3c610b9c2da5c313bf81d577a7d1acec686bdb0384edefa6df0f90cd94
+  bytes: 18656
+- path: README.md
+  sha256: e7c54a4678c09fe90ad4d6a4bdf82f0e4d89130648bb2df2404e638a3760f9a7
+  bytes: 10296
+- path: ontologies/gistCore.ttl
+  sha256: 0d8230f3a4df9aa7782ec79bfa83def34a13a066f60d5f5ef0f00b9cecce08b1
+  bytes: 141140
+- path: ontologies/gistMediaTypes.ttl
+  sha256: 01515e5b822a9038a4a9331f9f049e0c2699ce1b6f70169ae3b4fb8627f01aae
+  bytes: 3178
+- path: ontologies/gistPrefixDeclarations.ttl
+  sha256: 48ad0101e810b023b6731dff803ca5f6a03dbcdd8ce012cff4e0d104fc3cf64b
+  bytes: 2112
+- path: ontologies/gistValidationAnnotations.ttl
+  sha256: 9b41f18d17846b87be815b48e6e06631c0faea8244596ade9dbc5751cfd5cff5
+  bytes: 1364

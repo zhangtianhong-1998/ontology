@@ -1,0 +1,38 @@
+# imports: https://w3id.org/semanticarts/ontology/gistCoreX.x.x
+
+@prefix gist: <https://w3id.org/semanticarts/ns/ontology/gist/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xml: <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://w3id.org/semanticarts/ontology/gistValidationAnnotations>
+	a owl:Ontology ;
+	owl:imports <https://w3id.org/semanticarts/ontology/gistCoreX.x.x> ;
+	owl:versionIRI <https://w3id.org/semanticarts/ontology/gistValidationAnnotationsX.x.x> ;
+	skos:definition "Annotations to assist gist ontology validation."^^xsd:string ;
+	skos:prefLabel "gist Validation Annotations"^^xsd:string ;
+	gist:license "https://creativecommons.org/licenses/by/4.0/"^^xsd:anyURI ;
+	.
+
+gist:exponentOfKelvin
+	gist:nonConformingLabel "true"^^xsd:boolean ;
+	.
+
+gist:nonConformingLabel
+	a owl:AnnotationProperty ;
+	rdfs:domain [
+		a owl:Class ;
+		owl:unionOf (
+			owl:Class
+			owl:DatatypeProperty
+			owl:ObjectProperty
+		) ;
+	] ;
+	rdfs:range xsd:boolean ;
+	skos:definition "Indicates that the annotated ontology entity is exempt from label validation rules."^^xsd:string ;
+	skos:prefLabel "non-conforming label"^^xsd:string ;
+	.
+

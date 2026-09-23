@@ -179,10 +179,9 @@ def test_record_cap_counts_unprocessed_scope(tmp_path):
     assert metrics["extraction"]["unprocessed_records"] == 16
 
 
-@pytest.mark.skipif(not (PROJECT / "ontologies/KPIOnto/kpionto.ttl").is_file(), reason="KPIOnto data is not bundled; fetch it to run this integration test")
 def test_local_external_rdf_import(tmp_path):
     config = setup(tmp_path, "unrelated", mcp=False)
-    config["external"] = {"enabled": True, "sources": [{"id": "KPIOnto", "format": "rdf", "path": str(PROJECT / "ontologies/KPIOnto/kpionto.ttl")}]}
+    config["external"] = {"enabled": True, "sources": [{"id": "gist", "format": "rdf", "path": str(PROJECT / "ontologies/gist/ontologies/gistCore.ttl")}]}
     result = asyncio.run(build(config, tmp_path / "run"))
     assert result["status"] == "complete", result
     report = read_yaml(tmp_path / "run/external_import.yaml")

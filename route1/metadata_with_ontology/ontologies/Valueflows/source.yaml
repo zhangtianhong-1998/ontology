@@ -1,0 +1,14 @@
+fetched_at: '2026-09-22T17:19:43.212337+00:00'
+files:
+- path: vf.ttl
+  url: https://w3id.org/valueflows/ont/vf.ttl
+  resolved_url: https://ontprox.dev.opensourceecology.de/?uri=https://codeberg.org/valueflows/pages/raw/branch/main/assets/all_vf.TTL&file-ext=ttl
+  sha256: 47cada8122561100520702e2998c2949f6f4f42ba550c36797791882cbc48ece
+- path: README.md
+  url: https://raw.githubusercontent.com/valueflows/valueflows/2210a441bbd67fba5adfdeea442b6a85ade9e16e/README.md
+  resolved_url: https://raw.githubusercontent.com/valueflows/valueflows/2210a441bbd67fba5adfdeea442b6a85ade9e16e/README.md
+  sha256: 1654f949db4ecab48758689cf57c4b183311662b69d7b16a035bf1dca21a2a7f
+- path: LICENSE.txt
+  url: https://raw.githubusercontent.com/valueflows/valueflows/2210a441bbd67fba5adfdeea442b6a85ade9e16e/LICENSE.txt
+  resolved_url: https://raw.githubusercontent.com/valueflows/valueflows/2210a441bbd67fba5adfdeea442b6a85ade9e16e/LICENSE.txt
+  sha256: b5515c67dcc017db21ddc300bfa86198b8f9d6d1648869f14bd2f1dba5430707

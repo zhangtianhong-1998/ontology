@@ -1,0 +1,25 @@
+algorithm: sha256
+scope: selected_entity_files
+upstream_commit: dd21d715e05ebf740a11356c80b5c3b4c38a89c2
+files:
+- path: schemaDocuments/core/applicationCommon/Account.cdm.json
+  sha256: c8e23bcc62c40ea3e4be0134105e58328878ccb9088c805c7f50ef3c15ec030a
+  bytes: 214981
+- path: schemaDocuments/core/applicationCommon/Contact.cdm.json
+  sha256: 2b1584dfba15eb11f7f3f4f7feaaae83b73022ada35983c239f15ebb3954369f
+  bytes: 250539
+- path: schemaDocuments/core/applicationCommon/Organization.cdm.json
+  sha256: 52ba30bec491258230a042166cf7caab74bbfccfb42aa184f5fb7fa2dbda4829
+  bytes: 681548
+- path: schemaDocuments/core/applicationCommon/Currency.cdm.json
+  sha256: 52255447732073da23c91254cd6b67867c389f75093e8adbbaf543c83a20407f
+  bytes: 49539
+- path: schemaDocuments/core/applicationCommon/Address.cdm.json
+  sha256: c9cd1a999b749df20068c2f78b06db8fa3efdbe3db640e89f939752b83c5be94
+  bytes: 106574
+- path: schemaDocuments/core/applicationCommon/foundationCommon/Product.cdm.json
+  sha256: a59f8901b035e45c2e900abc989a740fe3be67bbce5592d6ff0110bf32b369c2
+  bytes: 128717
+- path: schemaDocuments/core/applicationCommon/foundationCommon/crmCommon/sales/Invoice.cdm.json
+  sha256: f43b6c9e613f25c1a0a95542dcd29148db655954df434cdb3468e0cac59b1549
+  bytes: 178833

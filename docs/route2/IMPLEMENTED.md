@@ -49,7 +49,7 @@ uv run ontology-r2 build --config config/runtime.mock.yaml --llm-mode agentscope
 
 这个命令保留模拟数据和模拟 MCP，只将模型调用替换成真实服务。`--dataset /绝对路径/数据目录` 可换成真实输入。真实数据不应沿用 `synthetic: true` 的标记：复制配置为自己的运行配置，并改为 `synthetic: false`。
 
-`--profile E2L/E2O/E2K/E2F` 分别选择本地、加外部本体、加 MCP、两者都加。例如增加 `--profile E2F` 可同时试用本地 KPIOnto 和模拟 MCP。运行 manifest 保存实际开关。`external.sources` 选择参与实验的模型；四套已下载模型的路径见 `ontologies/sources.yaml`，无需每次全量加载。
+`--profile E2L/E2O/E2K/E2F` 分别选择本地、加外部本体、加 MCP、两者都加。例如增加 `--profile E2F` 可同时试用仓库内的 gist 和模拟 MCP。运行 manifest 保存实际开关。`external.sources` 选择参与实验的模型；仓库已提供 gist、Valueflows 和精选 CDM，KPIOnto 需从上游直接取得，路径见 `ontologies/sources.yaml`。无需每次全量加载。
 
 接企业 MCP 时，将 `mock_documents` 去掉，配置 `command`、`args`、`search_tool` 和 `fetch_tool`。首版适配 `search(query, limit) -> {hits:[...]}`、`fetch(document_id) -> {id,text,scope,version}`；不同参数形式需要一个薄适配器。当前只实现 stdio 传输。
 

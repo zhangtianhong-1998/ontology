@@ -1,6 +1,6 @@
 # 设计依据与上游改造位置
 
-核对日期：2026-09-23。下列“源码现状”和“本项目设计”分开陈述；未复现论文效果；上游源码仅作参考，路线2的独立原型验证见其 IMPLEMENTED.md。代码包保留上游版本清单，各叶目录的 resources.yaml 标明子模块和未打包的外部本体。
+核对日期：2026-09-23。下列“源码现状”和“本项目设计”分开陈述；未复现论文效果；上游源码仅作参考，路线2的独立原型验证见其 IMPLEMENTED.md。各叶目录的 resources.yaml 标明子模块、已同步的精选模型和仅从上游获取的 KPIOnto。
 
 ## 1. 洞察报告的采用范围
 
@@ -52,9 +52,9 @@
 
 已有一级对象类型不足以证明某个字段的业务口径。KPIOnto 有一个 `Indicator` 类，也不能据此为所有数值字段创建指标，或推断内部指标的计算公式。
 
-版本记录：gist 使用发布标签 `v14.1.0`，原工作区保存发布文件哈希，本代码包只保留版本清单；KPIOnto 使用提交 `1c36644a40123447fb6469b9832865b4b4c2f7ba`，所核 TTL 的 SHA-256 为 `1cb6a3a81ecaeb76d2ef592181d80339ce98c09bac60f8558e8f37a0b7cebef2`；CDM 使用提交 `dd21d715e05ebf740a11356c80b5c3b4c38a89c2`。Valueflows 的 w3id 下载地址当前转向 Codeberg 内容代理，所取 TTL 的 SHA-256 为 `47cada8122561100520702e2998c2949f6f4f42ba550c36797791882cbc48ece`，因此应记录原始 URL、解析后 URL、获取时间及哈希，不以 URL 永远固定为前提。
+版本记录：gist 使用发布标签 `v14.1.0`、固定提交 `c73068bfe779db2643b1e43c920cc8039b15a013`；本仓库同步的主 TTL SHA-256 为 `0d8230f3a4df9aa7782ec79bfa83def34a13a066f60d5f5ef0f00b9cecce08b1`。KPIOnto 使用提交 `1c36644a40123447fb6469b9832865b4b4c2f7ba`，所核 TTL 的 SHA-256 为 `1cb6a3a81ecaeb76d2ef592181d80339ce98c09bac60f8558e8f37a0b7cebef2`，但正文不随仓库分发。CDM 使用提交 `dd21d715e05ebf740a11356c80b5c3b4c38a89c2`，只同步 7 个精选实体文件。Valueflows 的 w3id 下载地址当前转向 Codeberg 内容代理，所取 TTL 的 SHA-256 为 `47cada8122561100520702e2998c2949f6f4f42ba550c36797791882cbc48ece`，因此记录原始 URL、解析后 URL、获取时间及哈希，不以 URL 永远固定为前提。
 
-许可来源：gist 为 [CC BY 4.0](https://github.com/semanticarts/gist/blob/v14.1.0/LICENSE.txt)；Valueflows 的[官方仓库说明](https://github.com/valueflows/valueflows/blob/2210a441bbd67fba5adfdeea442b6a85ade9e16e/README.md)标注 CC BY-SA 4.0；CDM 区分[内容许可](https://github.com/microsoft/CDM/blob/dd21d715e05ebf740a11356c80b5c3b4c38a89c2/LICENSE)与[代码许可](https://github.com/microsoft/CDM/blob/dd21d715e05ebf740a11356c80b5c3b4c38a89c2/LICENSE-CODE)。所核 KPIOnto 仓库根目录及 TTL 未发现许可声明，记录为 `not_identified`，不宣称它具有某个开源许可。
+许可来源：gist 为 [CC BY 4.0](https://github.com/semanticarts/gist/blob/v14.1.0/LICENSE.txt)；Valueflows 的[官方仓库说明](https://github.com/valueflows/valueflows/blob/2210a441bbd67fba5adfdeea442b6a85ade9e16e/README.md)标注 CC BY-SA 4.0；CDM 区分[内容许可](https://github.com/microsoft/CDM/blob/dd21d715e05ebf740a11356c80b5c3b4c38a89c2/LICENSE)与[代码许可](https://github.com/microsoft/CDM/blob/dd21d715e05ebf740a11356c80b5c3b4c38a89c2/LICENSE-CODE)。所核 KPIOnto 仓库根目录及 TTL 未发现许可声明，记录为 `not_identified`，不宣称它具有某个开源许可；[GitHub 说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)指出公开仓库默认并不授予再分发权。各模型本地同步范围见[公开本体说明](../PUBLIC_ONTOLOGIES.md)。
 
 ## 4. SAND 的接入边界
 

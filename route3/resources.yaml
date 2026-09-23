@@ -1,5 +1,5 @@
 schema_version: '0.1'
-package_scope: code_and_design_only
+package_scope: code_design_and_licensed_public_models
 resources:
 - id: RIGOR
   kind: source_code
@@ -31,28 +31,35 @@ resources:
   url: https://github.com/semanticarts/gist.git
   commit: c73068bfe779db2643b1e43c920cc8039b15a013
   scope: selected_model_files
-  delivery: not_bundled
+  delivery: bundled
+  license: CC-BY-4.0
 - id: KPIOnto
   kind: reference_model
   path: ontologies/KPIOnto
   url: https://github.com/KDMG/kpionto.git
   commit: 1c36644a40123447fb6469b9832865b4b4c2f7ba
-  scope: selected_model_files
-  delivery: not_bundled
+  scope: source_record_only
+  delivery: upstream_download_only
+  license: not_identified
+  ontology_sha256: 1cb6a3a81ecaeb76d2ef592181d80339ce98c09bac60f8558e8f37a0b7cebef2
 - id: CDM
   kind: reference_model
   path: ontologies/CDM
   url: https://github.com/microsoft/CDM.git
   commit: dd21d715e05ebf740a11356c80b5c3b4c38a89c2
-  scope: selected_model_files
-  delivery: not_bundled
+  scope: selected_entity_files
+  delivery: bundled_selected_entities
+  license: CC-BY-4.0
+  selected_files: 7
+  full_upstream_bundled: false
 - id: Valueflows
   kind: reference_model
   path: ontologies/Valueflows
   url: https://w3id.org/valueflows/ont/vf.ttl
   commit: null
   scope: selected_model_files
-  delivery: not_bundled
+  delivery: bundled
+  license: CC-BY-SA-4.0
 - id: AgentScope
   kind: source_code
   path: code/AgentScope

@@ -1,6 +1,6 @@
 # 路线1 / 子路线2
 
-设计中接入四个参考模型，代码包仅保留下载清单；无企业 MCP，仅处理 YAML 元数据。
+设计中接入四个参考模型；仓库已提供 gist、Valueflows 与精选 CDM 文件，KPIOnto 保留来源及获取方法。无企业 MCP，仅处理 YAML 元数据。
 
 - [RIGOR 源码](code/RIGOR/README.md)
 - [本地模型清单](ontologies/sources.yaml)

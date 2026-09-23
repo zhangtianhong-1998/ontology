@@ -13,7 +13,8 @@ models:
   role: external_reference
   version: c73068bfe779db2643b1e43c920cc8039b15a013
   use: select_per_experiment
-  bundled: false
+  bundled: true
+  license: CC-BY-4.0
 - id: KPIOnto
   path: KPIOnto/kpionto.ttl
   format: rdf
@@ -21,17 +22,23 @@ models:
   version: 1c36644a40123447fb6469b9832865b4b4c2f7ba
   use: select_per_experiment
   bundled: false
+  license: not_identified
+  sha256: 1cb6a3a81ecaeb76d2ef592181d80339ce98c09bac60f8558e8f37a0b7cebef2
 - id: CDM
   path: CDM/schemaDocuments
   format: cdm_json
   role: external_reference
   version: dd21d715e05ebf740a11356c80b5c3b4c38a89c2
   use: select_per_experiment
-  bundled: false
+  bundled: true
+  license: CC-BY-4.0
+  scope: selected_entity_files
+  selected_files: 7
 - id: Valueflows
   path: Valueflows/vf.ttl
   format: rdf
   role: external_reference
   version: 14f55dbbde163645f0bfbdce03190704f929a82223d7f40417d5aa041b2ac2ca
   use: select_per_experiment
-  bundled: false
+  bundled: true
+  license: CC-BY-SA-4.0

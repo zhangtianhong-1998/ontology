@@ -29,6 +29,7 @@
 - [模型与数据契约](shared/contracts.md)
 - [实验与评价设计](shared/evaluation.md)
 - [报告及上游来源](shared/sources.md)
+- [公开参考模型、许可与同步范围](PUBLIC_ONTOLOGIES.md)
 - [Git 管理与资源获取](GIT_GUIDE.md)
 - [仓库交付范围](DELIVERY_SCOPE.md)
 - [内部一级模型](../shared/internal_model.yaml)、[YAML 合成示例](../shared/example_result.yaml)

@@ -1,6 +1,6 @@
 # 获取和维护三个路线
 
-本分支包含代码、需求设计、运行契约、配置示例和路线2的手写合成夹具。独立提交历史从代码包开始；原研究资料保留在 `main` 分支。当前默认分支为 `xuanyue`。
+本分支包含代码、需求设计、运行契约、配置示例、路线2的手写合成夹具，以及带许可的精选公开模型。独立提交历史从代码包开始；原研究资料保留在 `main` 分支。当前默认分支为 `xuanyue`。
 
 ## 获取代码
 
@@ -23,20 +23,22 @@ uv run pytest -q
 
 `fixtures/linked` 已随分支提供，默认流程使用模拟模型和模拟 MCP，不需要外部本体或 LLM 密钥。查看结果时打开 `runs/my-mock-001/viewer.html`。无 Docker 的 Windows 离线安装见[专项说明](route2/DATAHUB_OFFLINE.md)。
 
-## 按需取得外部模型
+## 外部模型
 
-外部本体文件未打包。每个路线的 `ontologies/sources.yaml` 记录预期路径，`resources.yaml` 记录官方来源及版本。启用 E2O / E2F 前先准备所选模型。默认示例使用 KPIOnto，可在路线2目录执行：
+gist、Valueflows 和 7 个 CDM 实体文件已分别放在路线1B、2、3的 `ontologies/`，包含来源清单与许可。默认外部模型示例使用 gist，可离线运行。CDM 为精选子集，不是完整模型。完整范围和许可见[公开本体说明](PUBLIC_ONTOLOGIES.md)。
+
+KPIOnto 公开可获取，但上游未写明再分发许可，所以仓库只保存固定来源、哈希和获取脚本；本体正文不随 Git 上传。需要 KPIOnto 时，在仓库根目录显式执行：
 
 ```bash
-mkdir -p ontologies/KPIOnto
-curl --fail --location https://raw.githubusercontent.com/KDMG/kpionto/1c36644a40123447fb6469b9832865b4b4c2f7ba/kpionto.ttl --output ontologies/KPIOnto/kpionto.ttl
-printf '%s\n' '1cb6a3a81ecaeb76d2ef592181d80339ce98c09bac60f8558e8f37a0b7cebef2  ontologies/KPIOnto/kpionto.ttl' | shasum -a 256 -c -
+python scripts/fetch_kpionto.py --download
+# 或在无网络的目标电脑上，校验并复制预先取得的文件
+python scripts/fetch_kpionto.py --source /path/to/kpionto.ttl
 ```
 
-其他模型按清单下载到对应路线目录，保留其许可证。代码包不承诺已取得这些文件；不要以存在版本清单代替资源完整性检查。
+下载脚本直接访问上游，只在用户显式执行时联网。`ontologies/sources.yaml` 标明每个模型是否已打包；`resources.yaml` 记录官方来源及版本。
 
 ## 后续提交
 
 本仓库直接管理自研代码、测试、内部模型和设计文档。上游源码用子模块提交号管理，不复制其 Git 历史到主仓库。修改自研代码后正常提交；更改子模块版本时一并更新版本清单。
 
-`.env`、私有配置、虚拟环境、真实数据、外部本体和运行结果均被忽略；新生成的模拟数据也默认忽略，只有明确提交的 `fixtures/linked` 合成夹具例外。`.env.example` 是空值模板。原工作区中的数据和结果保留在本地。
+`.env`、私有配置、虚拟环境、真实数据、未获再分发许可的 KPIOnto 正文、CDM 全量库和运行结果均被忽略；新生成的模拟数据也默认忽略，只有明确提交的 `fixtures/linked` 合成夹具例外。`.env.example` 是空值模板。原工作区中的数据和结果保留在本地。

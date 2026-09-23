@@ -41,11 +41,11 @@ external_ontology:
   allow_network_imports: false
   top_k: 5
   sources:
-    - id: kpionto
+    - id: gist
       format: rdf
-      path: "../ontologies/KPIOnto/kpionto.ttl"
-      version: "1c36644a40123447fb6469b9832865b4b4c2f7ba"
-      sha256: "1cb6a3a81ecaeb76d2ef592181d80339ce98c09bac60f8558e8f37a0b7cebef2"
+      path: "../ontologies/gist/ontologies/gistCore.ttl"
+      version: "c73068bfe779db2643b1e43c920cc8039b15a013"
+      sha256: "0d8230f3a4df9aa7782ec79bfa83def34a13a066f60d5f5ef0f00b9cecce08b1"
 enterprise_rag:
   enabled: true
   adapter: mcp

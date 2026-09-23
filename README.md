@@ -2,7 +2,7 @@
 
 本仓库保存三条路线的代码、需求、SDD、配置示例、测试代码和路线2运行所需的少量合成夹具。路线2的实现与运行状态见其 README；路线1、3的改造引擎仍按设计任务推进。更新日期：2026-09-23。
 
-上游代码用 9 个 Git 子模块固定版本。内部 YAML 模型作为代码契约保留；真实数据、外部本体、运行产物和论文均不打包。路线2的 11 个手写合成夹具用于无数据电脑上的离线自检，也可用代码另行生成模拟输入。获取方法见 [Git 管理](docs/GIT_GUIDE.md)。
+上游代码用 9 个 Git 子模块固定版本。内部 YAML 模型作为代码契约保留；gist、Valueflows 和精选 Microsoft CDM 模型连同许可一并提供。KPIOnto 可从上游取得，但未发现明确再分发许可，因此只保留来源与校验信息。真实数据、运行产物和论文不打包。路线2的 11 个手写合成夹具用于无数据电脑上的离线自检。获取方法见 [Git 管理](docs/GIT_GUIDE.md)。
 
 本分支从实现提交 `fdf82b9a` 导出，有独立提交历史。原研究资料保留在仓库的 `main` 分支。
 
@@ -60,12 +60,12 @@ docs/        # 需求、SDD、开发任务、运行说明与公共设计
   shared/
 route1/
   metadata_only/  # RIGOR、内部模型；不提供外部本体
-  metadata_with_ontology/  # RIGOR、内部模型、外部参考模型清单
-route2/      # RIGOR、AgentScope、原型代码、内部模型、外部参考模型清单
-route3/      # RIGOR、AgentScope、SAND、GRAMS、steiner-tree、内部模型、外部参考模型清单
+  metadata_with_ontology/  # RIGOR、内部模型、精选外部参考模型
+route2/      # RIGOR、AgentScope、原型代码、内部模型、精选外部参考模型
+route3/      # RIGOR、AgentScope、SAND、GRAMS、steiner-tree、内部模型、精选外部参考模型
 ```
 
-上游代码位于各路线的 `code/`，克隆后初始化子模块即可取得固定版本。`ontologies/` 只包含内部契约和外部模型清单；`resources.yaml` 记录来源及版本。gist、KPIOnto、Valueflows、Microsoft CDM 的数据文件按需另行下载。
+上游代码位于各路线的 `code/`，克隆后初始化子模块即可取得固定版本。路线1B、2、3的 `ontologies/` 含内部契约，以及带许可的 gist、Valueflows 和 7 个 CDM 实体文件；`resources.yaml` 记录来源及版本。CDM 只是实验所需子集，不是完整模型。KPIOnto 的本体文件需由使用者从上游获取并校验，见[公开本体说明](docs/PUBLIC_ONTOLOGIES.md)。
 
 三个路线的需求、SDD 和开发任务集中在 `docs/`；路线1的两个子路线保留独立配置与资源。路线1、路线2不配置 SAND。RIGOR 自带的演示文档、本体和输出留在上游源码中，但不会自动进入本项目实验。
 

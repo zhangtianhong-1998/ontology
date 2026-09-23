@@ -16,6 +16,6 @@
 
 ## 依赖与参考模型
 
-`code/` 以子模块固定 RIGOR、AgentScope、SAND、GRAMS、steiner-tree。`ontologies/` 保留内部模型及外部模型清单；外部模型文件未打包，入口见 [模型清单](ontologies/sources.yaml)，版本见 [resources.yaml](resources.yaml)。这些代码尚未组合成路线3引擎。
+`code/` 以子模块固定 RIGOR、AgentScope、SAND、GRAMS、steiner-tree。`ontologies/` 保留内部模型及带许可的 gist、Valueflows、精选 CDM 文件；KPIOnto 只提供来源。入口见 [模型清单](ontologies/sources.yaml)，版本见 [resources.yaml](resources.yaml)。这些代码尚未组合成路线3引擎。
 
 GRAMS 的 sem-desc/kgdata 主版本约束与当前 SAND 不同，运行时应隔离环境后适配。SAND 自带 MTab 适配器调用远程服务，本项目未启用它，也不会通过它发送数据。GRAMS 与 Steiner Tree 源码各自固定版本，不能将 SAND 内的 GRAMS 骨架视为完整算法。

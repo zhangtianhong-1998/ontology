@@ -33,9 +33,9 @@ mcp:
 external:
   enabled: false
   sources:
-    - id: KPIOnto
+    - id: gist
       format: rdf
-      path: ../ontologies/KPIOnto/kpionto.ttl
+      path: ../ontologies/gist/ontologies/gistCore.ttl
 processing:
   materialize_all_objects: true
   max_object_records: 1000000
