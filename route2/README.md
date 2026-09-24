@@ -12,6 +12,7 @@
 - [原型代码](code/ontology_r2/cli.py)
 - [需求与 US](../docs/route2/requirements.md)、[SDD](../docs/route2/SDD.md)、[开发任务](../docs/route2/implementation.md)
 - [字段统计与关联发现详细设计](../docs/route2/FIELD_PROFILING_DESIGN.md)、[方案比较与合成验证](../docs/route2/FIELD_ASSOCIATION_EVALUATION.md)
+- [百万记录下的实例检索与增量组包设计](../docs/route2/INSTANCE_BUNDLE_DESIGN.md)
 - [Windows 11 无 Docker 离线运行与 DataHub 文件导出](../docs/route2/DATAHUB_OFFLINE.md)
 - [上游代码与模型版本](resources.yaml)、[本体文件入口](ontologies/sources.yaml)
 

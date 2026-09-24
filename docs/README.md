@@ -18,6 +18,7 @@
 - [RIGOR 源码对照](route2/RIGOR_COMPARISON.md)
 - [字段统计与关联发现设计](route2/FIELD_PROFILING_DESIGN.md)
 - [字段关联方案评估](route2/FIELD_ASSOCIATION_EVALUATION.md)
+- [实例检索与增量组包设计](route2/INSTANCE_BUNDLE_DESIGN.md)
 - [测试说明](route2/TESTING.md)
 - [Windows 无 Docker 离线运行与 DataHub 导出](route2/DATAHUB_OFFLINE.md)
 - [验证报告](route2/VALIDATION_REPORT.md)
