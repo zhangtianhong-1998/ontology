@@ -1,0 +1,16 @@
+plan:
+  object_types: []
+  relation_types: []
+  tables: []
+  relations: []
+review:
+  accepted: true
+  errors: []
+  corrected_delta: null
+concept_bundle:
+  status: no_change
+relation_bundle:
+  status: unresolved
+group_review:
+  accepted: true
+  errors: []

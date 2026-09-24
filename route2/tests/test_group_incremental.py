@@ -8,16 +8,26 @@ import pytest
 
 from ontology_r2.group_incremental import (
     BundleReview, ConceptBundleDecision, RecordAlignmentDecision,
-    RelationBundleDecision, compile_concept, compile_relation,
+    RelationBundleDecision, compile_business_relation, compile_concept, compile_relation,
     construct_from_bundles,
 )
 from ontology_r2.incremental import direct_mapping
-from ontology_r2.models import BuildPlan
-from ontology_r2.storage import Dataset, digest, read_yaml
+from ontology_r2.models import BuildPlan, DerivedType, TablePlan
+from ontology_r2.relations import Extractor
+from ontology_r2.storage import Dataset, Sink, digest, read_yaml
+from ontology_r2.validation import validate_plan
 from test_semantic_cards import _table
 
 
 PROFILE = read_yaml(Path(__file__).resolve().parents[1] / "ontologies/internal_model.yaml")
+
+
+def test_provider_json_string_scope_is_decoded_but_other_strings_are_rejected():
+    accepted = ConceptBundleDecision.model_validate({
+        "status": "unresolved", "scope": "{}", "scope_roles": "{}"})
+    assert accepted.scope == {} and accepted.scope_roles == {}
+    with pytest.raises(ValueError):
+        ConceptBundleDecision.model_validate({"status": "unresolved", "scope": "[]"})
 
 
 def _record(record_id, *, region="华东", unit="元", name="水果收入"):
@@ -164,6 +174,47 @@ def test_incremental_reuses_concept_without_losing_second_source():
     assert rejected["partial"] is True
 
 
+def test_reviewed_definition_becomes_a_business_type_but_observation_does_not():
+    class LevelLLM:
+        def __init__(self, level, scope_role):
+            self.level, self.scope_role = level, scope_role
+
+        async def ask(self, task, payload, schema):
+            if task == "concept_bundle":
+                record_id = payload["bundle"]["records"][0]["record_id"]
+                return _concept_decision([record_id], scope={"region": "华东"}).model_copy(
+                    update={"ontology_level": self.level,
+                            "scope_roles": {"region": self.scope_role}})
+            if task == "group_review":
+                return BundleReview(accepted=True)
+            raise AssertionError(task)
+
+    bundle = {"bundle_id": "definition", "task_kind": "concept_induction",
+              "records": [{**_record("metric-def"), "kind": "definition",
+                           "root_hint": "Metric"}]}
+    typed = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
+        [bundle], LevelLLM("type", "applicability")))
+    assert typed["steps"][0]["status"] == "accepted"
+    derived = typed["plan"].object_types[0]
+    assert derived.parent == "Metric" and derived.category == "business_type"
+    assert derived.evidence_scope == "definition_record"
+    assert derived.applicability_scope == {"region": "华东"}
+    assert typed["concepts"][0]["ontology_type_id"] == derived.id
+    assert typed["steps"][0]["object_type_id"] == derived.id
+    observed = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
+        [bundle], LevelLLM("instance", "observation")))
+    assert observed["plan"].object_types == []
+    assert observed["concepts"][0]["observation_coordinates"] == {"region": "华东"}
+    assert observed["concepts"][0]["ontology_type_id"] is None
+    unsupported = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
+        [bundle], LevelLLM("type", "observation")))
+    assert unsupported["steps"][0]["status"] == "unresolved"
+    assert unsupported["plan"].object_types == []
+
+
 def test_no_change_is_complete_but_unresolved_remains_partial():
     bundle = {"bundle_id": "b1", "task_kind": "concept_induction",
               "records": [_record("r1")]}
@@ -197,6 +248,30 @@ def test_group_budget_reserves_relation_and_concept_calls():
     assert [step["task_kind"] for step in result["steps"]] == [
         "concept_induction", "relation_meaning"]
     assert result["bundles_skipped"] == 4
+
+
+def test_group_context_excludes_unrelated_physical_record_types():
+    class CaptureLLM:
+        async def ask(self, task, payload, schema):
+            self.payload = payload
+            return ConceptBundleDecision(status="no_change")
+
+    physical = [DerivedType(id=f"source_record_type:t{index}", parent="GeneralObject",
+                            definition="source record", evidence_ids=["schema"],
+                            category="source_record_type") for index in range(20)]
+    business = DerivedType(id="type:revenue", parent="Metric", definition="Revenue metric",
+                           evidence_ids=["source"], category="business_type")
+    core = BuildPlan(object_types=[*physical, business], tables=[
+        TablePlan(table=f"t{index}", object_type=item.id, evidence_ids=["schema"])
+        for index, item in enumerate(physical)])
+    llm = CaptureLLM()
+    asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, core,
+        [{"bundle_id": "b1", "task_kind": "concept_induction",
+          "records": [{**_record("r1"), "table": "t3"}]}],
+        llm, review=False))
+    assert {item["id"] for item in llm.payload["current_types"]} == {
+        "type:revenue", "source_record_type:t3"}
 
 
 def test_same_label_with_different_exact_unit_or_scope_keeps_distinct_identity():
@@ -271,6 +346,89 @@ def test_relation_quotes_must_come_from_one_validated_positive_pair(tmp_path):
         core, _ = direct_mapping(data)
         compiled, plan = compile_relation(data, PROFILE, core, bundle, decision)
         assert len(compiled.relations) == 1
+        assert plan.witness_snapshot_id == data.snapshot_id
+        assert [(item.source_record_id, item.target_record_id)
+                for item in plan.witnessed_pairs] == [(r1["record_id"], r3["record_id"])]
+        output = tmp_path / "witnessed-output"
+        (output / "work").mkdir(parents=True)
+        sink = Sink(output)
+        try:
+            for item in data.evidence.values():
+                sink.put("evidence", item)
+            stats = asyncio.run(Extractor(
+                data, sink, compiled, _ConceptLLM(),
+                {"max_relation_records": 10}).execute())
+            assert stats["accepted"] == 1
+            assert stats["plans"][0]["outside_witness"] == 1
+            edge = sink.db.execute(
+                "SELECT json_extract(body,'$.subject'), json_extract(body,'$.object') "
+                "FROM items WHERE kind='assertions' AND json_extract(body,'$.object') IS NOT NULL"
+            ).fetchall()
+            assert edge == [(r1["record_id"], r3["record_id"])]
+        finally:
+            sink.close()
+        # A witnessed source row alone is insufficient: the target must be the
+        # very record reviewed as the positive semantic example.
+        wrong_target = compiled.model_copy(deep=True)
+        wrong_target.relations[0].witnessed_pairs[0].target_record_id = data.record_id(
+            target, list(data.rows(target))[1])
+        mismatch_output = tmp_path / "mismatch-output"
+        (mismatch_output / "work").mkdir(parents=True)
+        mismatch_sink = Sink(mismatch_output)
+        try:
+            mismatch_stats = asyncio.run(Extractor(
+                data, mismatch_sink, wrong_target, _ConceptLLM(),
+                {"max_relation_records": 10}).execute())
+            assert mismatch_stats["accepted"] == 0
+            assert mismatch_sink.db.execute(
+                "SELECT count(*) FROM items WHERE kind='assertions'"
+            ).fetchone()[0] == 0
+            assert mismatch_sink.db.execute(
+                "SELECT count(*) FROM items WHERE kind='unresolved' "
+                "AND json_extract(body,'$.reason')='witness_target_mismatch'"
+            ).fetchone()[0] == 1
+        finally:
+            mismatch_sink.close()
+        bad_counts = {**bundle, "rule": {**rule, "verification": {
+            "scan_scope": "full_input",
+            "checks": {"eligible_references": 2, "unique_matches": 1,
+                       "missing_in_input": 1}}}}
+        with pytest.raises(ValueError, match="incomplete or inconsistent"):
+            compile_relation(data, PROFILE, core, bad_counts, decision)
+        relation = compiled.relation_types[0]
+        assert relation.domain == [next(item.object_type for item in core.tables
+                                        if item.table == source)]
+        assert relation.range == [next(item.object_type for item in core.tables
+                                       if item.table == target)]
+        assert relation.endpoint_basis == "table_binding"
+        assert relation.evidence_scope == plan.evidence_scope == (
+            "sample_semantic_with_full_technical_check")
+        typed = compiled.model_copy(deep=True)
+        typed.object_types.extend([
+            DerivedType(id="type:profit", parent="Metric", definition="利润指标",
+                        category="business_type", evidence_ids=[f"schema:{source}"]),
+            DerivedType(id="type:revenue", parent="Measure", definition="收入度量",
+                        category="business_type", evidence_ids=[f"schema:{target}"]),
+        ])
+        concepts = [{"id": "concept:profit", "ontology_level": "type",
+                     "ontology_type_id": "type:profit", "applicability_scope": {}},
+                    {"id": "concept:revenue", "ontology_level": "type",
+                     "ontology_type_id": "type:revenue", "applicability_scope": {}}]
+        only_one_exact = [{"source_record_id": r1["record_id"],
+                           "concept_id": "concept:profit", "mapping_kind": "exact",
+                           "evidence_ids": [plan.evidence_ids[2]]}]
+        lifted, assertion, reason = compile_business_relation(
+            data, PROFILE, typed, bundle, decision, plan, concepts, only_one_exact)
+        assert lifted is assertion is None
+        assert reason == "both_positive_records_require_exact_type_alignment"
+        mistyped = compiled.model_copy(deep=True)
+        mistyped.relation_types[0].domain = ["Metric"]
+        assert any("violates domain" in error
+                   for error in validate_plan(mistyped, data, PROFILE))
+        mislabeled = compiled.model_copy(deep=True)
+        mislabeled.relation_types[0].evidence_scope = None
+        assert any("evidence scope differs" in error
+                   for error in validate_plan(mislabeled, data, PROFILE))
         assert "record:" + digest(
             [data.snapshot_id, r1["record_id"], "param_name"])[:24] in plan.evidence_ids
         invalid = {**bundle, "examples": {"positive": [{"source_record_id": r2["record_id"],
@@ -301,5 +459,22 @@ def test_relation_quotes_must_come_from_one_validated_positive_pair(tmp_path):
                                                  "target_quote": "K1"})
         with pytest.raises(ValueError, match="positive pair"):
             compile_relation(data, PROFILE, core, bundle, key_values)
+        false_dependency = decision.model_copy(update={"parent_relation": "depends_on"})
+        with pytest.raises(ValueError, match="source formula"):
+            compile_relation(data, PROFILE, core, bundle, false_dependency)
+        # The model no longer chooses executable endpoint types at all.
+        with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+            RelationBundleDecision.model_validate({**decision.model_dump(),
+                                                   "source_type": "Metric"})
+        r1["fields"]["name"][0]["value"] = "水果销售利润"
+        r1["fields"]["formula"] = [{"column": "formula", "value":
+                                     "水果销售利润 = 水果销售收入 - 水果销售成本"}]
+        supported_dependency = decision.model_copy(update={
+            "parent_relation": "depends_on", "source_quote": "水果销售利润"})
+        supported_plan, _ = compile_relation(data, PROFILE, core, bundle,
+                                             supported_dependency)
+        assert any("水果销售收入" in data.evidence[e]["raw_fragment"]
+                   for e in supported_plan.relation_types[0].evidence_ids
+                   if e.startswith("record:"))
     finally:
         data.close()

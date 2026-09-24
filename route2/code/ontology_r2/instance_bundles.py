@@ -201,6 +201,13 @@ def _relation_bundle(data, rule, limits):
     if (same_definition_surface and source["field"] == target["field"]
             and not ({"member", "value", "item", "child"} & (source_tokens | target_tokens))):
         return None, "same_concept_key_requires_alignment"
+    # Equal descriptive literals (unit/definition/formula) describe or align
+    # records; they are not an executable reference between business objects.
+    non_reference_roles = ("unit", "description", "formula")
+    for endpoint, info in ((source, source_info), (target, target_info)):
+        roles = _field_roles(info)
+        if any(endpoint["field"] in roles.get(role, ()) for role in non_reference_roles):
+            return None, "descriptive_value_requires_alignment"
     inverse_scope = {target_field: source_field
                      for source_field, target_field in rule.get("scope_bindings", {}).items()}
     check = {"candidate_id": rule["candidate_id"], "snapshot_id": data.snapshot_id,
@@ -259,12 +266,12 @@ def _round_robin_rules(rules, limit):
     # but spend the scarce LLM slots on stronger field pairs first.
     for numeric_only in (False, True):
         groups = defaultdict(list)
-        for rule in sorted(rules, key=lambda item: item["rule_id"]):
+        for rule in sorted(rules, key=lambda item: (-_reference_priority(item), item["rule_id"])):
             if (rule["status"] == "checked_technical"
                     and bool(rule.get("numeric_overlap_only", False)) == numeric_only):
                 groups[rule["source"]["table"]].append(rule)
         while groups and len(chosen) < limit:
-            for table in sorted(groups):
+            for table in sorted(groups, key=lambda name: (-_reference_priority(groups[name][0]), name)):
                 if groups[table]:
                     chosen.append(groups[table].pop(0))
                     if len(chosen) >= limit:
@@ -273,6 +280,18 @@ def _round_robin_rules(rules, limit):
         if len(chosen) >= limit:
             break
     return chosen
+
+
+def _reference_priority(rule):
+    """Spend scarce packet slots on likely reference keys, not name collisions."""
+    source = rule.get("source", {}).get("field", "").casefold()
+    target = rule.get("target", {}).get("field", "").casefold()
+    target_table = rule.get("target", {}).get("table", "").casefold()
+    key_suffix = ("_id", "_code", "_key")
+    score = 2 * source.endswith(key_suffix) + target.endswith(key_suffix)
+    score += 3 * any(token in source and token in target_table
+                     for token in ("measure", "metric", "dimension", "dim"))
+    return score
 
 
 def build_instance_bundles(data, index, association, options=None, *, embedding=None):
@@ -301,16 +320,24 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
             bundles.append(bundle)
         else:
             skipped.append({"seed_id": seed["card_id"], "reason": reason})
-    rules = _round_robin_rules(association.get("rules", []), limits["max_relation_bundles"])
-    for rule in rules:
+    checked_rules = sum(item["status"] == "checked_technical"
+                        for item in association.get("rules", []))
+    # Inspect additional checked rules when an earlier one is only a concept
+    # alignment lead. A skipped lead must not consume a relation-bundle slot.
+    ordered_rules = _round_robin_rules(association.get("rules", []), checked_rules)
+    rules = []
+    relation_bundles = 0
+    for rule in ordered_rules:
+        if relation_bundles >= limits["max_relation_bundles"]:
+            break
+        rules.append(rule)
         bundle, reason = _relation_bundle(data, rule, limits)
         if bundle:
             bundles.append(bundle)
+            relation_bundles += 1
         else:
             skipped.append({"seed_id": rule["rule_id"], "reason": reason})
     total_definition = index.db.execute("SELECT count(*) FROM cards WHERE kind='definition'").fetchone()[0]
-    checked_rules = sum(item["status"] == "checked_technical"
-                        for item in association.get("rules", []))
     coverage = {"snapshot_id": data.snapshot_id, "definition_cards_indexed": total_definition,
                 "definition_seed_pool_examined": len(seed_pool),
                 "definition_seeds_selected": len(seeds),

@@ -28,6 +28,36 @@ def validate_plan(plan: BuildPlan, data, profile):
             if not progress:
                 errors.append("unknown/cyclic parent: " + ",".join(pending))
                 break
+    object_parents = {item.id: item.parent for item in plan.object_types}
+    for item in plan.object_types:
+        if item.domain or item.range or item.endpoint_basis:
+            errors.append("object type cannot have relation endpoints: " + item.id)
+    for item in plan.relation_types:
+        if bool(item.domain) != bool(item.range):
+            errors.append("relation domain and range must be declared together: " + item.id)
+        if item.endpoint_basis and not (item.domain and item.range):
+            errors.append("relation endpoint basis lacks a signature: " + item.id)
+        if not set(item.domain + item.range) <= set(types):
+            errors.append("relation domain/range names an unknown object type: " + item.id)
+        if item.category == "business_relation_type":
+            business_ids = {t.id for t in plan.object_types if t.category == "business_type"}
+            if (not item.domain or not item.range
+                    or not set(item.domain + item.range) <= business_ids
+                    or item.endpoint_basis != "record_alignment"
+                    or item.evidence_scope != "one_positive_pair_with_exact_type_alignments"):
+                errors.append("business relation requires exact business type endpoints: " + item.id)
+            if any(relation.predicate == item.id for relation in plan.relations):
+                errors.append("one-pair business relation cannot execute as a table plan: " + item.id)
+
+    def is_subtype(actual, declared):
+        seen = set()
+        while actual and actual not in seen:
+            if actual == declared:
+                return True
+            seen.add(actual)
+            actual = object_parents.get(actual)
+        return False
+
     table_plans = {t.table: t for t in plan.tables}
     if len(table_plans) != len(plan.tables):
         errors.append("duplicate table plan")
@@ -51,6 +81,15 @@ def validate_plan(plan: BuildPlan, data, profile):
             continue
         if p.source_table not in data.tables or p.target_table not in data.tables:
             continue
+        if (p.witnessed_pairs or p.witness_snapshot_id) and p.witness_snapshot_id != data.snapshot_id:
+            errors.append("relation witness snapshot differs from input: " + p.id)
+        if p.evidence_scope == "sample_semantic_with_full_technical_check" and not p.witnessed_pairs:
+            errors.append("sample-supported relation requires witnessed record pair: " + p.id)
+        if p.witnessed_pairs and p.mode != "identifier":
+            errors.append("witnessed relation currently requires identifier mode: " + p.id)
+        pairs = [(item.source_record_id, item.target_record_id) for item in p.witnessed_pairs]
+        if len(pairs) != len(set(pairs)):
+            errors.append("duplicate witnessed relation pair: " + p.id)
         source, target = data.tables[p.source_table], data.tables[p.target_table]
         if p.target_column in p.scope_bindings.values() or len(set(p.scope_bindings.values())) != len(p.scope_bindings):
             errors.append("conflicting target field bindings: " + p.id)
@@ -61,6 +100,18 @@ def validate_plan(plan: BuildPlan, data, profile):
             errors.append("unknown relation fields: " + p.id)
         if relations.get(p.predicate) != "object":
             errors.append("object relation required: " + p.id)
+        relation_type = next((item for item in plan.relation_types
+                              if item.id == p.predicate), None)
+        if relation_type and relation_type.domain and relation_type.range:
+            source_type = table_plans[p.source_table].object_type
+            target_type = table_plans[p.target_table].object_type
+            if not any(is_subtype(source_type, domain) for domain in relation_type.domain):
+                errors.append("relation source type violates domain: " + p.id)
+            if not any(is_subtype(target_type, range_type) for range_type in relation_type.range):
+                errors.append("relation target type violates range: " + p.id)
+        if p.evidence_scope and (relation_type is None
+                                 or relation_type.evidence_scope != p.evidence_scope):
+            errors.append("relation evidence scope differs from predicate: " + p.id)
         relevant = {f"schema:{p.source_table}", f"schema:{p.source_table}:{p.source_column}"}
         if not p.evidence_ids or not set(p.evidence_ids) <= data.evidence.keys() or not relevant.intersection(p.evidence_ids):
             errors.append("source reference-role evidence required: " + p.id)

@@ -70,7 +70,9 @@ class Extractor:
         oid = self.data.record_id(table, row)
         col = p.label_column or self.data.tables[table]["column_names"][0]
         ev = self.evidence(table, row, col)
-        self.sink.put("objects", {"id": oid, "type": p.object_type, "label": row.get(col), "identity_scope": "source_snapshot", "source_ref": {"table": table, "row": row["__r2_row"], "snapshot_id": self.data.snapshot_id}, "evidence_ids": [ev, *p.evidence_ids], "decision": {"status": "accepted", "method": "reviewed_model_type_plan"}})
+        type_method = ("source_record_mapping" if p.object_type.startswith("source_record_type:")
+                       else "reviewed_model_type_plan")
+        self.sink.put("objects", {"id": oid, "type": p.object_type, "label": row.get(col), "identity_scope": "source_snapshot", "source_ref": {"table": table, "row": row["__r2_row"], "snapshot_id": self.data.snapshot_id}, "evidence_ids": [ev, *p.evidence_ids], "decision": {"status": "accepted", "method": type_method}})
         for attr, source in p.attributes.items():
             if row.get(source) in (None, ""):
                 continue
@@ -144,7 +146,9 @@ class Extractor:
         if progress is None:
             return await self._execute()
         cap = self.config.get("max_relation_records", 1000000)
-        total = min(cap, sum(self.data.tables[p.source_table]["rows"] for p in self.plan.relations))
+        total = min(cap, sum((len({pair.source_record_id for pair in p.witnessed_pairs})
+                              if p.witnessed_pairs else self.data.tables[p.source_table]["rows"])
+                             for p in self.plan.relations))
         with progress.task("关系记录处理", total) as stage:
             result = await self._execute(stage)
             remainder = result["records_examined"] % 1000
@@ -159,11 +163,24 @@ class Extractor:
                           plan_index * 10 // plan_count > (plan_index - 1) * 10 // plan_count):
                 stage.note(f"计划 {plan_index + 1}/{plan_count}: {p.id}")
             processed = 0
-            coverage = {"plan_id": p.id, "total_source_records": self.data.tables[p.source_table]["rows"], "examined": 0, "selector_true": 0, "selector_unknown": 0, "nonempty_applicable_records": 0, "matched_records": 0, "references": 0, "matched_references": 0}
+            if (p.evidence_scope == "sample_semantic_with_full_technical_check"
+                    and not p.witnessed_pairs):
+                raise ValueError("Sample-supported relation has no witnessed record pair")
+            if p.witnessed_pairs and p.witness_snapshot_id != self.data.snapshot_id:
+                raise ValueError("Relation witness belongs to another input snapshot")
+            witnessed = {}
+            for pair in p.witnessed_pairs:
+                witnessed.setdefault(pair.source_record_id, set()).add(pair.target_record_id)
+            coverage = {"plan_id": p.id, "total_source_records": self.data.tables[p.source_table]["rows"], "examined": 0, "selector_true": 0, "selector_unknown": 0, "nonempty_applicable_records": 0, "matched_records": 0, "references": 0, "matched_references": 0, "witnessed_source_records": len(witnessed), "outside_witness": 0}
             self.stats["plans"].append(coverage)
             for row in self.data.rows(p.source_table):
+                source_record_id = self.data.record_id(p.source_table, row)
+                if witnessed and source_record_id not in witnessed:
+                    coverage["outside_witness"] += 1
+                    continue
                 if self.stats["records_examined"] >= self.config.get("max_relation_records", 1000000):
-                    remaining = self.data.tables[p.source_table]["rows"] - processed
+                    remaining = (len(witnessed) - coverage["examined"] if witnessed else
+                                 self.data.tables[p.source_table]["rows"] - processed)
                     self.stats["unprocessed_records"] += remaining
                     self.sink.put("unresolved", {"id": digest([p.id, "remaining", processed]), "plan_id": p.id, "reason": "record_budget", "from_row": processed + 1, "count": remaining})
                     break
@@ -229,6 +246,15 @@ class Extractor:
                                 self.unresolved(p, row, "missing_target" if not matches else "ambiguous_identity", item)
                             else:
                                 targets.append(matches[0])
+                    if witnessed:
+                        allowed = witnessed[source_record_id]
+                        off_pair = [target for target in targets
+                                    if self.data.record_id(p.target_table, target) not in allowed]
+                        for target in off_pair:
+                            self.unresolved(p, row, "witness_target_mismatch",
+                                            self.data.record_id(p.target_table, target))
+                        targets = [target for target in targets
+                                   if self.data.record_id(p.target_table, target) in allowed]
                     coverage["matched_records"] += bool(targets)
                     coverage["matched_references"] += len(targets)
                     rule_evidence = set()
@@ -242,7 +268,12 @@ class Extractor:
                         target_fields = {p.target_column} | set(p.scope_bindings.values())
                         evidence = [self.evidence(p.source_table, row, col) for col in sorted(source_fields)] + [self.evidence(p.target_table, target, col) for col in sorted(target_fields)] + p.evidence_ids
                         rule_evidence.update(evidence)
-                        edge.update(id=digest(edge), evidence_ids=sorted(set(evidence)), decision={"status": "accepted", "method": method, "identity_scope": "input_snapshot"}, plan_id=p.id)
+                        decision = {"status": "accepted", "method": method,
+                                    "identity_scope": "input_snapshot"}
+                        if p.evidence_scope is not None:
+                            decision["evidence_scope"] = p.evidence_scope
+                        edge.update(id=digest(edge), evidence_ids=sorted(set(evidence)),
+                                    decision=decision, plan_id=p.id)
                         if p.mode == "formula":
                             edge["formula"] = value
                             edge["symbol"] = target[p.target_column]

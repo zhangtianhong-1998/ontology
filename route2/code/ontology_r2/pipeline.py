@@ -75,6 +75,24 @@ def technical_graph(data):
     return {"nodes": nodes, "edges": edges, "lineage_source_available": False}
 
 
+def add_inferred_matches(graph, association):
+    """Keep checked field matches in the technical graph, never as declared FKs."""
+    for rule in association.get("rules", []):
+        if rule.get("status") not in ("checked_technical", "observed_subset"):
+            continue
+        source, target = rule["source"], rule["target"]
+        graph["edges"].append({
+            "source": source["table"] + "." + source["field"],
+            "target": target["table"] + "." + target["field"],
+            "type": "inferred_technical_match",
+            "rule_id": rule["rule_id"], "status": rule["status"],
+            "selector": rule.get("selector") or {},
+            "scope_bindings": rule.get("scope_bindings") or {},
+            "semantic_relation": "unresolved",
+        })
+    return graph
+
+
 def check_output(sink):
     checks = {}
     for field in ("subject", "object"):
@@ -124,7 +142,8 @@ async def build(config, output):
         sink = Sink(output, config.get("shard_size", 5000))
         llm = StructuredLLM(config["llm"], output)
         manifest.update(snapshot_id=data.snapshot_id, input_files=data.files, input_tables=len(data.tables), input_records=sum(t["rows"] for t in data.tables.values()), model_profile_hash=digest(profile))
-        write_yaml(output / "meta_graph.yaml", technical_graph(data))
+        meta_graph = technical_graph(data)
+        write_yaml(output / "meta_graph.yaml", meta_graph)
         write_yaml(output / "profiles.yaml", {name: t["profiles"] for name, t in data.tables.items()})
         write_yaml(output / "column_roles.yaml", {name: classify_columns(table)
                                                    for name, table in data.tables.items()})
@@ -143,6 +162,8 @@ async def build(config, output):
         if config.get("association_rules", {}).get("enabled", False):
             association = await build_association_rules(
                 data, discovery, config["association_rules"], llm=llm)
+        add_inferred_matches(meta_graph, association)
+        write_yaml(output / "meta_graph.yaml", meta_graph)
         write_yaml(output / "association_rules.yaml", association)
         manifest["association_rules"] = {"rules": len(association["rules"]),
                                           "statuses": association["coverage"].get("statuses", {}),
@@ -179,7 +200,8 @@ async def build(config, output):
                                                     progress=progress)
         card_report = {"status": "disabled", "partial": False}
         bundle_report = {"status": "disabled", "partial": False}
-        group_result = {"concepts": [], "record_alignments": [], "steps": [],
+        group_result = {"concepts": [], "record_alignments": [],
+                        "concept_relations": [], "concept_relation_derivations": [], "steps": [],
                         "bundles_selected": 0, "bundles_skipped": 0, "partial": False}
         if config.get("instance_bundles", {}).get("enabled", False):
             options = config["instance_bundles"]
@@ -203,6 +225,9 @@ async def build(config, output):
             finally:
                 index.close()
             bundle_report = packet_result["coverage"]
+            if vector_model is not None:
+                manifest["embedding"] = vector_model.report()
+                manifest["source_channels"]["embedding"] = True
             write_yaml(output / "evidence_bundles.yaml", packet_result["bundles"])
             write_yaml(output / "instance_bundle_coverage.yaml", bundle_report)
             group_result = await construct_from_bundles(
@@ -228,15 +253,28 @@ async def build(config, output):
         manifest["group_incremental"] = {"accepted": sum(s["status"] == "accepted" for s in group_result["steps"]),
                                          "steps": len(group_result["steps"]),
                                          "skipped": group_result["bundles_skipped"],
+                                         "business_relation_types": sum(
+                                             item.category == "business_relation_type"
+                                             for item in plan.relation_types),
+                                         "business_relation_assertions": len(
+                                             group_result["concept_relations"]),
+                                         "relation_derivations_not_promoted": sum(
+                                             item["status"] == "not_promoted" for item in
+                                             group_result["concept_relation_derivations"]),
                                          "partial": group_result["partial"]}
         write_yaml(output / "business_concepts.yaml", group_result["concepts"])
         write_yaml(output / "record_alignments.yaml", group_result["record_alignments"])
+        write_yaml(output / "concept_relations.yaml", group_result["concept_relations"])
+        write_yaml(output / "concept_relation_derivations.yaml",
+                   group_result["concept_relation_derivations"])
         for ev in data.evidence.values():
             sink.put("evidence", ev)
         for concept in group_result["concepts"]:
             sink.put("objects", concept)
         for alignment in group_result["record_alignments"]:
             sink.put("record_alignments", alignment)
+        for relation in group_result["concept_relations"]:
+            sink.put("assertions", relation)
         extractor = Extractor(data, sink, plan, llm, config.get("processing", {}), progress=progress)
         materialized = 0
         preview_materialized = 0

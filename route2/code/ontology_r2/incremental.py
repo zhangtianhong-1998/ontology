@@ -5,21 +5,25 @@ import re
 
 from .column_roles import classify_columns
 from .models import BuildPlan, TablePlan
+from .record_types import source_record_type
 from .storage import digest
 from .validation import validate_plan
 
 
 def direct_mapping(data):
-    tables, mappings = [], []
+    tables, mappings, record_types = [], [], []
     for name, table in data.tables.items():
-        tables.append(TablePlan(table=name, object_type="GeneralObject", identity_columns=table["pk"],
+        record_type, classification = source_record_type(name, table)
+        record_types.append(record_type)
+        tables.append(TablePlan(table=name, object_type=record_type.id, identity_columns=table["pk"],
                                 attributes={f"column:{name}.{c}": c for c in table["column_names"]},
                                 evidence_ids=["schema:" + name]))
-        mappings.append({"table": name, "status": "source_mapping_only", "object_root": "GeneralObject",
+        mappings.append({"table": name, "status": "source_mapping_only", "object_root": record_type.parent,
+                         "source_record_type": record_type.id, "record_type_classification": classification,
                          "columns": deepcopy(table["columns"]), "declared_primary_key": table["pk"],
                          "constraints": deepcopy(table["constraints"]), "foreign_keys": deepcopy(table["foreign_keys"]),
                          "evidence_ids": ["schema:" + name, *[f"schema:{name}:{c}" for c in table["column_names"]]]})
-    return BuildPlan(tables=tables), {"tables": mappings, "coverage": "all_input_tables_and_columns", "business_semantics": "not_inferred"}
+    return BuildPlan(object_types=record_types, tables=tables), {"tables": mappings, "coverage": "all_input_tables_and_columns", "business_semantics": "not_inferred"}
 
 
 def traversal(data):
@@ -44,26 +48,34 @@ def _mapping_only(table):
         r"(?:import|staging).*temp|temp.*(?:import|staging)", name))
 
 
-def _prompt_table(data, name, *, sample=False):
+def _prompt_table(data, name, *, sample=False, focus_fields=(), compact=False):
     table = data.tables[name]
     roles = classify_columns(table)
     semantic = {item["column"] for item in roles if item["include_in_semantic_prompt"]}
+    visible = semantic
+    if compact:
+        # Neighbor tables are context, not another unit to plan. Keep the
+        # checked join keys and a few fields that explain their meaning.
+        visible = (semantic & set(_example_columns(table, None, limit=6))) | set(focus_fields)
     profiles = {item["column"]: item for item in table["profiles"]}
     result = {
         "name": name, "comment": table.get("table_comment"),
-        "columns": [column for column in table["columns"] if column["column_name"] in semantic],
+        "columns": [column for column in table["columns"] if column["column_name"] in visible],
         "deterministic_bindings": [item["deterministic_binding"] for item in roles
-                                   if item["role"] in ("audit_time", "audit_metadata", "technical_identifier")],
+                                   if item["role"] in ("audit_time", "audit_metadata", "technical_identifier")
+                                   and (not compact or item["column"] in visible)],
         "empty_in_input": [item["column"] for item in roles if item["role"] == "empty"],
         # Schema/profile evidence remains in the local artifacts. Repeating its
         # per-column counters in every table packet adds no semantic context.
         "column_roles": [{"column": item["column"], "role": item["role"]}
-                         for item in roles if item["include_in_semantic_prompt"]],
+                         for item in roles if item["column"] in visible],
         "constraints": table["constraints"], "foreign_keys": table["foreign_keys"],
         "profiles": [{"column": column, "usable_count": profiles[column]["usable_count"],
                       "approx_distinct_usable": profiles[column]["approx_distinct_usable"]}
-                     for column in table["column_names"] if column in semantic],
+                     for column in table["column_names"] if column in visible],
     }
+    if compact:
+        result["semantic_columns_not_expanded"] = len(semantic - visible)
     if sample:
         sample_columns = _example_columns(table, None, limit=12)
         result["sampled_columns"] = sample_columns
@@ -92,7 +104,7 @@ def _example_columns(table, key, limit=4):
     return [name for _, _, name in sorted(ranked)[:limit]]
 
 
-def unit_context(data, name, candidate_targets=()):
+def unit_context(data, name, candidate_targets=(), candidate_fields=None):
     targets = {f["referenced_schema"] + "." + f["referenced_table"] for f in data.tables[name]["foreign_keys"]}
     candidate_targets = [target for target in dict.fromkeys(candidate_targets)
                          if target != name and target in data.tables]
@@ -105,7 +117,10 @@ def unit_context(data, name, candidate_targets=()):
                         "column_hints": [{"name": col["column_name"], "comment": col.get("column_comment")}
                                          for col in hints[:2]],
                         "other_semantic_column_count": max(0, len(hints) - 2)})
-    return {"tables": [_prompt_table(data, table_name, sample=table_name == name)
+    candidate_fields = candidate_fields or {}
+    return {"tables": [_prompt_table(data, table_name, sample=table_name == name,
+                                      compact=table_name != name,
+                                      focus_fields=candidate_fields.get(table_name, ()))
                        for table_name in sorted(relevant)],
             "table_catalog": catalog,
             "candidate_targets_not_expanded": candidate_targets[3:],
@@ -121,7 +136,10 @@ def core_context(core, unit, data, semantic_neighbors=(), candidate_targets=()):
         if unit in (relation.source_table, relation.target_table):
             neighbors.update((relation.source_table, relation.target_table))
     neighbors.update(hit["table"] for hit in semantic_neighbors)
-    return {"object_types": [t.model_dump() for t in core.object_types], "relation_types": [t.model_dump() for t in core.relation_types],
+    visible_record_types = {"source_record_type:" + table for table in neighbors}
+    return {"object_types": [t.model_dump() for t in core.object_types
+                             if t.category != "source_record_type" or t.id in visible_record_types],
+            "relation_types": [t.model_dump() for t in core.relation_types],
             "tables": [{**t.model_dump(exclude={"attributes"}),
                         "mapped_attribute_count": len(t.attributes),
                         "attribute_mapping_hash": digest(t.attributes)}
@@ -228,6 +246,38 @@ async def construct(data, profile, config, output, llm, manifest,
     from openai import APITimeoutError
 
     core, mapping = direct_mapping(data)
+    mode = config.get("incremental", {}).get("mode", "table_semantic")
+    if mode not in ("table_semantic", "source_mapping_only"):
+        raise ValueError("incremental.mode must be table_semantic or source_mapping_only")
+    if mode == "source_mapping_only":
+        if (config.get("mcp", {}).get("enabled") or
+                config.get("external", {}).get("enabled")):
+            raise ValueError("source_mapping_only does not run table-level MCP or external alignment")
+        # Route 2's program-first path: physical record shapes are complete,
+        # while business classes and predicates are judged only from bounded
+        # cross-record bundles in the next stage.
+        ontology = ontology_from_plan(core, profile, data, mapping, [])
+        write_yaml(output / "direct_mapping.yaml", mapping)
+        write_yaml(output / "extraction_plan.yaml", core.model_dump())
+        write_yaml(output / "ontology.yaml", ontology)
+        write_yaml(output / "knowledge.yaml", [])
+        write_yaml(output / "alignments.yaml", [])
+        write_yaml(output / "construction.yaml", {
+            "table_order": list(data.tables), "steps": [],
+            "direct_mapping_tables": len(mapping["tables"]),
+            "direct_mapping_columns": sum(len(t["columns"]) for t in mapping["tables"]),
+            "final_core_valid": True, "final_core_hash": digest(core.model_dump()),
+            "semantic_table_pass": "disabled; group bundles handle business semantics",
+        })
+        manifest.update(incremental_iteration_policy={"table_passes": 0, "units": 0,
+                                                      "max_attempts_per_unit": 0,
+                                                      "revisit_rejected_units": False},
+                        incremental_mode=mode, incremental_units_not_accepted=[],
+                        mapping_only_units=[], external_alignment_errors=[],
+                        construction_mode="program_first_group_incremental_yaml",
+                        embedding={"enabled": False})
+        return core, ontology, []
+    manifest["incremental_mode"] = mode
     order, cyclic = traversal(data)
     steps, knowledge, alignments = [], [], []
     candidate_by_id = {c["candidate_id"]: c for c in discovery_candidates}
@@ -313,7 +363,13 @@ async def construct(data, profile, config, output, llm, manifest,
                 step["semantic_core_neighbors"] = core_hits
             checked_pairs = checks_by_source.get(unit, [])[:max_evidence_per_unit]
             candidate_targets = [candidate["target"]["table"] for candidate, _ in checked_pairs]
-            context = unit_context(data, unit, candidate_targets)
+            candidate_fields = {}
+            for candidate, check in checked_pairs:
+                candidate_fields.setdefault(candidate["target"]["table"], set()).add(
+                    candidate["target"]["field"])
+                candidate_fields[candidate["target"]["table"]].update(
+                    (check.get("scope_bindings") or {}).keys())
+            context = unit_context(data, unit, candidate_targets, candidate_fields)
             field_association_evidence = []
             for candidate, check in checked_pairs:
                 item = {
@@ -321,6 +377,9 @@ async def construct(data, profile, config, output, llm, manifest,
                     "source": candidate["source"], "target": candidate["target"],
                     "retrieval_channels": candidate["retrieval_channels"],
                     "numeric_overlap_only": candidate["numeric_overlap_only"],
+                    "selector": check.get("selector") or {},
+                    "scope_bindings": check.get("scope_bindings") or {},
+                    "scan_scope": check.get("scan_scope"),
                     "checks": {key: check["checks"][key] for key in (
                         "eligible_references", "unique_matches", "ambiguous_matches",
                         "missing_in_input", "distinct_eligible_keys",
@@ -388,7 +447,7 @@ async def construct(data, profile, config, output, llm, manifest,
                       "concept_candidate_evidence": concept_by_table.get(unit, [])[:max_concepts_per_unit],
                       "concept_candidate_limits": "Sampled names or aliases only; every pair remains unjudged. Compare definitions, units and scope before proposing a shared concept.",
                       "field_association_evidence": field_association_evidence,
-                      "field_association_limits": "Raw-value equality on this input only. No selector or scope was inferred; overlap is not a declared FK or business relation. Candidate pairs without exact checks are omitted."}
+                      "field_association_limits": "Raw-value equality is checked only on this input snapshot and, where present, within the shown selector and scope. It is not a declared FK or business relation. Candidate pairs without exact checks are omitted."}
             errors, previous = [], None
             for attempt in range(max_attempts):
                 record = {"number": attempt + 1}

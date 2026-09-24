@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from .models import BuildPlan, Condition, DerivedType, RelationPlan, Strict
 from .storage import digest
@@ -26,9 +27,26 @@ class ConceptBundleDecision(Strict):
     label: str = ""
     definition: str = ""
     root_type: Literal["GeneralObject", "Measure", "Metric", "Dimension", "Term"] | None = None
+    # An accepted source-grounded concept is not automatically a class.
+    # Existing responses without this field remain instance-level candidates.
+    ontology_level: Literal["type", "instance", "unresolved"] = "unresolved"
     scope: dict[str, str] = Field(default_factory=dict)
+    scope_roles: dict[str, Literal["applicability", "observation"]] = Field(default_factory=dict)
     alignments: list[RecordAlignmentDecision] = Field(default_factory=list)
     reason: str = ""
+
+    @field_validator("scope", "scope_roles", mode="before")
+    @classmethod
+    def parse_object_string(cls, value):
+        # Some OpenAI-compatible tool endpoints encode an object argument as
+        # a JSON string. Decode only an actual JSON object, then retain strict
+        # field validation; arbitrary prose is never accepted as a scope.
+        if isinstance(value, str):
+            parsed = json.loads(value)
+            if not isinstance(parsed, dict):
+                raise ValueError("Scope argument must be a JSON object")
+            return parsed
+        return value
 
 
 class RelationBundleDecision(Strict):
@@ -161,9 +179,26 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         raise ValueError("Conflicting units cannot share an exact concept")
     unit = next(iter(exact_units), "")
     effective_scope = {**exact_scope, **decision.scope}
+    if not set(decision.scope_roles) <= set(effective_scope):
+        raise ValueError("Scope role names a field absent from exact source definitions")
+    if decision.ontology_level == "type":
+        if not all(record.get("kind") == "definition" for record in exact_records):
+            raise ValueError("Type induction requires exact definition cards")
+        if set(decision.scope_roles) != set(effective_scope):
+            raise ValueError("Type induction requires every scope field to be classified")
+        if "observation" in decision.scope_roles.values():
+            raise ValueError("Observation coordinates cannot become type identity")
     normalized_label = " ".join(decision.label.casefold().split())
-    concept_id = "concept:" + digest([decision.root_type, normalized_label,
-                                       effective_scope, unit])[:24]
+    normalized_definition = " ".join(decision.definition.casefold().split())
+    concept_id = "concept:" + digest([data.snapshot_id, decision.root_type, normalized_label,
+                                       normalized_definition, effective_scope, unit])[:24]
+    applicability = {key: value for key, value in effective_scope.items()
+                     if decision.scope_roles.get(key) == "applicability"}
+    coordinates = {key: value for key, value in effective_scope.items()
+                   if decision.scope_roles.get(key) == "observation"}
+    type_id = ("type:" + digest([decision.root_type, normalized_label,
+                                  normalized_definition, applicability, unit])[:24]
+               if decision.ontology_level == "type" else None)
     alignments, all_evidence = [], set()
     for item, record in selected:
         if item.mapping_kind == "exact":
@@ -188,12 +223,52 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         raise ValueError("All concept alignments are unresolved")
     concept = {"id": concept_id, "type": decision.root_type, "label": decision.label.strip(),
                "definition": decision.definition.strip(), "identity_scope": "snapshot_only",
-               "scope": effective_scope, "unit": unit or None,
+               "ontology_level": decision.ontology_level,
+               "ontology_type_id": type_id,
+               "scope": effective_scope, "applicability_scope": applicability,
+               "observation_coordinates": coordinates,
+               "unclassified_scope": {key: value for key, value in effective_scope.items()
+                                      if key not in decision.scope_roles},
+               "unit": unit or None,
                "source_refs": [{"record_id": item["source_record_id"]}
                                                       for item in alignments],
                "evidence_ids": sorted(all_evidence),
                "decision": "accepted_by_automatic_checks"}
     return concept, alignments
+
+
+def _compiled_object_type(concept):
+    if not concept["ontology_type_id"]:
+        return None
+    return DerivedType(
+        id=concept["ontology_type_id"], parent=concept["type"],
+        label=concept["label"], definition=concept["definition"],
+        category="business_type",
+        evidence_ids=concept["evidence_ids"],
+        evidence_scope="definition_record",
+        applicability_scope=concept["applicability_scope"],
+        source_concept_ids=[concept["id"]],
+    )
+
+
+def _quoted_positive_pair(bundle, decision, source, target, source_field, target_field):
+    records = _record_map(bundle)
+    for pair in bundle.get("examples", {}).get("positive", []):
+        left = records.get(pair.get("source_record_id"))
+        right = records.get(pair.get("target_record_id"))
+        raw = pair.get("matching_raw_value")
+        if (left is None or right is None or left.get("table") != source["table"]
+                or right.get("table") != target["table"] or raw in (None, "")):
+            continue
+        left_values = [str(entry["value"]) for _, entry in _entries(left)
+                       if entry.get("column") == source_field]
+        right_values = [str(entry["value"]) for _, entry in _entries(right)
+                        if entry.get("column") == target_field]
+        if (str(raw) in left_values and str(raw) in right_values
+                and _supports_quote(left, decision.source_quote, source_field)
+                and _supports_quote(right, decision.target_quote, target_field)):
+            return left, right
+    raise ValueError("No validated positive pair supports both cited quotes")
 
 
 def compile_relation(data, profile, core, bundle, decision):
@@ -216,29 +291,49 @@ def compile_relation(data, profile, core, bundle, decision):
             and _child_surface(source["table"])
             and not _child_surface(target["table"])):
         raise ValueError("Contains direction is reversed for child-to-parent source")
+    counts = rule.get("verification", {}).get("checks") or {}
+    eligible, unique = counts.get("eligible_references"), counts.get("unique_matches")
+    if (type(eligible) is not int or eligible <= 0 or type(unique) is not int
+            or unique != eligible or any(counts.get(key, 0) for key in (
+                "ambiguous_matches", "missing_in_input", "missing_scope"))):
+        raise ValueError("Checked technical rule has incomplete or inconsistent full-input counts")
     source_field, target_field = source.get("field"), target.get("field")
     if not source_field or not target_field:
         raise ValueError("Relation compiler only supports one key field")
-    records = _record_map(bundle)
-    source_record = target_record = None
-    for pair in bundle.get("examples", {}).get("positive", []):
-        left = records.get(pair.get("source_record_id"))
-        right = records.get(pair.get("target_record_id"))
-        raw = pair.get("matching_raw_value")
-        if (left is None or right is None or left.get("table") != source["table"]
-                or right.get("table") != target["table"] or raw in (None, "")):
-            continue
-        left_values = [str(entry["value"]) for _, entry in _entries(left)
-                       if entry.get("column") == source_field]
-        right_values = [str(entry["value"]) for _, entry in _entries(right)
-                        if entry.get("column") == target_field]
-        if (str(raw) in left_values and str(raw) in right_values
-                and _supports_quote(left, decision.source_quote, source_field)
-                and _supports_quote(right, decision.target_quote, target_field)):
-            source_record, target_record = left, right
-            break
-    if source_record is None:
-        raise ValueError("No validated positive pair supports both cited quotes")
+    source_record, target_record = _quoted_positive_pair(
+        bundle, decision, source, target, source_field, target_field)
+    dependency_evidence = []
+    if decision.parent_relation == "depends_on":
+        # A key match and two names do not prove a calculation dependency.
+        target_names = [str(entry["value"]) for role, entry in _entries(target_record)
+                        if role in ("name", "alias") and not entry.get("truncated")]
+        formula_text = [str(entry["value"]) for role, entry in _entries(source_record)
+                        if role == "formula" and not entry.get("truncated")]
+        supported = next(((name, formula) for name in target_names for formula in formula_text
+                          if name and name in formula), None)
+        if supported is None:
+            raise ValueError("Dependency requires a source formula naming the target")
+        dependency_evidence = [
+            _quote_evidence(data, source_record, supported[1],
+                            allowed_roles=("formula",), require_complete=True),
+            _quote_evidence(data, target_record, supported[0],
+                            allowed_roles=("name", "alias"), require_complete=True),
+        ]
+
+    known_types = ({item["id"] for item in profile["object_roots"]}
+                   | {item.id for item in core.object_types})
+    table_types = {item.table: item.object_type for item in core.tables}
+
+    def endpoint_type(record):
+        bound = table_types.get(record["table"])
+        # The model judges meaning, not physical endpoint types. The source
+        # mapping supplies the only executable table-wide endpoint binding.
+        if bound not in known_types:
+            raise ValueError("Relation endpoint type lacks a table-wide binding")
+        return bound
+
+    domain = endpoint_type(source_record)
+    range_type = endpoint_type(target_record)
     evidence_ids = list(dict.fromkeys([
         f"schema:{source['table']}:{source_field}",
         f"schema:{target['table']}:{target_field}",
@@ -248,12 +343,15 @@ def compile_relation(data, profile, core, bundle, decision):
         _quote_evidence(data, target_record, decision.target_quote,
                         allowed_roles=_RELATION_QUOTE_ROLES, excluded_columns={target_field},
                         require_complete=True),
+        *dependency_evidence,
     ]))
     relation_id = "relation:" + digest([decision.parent_relation, decision.label.casefold().strip(),
-                                        source["table"], target["table"]])[:24]
+                                        source["table"], target["table"], domain, range_type])[:24]
     relation_type = DerivedType(id=relation_id, parent=decision.parent_relation,
                                 definition=decision.definition.strip(), evidence_ids=evidence_ids,
-                                label=decision.label.strip())
+                                label=decision.label.strip(), domain=[domain], range=[range_type],
+                                endpoint_basis="table_binding",
+                                evidence_scope="sample_semantic_with_full_technical_check")
     selectors = [Condition(op="eq", field=field, value=str(value))
                  for field, value in sorted((rule.get("selector") or {}).items())]
     selector = (selectors[0] if len(selectors) == 1 else
@@ -264,6 +362,10 @@ def compile_relation(data, profile, core, bundle, decision):
         source_column=source_field, target_column=target_field,
         scope_bindings=rule.get("scope_bindings") or {}, selector=selector,
         predicate=relation_id, semantics="reference", evidence_ids=evidence_ids,
+        evidence_scope="sample_semantic_with_full_technical_check",
+        witness_snapshot_id=data.snapshot_id,
+        witnessed_pairs=[{"source_record_id": source_record["record_id"],
+                          "target_record_id": target_record["record_id"]}],
     )
     candidate = core.model_copy(deep=True)
     existing_types = {item.id: item for item in candidate.relation_types}
@@ -282,6 +384,96 @@ def compile_relation(data, profile, core, bundle, decision):
     return candidate, plan
 
 
+def compile_business_relation(data, profile, core, bundle, decision, plan,
+                              concepts, alignments):
+    """Lift one reviewed record pair, never the whole-table execution plan."""
+    rule = bundle["rule"]
+    source, target = rule["source"], rule["target"]
+    left, right = _quoted_positive_pair(
+        bundle, decision, source, target, source["field"], target["field"])
+    if (plan.witness_snapshot_id != data.snapshot_id
+            or (left["record_id"], right["record_id"]) not in {
+                (item.source_record_id, item.target_record_id)
+                for item in plan.witnessed_pairs}):
+        return None, None, "concept_pair_is_not_in_executable_relation_witnesses"
+    exact = {item["source_record_id"]: item for item in alignments
+             if item["mapping_kind"] == "exact"}
+    source_alignment = exact.get(left["record_id"])
+    target_alignment = exact.get(right["record_id"])
+    if source_alignment is None or target_alignment is None:
+        return None, None, "both_positive_records_require_exact_type_alignment"
+    concept_by_id = {item["id"]: item for item in concepts}
+    source_concept = concept_by_id.get(source_alignment["concept_id"])
+    target_concept = concept_by_id.get(target_alignment["concept_id"])
+    if (source_concept is None or target_concept is None
+            or source_concept["id"] == target_concept["id"]
+            or source_concept["ontology_level"] != "type"
+            or target_concept["ontology_level"] != "type"):
+        return None, None, "positive_record_alignment_lacks_distinct_business_types"
+    object_types = {item.id: item for item in core.object_types}
+    source_type = source_concept["ontology_type_id"]
+    target_type = target_concept["ontology_type_id"]
+    if (source_type not in object_types or target_type not in object_types
+            or object_types[source_type].category != "business_type"
+            or object_types[target_type].category != "business_type"):
+        return None, None, "aligned_business_type_is_not_in_accepted_core"
+    source_scope = source_concept["applicability_scope"]
+    target_scope = target_concept["applicability_scope"]
+    if any(source_scope[key] != target_scope[key] for key in source_scope.keys() & target_scope.keys()):
+        return None, None, "business_type_applicability_scopes_conflict"
+    base_type = next((item for item in core.relation_types if item.id == plan.predicate), None)
+    if (base_type is None or plan.evidence_scope != "sample_semantic_with_full_technical_check"
+            or base_type.evidence_scope != plan.evidence_scope):
+        return None, None, "record_relation_lacks_accepted_semantic_evidence"
+    evidence_ids = sorted(set(base_type.evidence_ids)
+                          | set(source_alignment["evidence_ids"])
+                          | set(target_alignment["evidence_ids"]))
+    relation_id = "business_relation:" + digest([
+        base_type.parent, base_type.label, base_type.definition,
+        source_type, target_type])[:24]
+    relation_type = DerivedType(
+        id=relation_id, parent=base_type.parent, label=base_type.label,
+        definition=base_type.definition, evidence_ids=evidence_ids,
+        category="business_relation_type", domain=[source_type], range=[target_type],
+        endpoint_basis="record_alignment",
+        evidence_scope="one_positive_pair_with_exact_type_alignments",
+    )
+    candidate = core.model_copy(deep=True)
+    existing = next((item for item in candidate.relation_types
+                     if item.id == relation_id), None)
+    if existing is None:
+        candidate.relation_types.append(relation_type)
+    elif (existing.parent != relation_type.parent
+          or existing.definition != relation_type.definition
+          or existing.domain != relation_type.domain
+          or existing.range != relation_type.range
+          or existing.category != relation_type.category):
+        raise ValueError("Conflicting business relation type ID")
+    else:
+        merged = existing.model_copy(update={
+            "evidence_ids": sorted(set(existing.evidence_ids) | set(evidence_ids))})
+        candidate.relation_types[candidate.relation_types.index(existing)] = merged
+    errors = validate_plan(candidate, data, profile)
+    if errors:
+        raise ValueError("Business relation type invalid: " + "; ".join(errors))
+    assertion = {
+        "id": "concept_relation:" + digest([
+            data.snapshot_id, relation_id, source_concept["id"], target_concept["id"]])[:24],
+        "subject": source_concept["id"], "predicate": relation_id,
+        "object": target_concept["id"],
+        "subject_type": source_type, "object_type": target_type,
+        "source_record_pair": {"source": left["record_id"],
+                               "target": right["record_id"]},
+        "source_relation_plan_id": plan.id,
+        "scope": dict(sorted({**target_scope, **source_scope}.items())),
+        "identity_scope": "input_snapshot",
+        "evidence_ids": evidence_ids,
+        "decision": {"status": "accepted", "method": "same_positive_pair_exact_type_alignments",
+                     "evidence_scope": "one_positive_pair_with_exact_type_alignments"},
+    }
+    return candidate, assertion, None
+
+
 def _balanced_selection(bundles, limit):
     """Reserve bounded model calls for both concept and relation packets."""
     queues = {kind: [item for item in bundles if item.get("task_kind") == kind]
@@ -295,6 +487,22 @@ def _balanced_selection(bundles, limit):
     return (selected + other[:max(0, limit - len(selected))])[:limit]
 
 
+def _type_context(core, bundle, limit=12):
+    """Prefer learned business types; only show physical types for packet tables."""
+    tables = {record.get("table") for record in bundle.get("records", [])}
+    rule = bundle.get("rule") or {}
+    tables.add((rule.get("source") or {}).get("table"))
+    tables.add((rule.get("target") or {}).get("table"))
+    table_types = {item.object_type for item in core.tables if item.table in tables}
+    related = [item for item in core.object_types if item.id in table_types]
+    learned = [item for item in core.object_types if item.category == "business_type"
+               and item.id not in table_types]
+    slots = max(0, limit - len(related))
+    chosen = [*(learned[-slots:] if slots else []), *related[:limit]]
+    return [{"id": item.id, "parent": item.parent, "definition": item.definition,
+             "category": item.category} for item in chosen]
+
+
 async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *, review=True,
                                  max_bundles=20, progress=None):
     """One bounded group pass; failures do not change accepted plan or objects."""
@@ -303,6 +511,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
     if type(max_bundles) is not int or max_bundles < 0:
         raise ValueError("max_bundles must be nonnegative")
     accepted_exact, concepts, alignments, steps = {}, {}, [], []
+    accepted_record_relations = []
     selected = _balanced_selection(bundles, max_bundles)
     skipped = max(0, len(bundles) - len(selected))
     stage = progress.task("语义组增量抽取", len(selected)) if progress else None
@@ -315,8 +524,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
             try:
                 payload = {"bundle": bundle, "root_model": {
                     "object_roots": profile["object_roots"], "relation_roots": profile["relation_roots"]},
-                    "current_types": [{"id": item.id, "parent": item.parent, "definition": item.definition}
-                                      for item in core.object_types[-12:]],
+                    "current_types": _type_context(core, bundle),
                     "current_relations": [{"id": item.id, "parent": item.parent}
                                           for item in core.relation_types[-12:]]}
                 if bundle["task_kind"] == "concept_induction":
@@ -327,16 +535,48 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                         old = concepts.get(concept["id"])
                         if old and (old["definition"] != concept["definition"] or old["type"] != concept["type"]):
                             raise ValueError("Conflicting definitions for one concept ID")
+                        if (old and old["ontology_level"] in ("type", "instance")
+                                and concept["ontology_level"] in ("type", "instance")
+                                and old["ontology_level"] != concept["ontology_level"]):
+                            raise ValueError("Conflicting ontology levels for one concept ID")
                         if review:
                             check = await llm.ask("group_review", {**payload, "candidate": decision.model_dump()}, BundleReview)
                             if not check.accepted or check.errors:
                                 raise ValueError("Group review rejected: " + "; ".join(check.errors))
+                        candidate = core.model_copy(deep=True)
+                        new_type = _compiled_object_type(concept)
+                        if new_type is not None:
+                            existing = next((item for item in candidate.object_types
+                                             if item.id == new_type.id), None)
+                            if existing is None:
+                                candidate.object_types.append(new_type)
+                            elif (existing.parent != new_type.parent
+                                  or existing.definition != new_type.definition
+                                  or existing.applicability_scope != new_type.applicability_scope):
+                                raise ValueError("Conflicting derived object type ID")
+                            else:
+                                merged = existing.model_copy(update={
+                                    "evidence_ids": sorted(set(existing.evidence_ids)
+                                                           | set(new_type.evidence_ids)),
+                                    "source_concept_ids": sorted(set(existing.source_concept_ids)
+                                                                 | set(new_type.source_concept_ids)),
+                                })
+                                candidate.object_types[candidate.object_types.index(existing)] = merged
+                        errors = validate_plan(candidate, data, profile)
+                        if errors:
+                            raise ValueError("Group concept plan invalid: " + "; ".join(errors))
                         if old:
                             refs = {item["record_id"] for item in old["source_refs"]}
                             old["source_refs"].extend(ref for ref in concept["source_refs"]
                                                       if ref["record_id"] not in refs)
                             old["evidence_ids"] = sorted(set(old["evidence_ids"])
                                                          | set(concept["evidence_ids"]))
+                            if old["ontology_level"] == "unresolved":
+                                old["ontology_level"] = concept["ontology_level"]
+                                old["ontology_type_id"] = concept["ontology_type_id"]
+                                old["applicability_scope"] = concept["applicability_scope"]
+                                old["observation_coordinates"] = concept["observation_coordinates"]
+                                old["unclassified_scope"] = concept["unclassified_scope"]
                         else:
                             concepts[concept["id"]] = concept
                         existing_alignments = {item["id"] for item in alignments}
@@ -345,8 +585,11 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                         for item in new_alignments:
                             if item["mapping_kind"] == "exact":
                                 accepted_exact[item["source_record_id"]] = concept["id"]
+                        core = candidate
                         step.update(status="accepted", concept_id=concept["id"],
                                     alignment_count=len(new_alignments))
+                        if concept["ontology_type_id"]:
+                            step["object_type_id"] = concept["ontology_type_id"]
                     else:
                         step.update(status=decision.status, reason=decision.reason)
                 elif bundle["task_kind"] == "relation_meaning":
@@ -359,6 +602,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                             if not check.accepted or check.errors:
                                 raise ValueError("Group review rejected: " + "; ".join(check.errors))
                         core = candidate
+                        accepted_record_relations.append((bundle, decision, plan))
                         step.update(status="accepted", relation_plan_id=plan.id)
                     else:
                         step.update(status=decision.status, reason=decision.reason)
@@ -379,11 +623,37 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
     finally:
         if stage:
             stage.__exit__(None, None, None)
+    concept_relations, relation_derivations = {}, []
+    for bundle, decision, plan in accepted_record_relations:
+        derivation = {"bundle_id": bundle["bundle_id"], "source_relation_plan_id": plan.id,
+                      "status": "not_promoted", "core_before": digest(core.model_dump())}
+        try:
+            candidate, assertion, reason = compile_business_relation(
+                data, profile, core, bundle, decision, plan,
+                list(concepts.values()), alignments)
+            if candidate is None:
+                derivation["reason"] = reason
+            else:
+                core = candidate
+                existing = concept_relations.get(assertion["id"])
+                if existing:
+                    existing["evidence_ids"] = sorted(set(existing["evidence_ids"])
+                                                       | set(assertion["evidence_ids"]))
+                else:
+                    concept_relations[assertion["id"]] = assertion
+                derivation.update(status="accepted", assertion_id=assertion["id"],
+                                  business_relation_type_id=assertion["predicate"])
+        except ValueError as exc:
+            derivation["reason"] = str(exc)
+        derivation["core_after"] = digest(core.model_dump())
+        relation_derivations.append(derivation)
     statuses = {status: sum(item["status"] == status for item in steps)
                 for status in ("accepted", "no_change", "unresolved", "budget_exhausted")}
     coverage = {"bundles_available": len(bundles), "bundles_selected": len(selected),
                 "bundles_not_attempted": skipped, "statuses": statuses,
                 "partial": bool(skipped or statuses["unresolved"] or statuses["budget_exhausted"])}
     return {"plan": core, "concepts": list(concepts.values()), "record_alignments": alignments,
+            "concept_relations": list(concept_relations.values()),
+            "concept_relation_derivations": relation_derivations,
             "steps": steps, "bundles_selected": len(selected), "bundles_skipped": skipped,
             "coverage": coverage, "partial": coverage["partial"]}

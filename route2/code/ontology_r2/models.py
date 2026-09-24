@@ -45,6 +45,18 @@ class DerivedType(Strict):
     definition: str
     evidence_ids: list[str]
     label: str | None = None
+    category: Literal["business_type", "source_record_type", "business_relation_type"] | None = None
+    # Optional schema details keep older YAML plans valid. For object types,
+    # applicability_scope describes the definition, not observation coordinates.
+    applicability_scope: dict[str, str] = Field(default_factory=dict)
+    source_concept_ids: list[str] = Field(default_factory=list)
+    # Only object-relation types may narrow their endpoint types.
+    domain: list[str] = Field(default_factory=list)
+    range: list[str] = Field(default_factory=list)
+    endpoint_basis: Literal["record_alignment", "table_binding", "mixed"] | None = None
+    evidence_scope: Literal["source_schema", "definition_record",
+                            "sample_semantic_with_full_technical_check",
+                            "one_positive_pair_with_exact_type_alignments"] | None = None
 
 
 class TablePlan(Strict):
@@ -54,6 +66,11 @@ class TablePlan(Strict):
     identity_columns: list[str] = Field(default_factory=list)
     attributes: dict[str, str] = Field(default_factory=dict)
     evidence_ids: list[str]
+
+
+class WitnessedPair(Strict):
+    source_record_id: str
+    target_record_id: str
 
 
 class RelationPlan(Strict):
@@ -70,6 +87,9 @@ class RelationPlan(Strict):
     delimiter: str | None = None
     semantics: Literal["reference", "observed_member", "allowed_member"] = "reference"
     context_columns: list[str] = Field(default_factory=list)
+    evidence_scope: Literal["sample_semantic_with_full_technical_check"] | None = None
+    witness_snapshot_id: str | None = None
+    witnessed_pairs: list[WitnessedPair] = Field(default_factory=list)
     evidence_ids: list[str]
 
 

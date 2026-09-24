@@ -11,7 +11,7 @@ import pytest
 
 from ontology_r2.demo import make_demo
 from ontology_r2.models import BuildPlan, Condition, evaluate
-from ontology_r2.pipeline import build
+from ontology_r2.pipeline import add_inferred_matches, build
 from ontology_r2.relations import formula_symbols
 from ontology_r2.storage import Dataset, read_yaml, write_yaml
 from ontology_r2.validation import validate_plan
@@ -33,6 +33,21 @@ def items(output, kind):
 def link_rows(output):
     objects = {x["id"]: x for x in items(output, "objects")}
     return {(objects[a["subject"]]["source_ref"]["row"], objects[a["object"]]["source_ref"]["row"]) for a in items(output, "assertions") if "object" in a}
+
+
+def test_checked_field_match_is_a_scoped_technical_graph_edge():
+    graph = {"nodes": [], "edges": []}
+    association = {"rules": [{
+        "rule_id": "r1", "status": "checked_technical",
+        "source": {"table": "s.a", "field": "ref"},
+        "target": {"table": "s.b", "field": "code"},
+        "selector": {"kind": "metric"}, "scope_bindings": {"domain": "domain"},
+    }]}
+    edge = add_inferred_matches(graph, association)["edges"][0]
+    assert edge["source"] == "s.a.ref" and edge["target"] == "s.b.code"
+    assert edge["type"] == "inferred_technical_match"
+    assert edge["selector"] == {"kind": "metric"}
+    assert edge["semantic_relation"] == "unresolved"
 
 
 def test_end_to_end_real_stdio_mcp(tmp_path):
@@ -89,7 +104,8 @@ def test_no_example_business_or_relations_required(tmp_path):
     assert result["status"] == "complete", result
     assert link_rows(tmp_path / "run") == set()
     ontology = read_yaml(tmp_path / "run/ontology.yaml")
-    assert ontology["object_types"] == [] and ontology["relation_types"] == []
+    assert all(item["category"] == "source_record_type" for item in ontology["object_types"])
+    assert ontology["relation_types"] == []
     assert all(k["claims"] == [] for k in read_yaml(tmp_path / "run/knowledge.yaml"))
 
 

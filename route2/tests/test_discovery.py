@@ -1,6 +1,7 @@
 """Synthetic checks for technical candidate recall and exact input statistics."""
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 
@@ -263,3 +264,82 @@ def test_pipeline_reports_unindexed_fields_and_unchecked_candidates(tmp_path):
     assert len(coverage["fields_not_value_indexed"]) == 6
     assert coverage["candidates_not_checked"] > 0
     assert coverage["partial"] is True
+
+
+def test_full_distinct_recalls_rare_key_outside_hash_sample():
+    shared = "M-RARE"
+    lower_hash = next(f"OTHER-{i}" for i in range(1000)
+                      if hashlib.md5(f"OTHER-{i}".encode()).digest() <
+                      hashlib.md5(shared.encode()).digest())
+    data = SmallDataset({
+        "demo.source": (["metric_code"], [(lower_hash,), (shared,)], []),
+        "demo.target": (["metric_code"], [(shared,)], ["metric_code"]),
+    })
+    try:
+        sampled = propose_candidates(data, max_indexed_values_per_field=1)
+        pair = find_candidate(sampled, "demo.source", "metric_code",
+                              "demo.target", "metric_code")
+        assert "value_overlap" not in pair["retrieval_channels"]
+        full = propose_candidates(data, value_index_mode="full_distinct",
+                                  max_indexed_fields=0)
+        pair = find_candidate(full, "demo.source", "metric_code",
+                              "demo.target", "metric_code")
+        assert "value_overlap" in pair["retrieval_channels"]
+        assert pair["shared_sample_value_count"] == 1
+        assert full["coverage"]["value_index_fields"] == 2
+        assert full["coverage"]["fields_not_value_indexed"] == []
+    finally:
+        data.close()
+
+
+def test_conditioned_reference_uses_observed_type_and_reverse_row_check():
+    data = SmallDataset({
+        "demo.ref_rule": (["source_type", "source_field"],
+                          [("metric", "M1"), ("metric", "MISSING"),
+                           ("DIM0001", "R1")], []),
+        "demo.metric_detail": (["metric_code"], [("M1",)], ["metric_code"]),
+        "demo.dim_member": (["dim_code", "member_code"],
+                            [("DIM0001", "R1"), ("DIM0002", "R1")], []),
+    })
+    try:
+        found = discover_and_check(data, {
+            "value_index_mode": "full_distinct", "max_indexed_fields": 0,
+            "max_candidate_validations": 8,
+        })
+        conditional = [c for c in found["candidates"]
+                       if "conditioned_structure" in c["retrieval_channels"]]
+        dim = next(c for c in conditional if c["target"]["field"] == "member_code")
+        metric = next(c for c in conditional if c["target"]["field"] == "metric_code")
+        by_id = {check["candidate_id"]: check for check in found["checks"]}
+        dim_check = by_id[dim["candidate_id"]]
+        metric_check = by_id[metric["candidate_id"]]
+        assert dim_check["scope_bindings"] == {"dim_code": "source_type"}
+        assert dim_check["checks"]["unique_matches"] == 1
+        assert dim_check["checks"]["ambiguous_matches"] == 0
+        assert metric_check["checks"]["unique_matches"] == 1
+        assert metric_check["checks"]["missing_in_input"] == 1
+        assert all(check["decision"]["semantic_relation"] == "unresolved"
+                   for check in (dim_check, metric_check))
+    finally:
+        data.close()
+
+
+def test_dim_discriminator_can_reference_header_code_without_member_table():
+    data = SmallDataset({
+        "demo.ref_rule": (["source_type", "source_field"], [("DIM0001", "DIM0001")], []),
+        "demo.dim_head": (["dim_head_code"], [("DIM0001",)], ["dim_head_code"]),
+    })
+    try:
+        found = discover_and_check(data, {
+            "value_index_mode": "full_distinct", "max_indexed_fields": 0,
+            "max_candidate_validations": 2,
+        })
+        candidate = next(c for c in found["candidates"]
+                         if c.get("suggested_selector") == {"source_type": "DIM0001"}
+                         and c["target"]["field"] == "dim_head_code")
+        check = next(c for c in found["checks"]
+                     if c["candidate_id"] == candidate["candidate_id"])
+        assert check["checks"]["unique_matches"] == 1
+        assert check["scope_bindings"] == {}
+    finally:
+        data.close()

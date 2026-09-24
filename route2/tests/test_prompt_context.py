@@ -74,6 +74,20 @@ def test_prompt_omits_empty_and_audit_values_but_keeps_physical_mapping(tmp_path
         data.close()
 
 
+def test_program_first_mode_skips_table_model_calls_but_keeps_source_mapping(tmp_path):
+    config = setup(tmp_path, scenario="unrelated", mcp=False)
+    config["incremental"] = {"mode": "source_mapping_only"}
+    config["discovery"] = {"enabled": False}
+    result = asyncio.run(build(config, tmp_path / "run"))
+    assert result["status"] == "complete", result
+    assert result["incremental_mode"] == "source_mapping_only"
+    assert result["llm"]["calls"] == 0
+    assert result["incremental_iteration_policy"]["table_passes"] == 0
+    plan = read_yaml(tmp_path / "run/extraction_plan.yaml")
+    assert all(item["category"] == "source_record_type" for item in plan["object_types"])
+    assert read_yaml(tmp_path / "run/construction.yaml")["semantic_table_pass"].startswith("disabled")
+
+
 def test_timeout_does_not_repeat_the_same_plan_five_times(tmp_path, monkeypatch):
     config = setup(tmp_path, scenario="unrelated", mcp=False)
     config["llm"]["max_repairs"] = 4

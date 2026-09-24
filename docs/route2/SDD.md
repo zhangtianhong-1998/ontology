@@ -6,13 +6,13 @@
 
 ## 当前原型与完整设计的对应
 
-本轮已按 [RIGOR 对照与本轮改造](RIGOR_COMPARISON.md)实现确定性直接映射、逐表增量与回滚、AgentScope 原生 ReAct 检索及本地结果浏览。运行代码位于 `code/ontology_r2`，配置入口为 `config/runtime.mock.yaml`。
+代码保留 [RIGOR 对照与本轮改造](RIGOR_COMPARISON.md)中的逐表增量模式，供旧例回归。2026-09-25 起，`runtime.real.example.yaml` 和水果实验配置使用 `incremental.mode: source_mapping_only`：程序先建立完整源映射和字段候选；可选关联 Agent 提出条件规则，程序全量核验；有限的跨表记录包再交给 LLM 判断业务类型与关系。此模式不做逐表 plan/review 调用；MCP 和外部本体若启用，须切回逐表模式，直到它们接入组包流程。运行代码位于 `code/ontology_r2`。
 
 `storage.py/profiling.py` 导入并统计；`discovery.py` 召回和核验字段候选；`column_roles.py` 分流列角色，`concept_candidates.py`、`value_aliases.py` 做有界候选召回，`row_bundles.py` 提取少量已核验的原值相等记录对；`pipeline.py` 调度和实例校验；`incremental.py` 建立直接映射、选择 core 邻域并处理 delta；`models.py/validation.py` 定义计划及校验；`relations.py` 执行记录关联；`knowledge.py` 使用 AgentScope `Agent` + `ReActConfig`，`llm.py` 管理共享模型预算；`external.py` 导入参考模型；`visualization.py/viewer.html` 生成本地浏览页面。`datahub_adapter.py` 可把现有技术图导出为 DataHub metadata-file。下文未落地的 `r2/*` 接口仍为职责草案。
 
-2026-09-23 新增[字段统计与关联发现详细设计](FIELD_PROFILING_DESIGN.md)及[字段关联方案评估](FIELD_ASSOCIATION_EVALUATION.md)。P01、P03、P04 已实现首版，P05 已把有限的已核验候选注入增量上下文；分层取样、结构化引用/文本候选、条件自动发现和自动计划编译仍未实现。准确范围见[状态表](STATUS.md)。
+2026-09-23 新增[字段统计与关联发现详细设计](FIELD_PROFILING_DESIGN.md)及[字段关联方案评估](FIELD_ASSOCIATION_EVALUATION.md)。P01、P03、P04 已实现首版，包含实际出现的 `business_type/source_type` 条件分支与全输入核验；分层取样、一般化 JSON 路径、异名值转换和复合键仍未实现。准确范围见[状态表](STATUS.md)。
 
-2026-09-24 根据数据机反馈与组包需求，新增[实例检索与增量组包设计](INSTANCE_BUNDLE_DESIGN.md)。它规定专门的关联发现 Agent、两种跨表工作单元、BM25/向量候选召回、分层选例和组级 delta。此方案目前是设计；现有 CSV 实例尚未建立 BM25/向量索引，也没有组级增量调度。
+2026-09-24 根据数据机反馈与组包需求，新增[实例检索与增量组包设计](INSTANCE_BUNDLE_DESIGN.md)。当前已有有界语义卡、中文 n-gram BM25、可选本地向量、概念包和关系包的一轮组级抽取。尚缺分层选例、同义值转换的全量核验、观测值实例化和真实数据 Gold 评估。2026-09-25 的代码与合成实验对照见[优化与验证记录](OPTIMIZATION_AND_VALIDATION_20260925.md)。
 
 ## 1. 总体执行
 
@@ -31,7 +31,7 @@ CSV → 分批导入、快照定位、全字段基础统计
   → 定义对象、带条件关系、本体、证据与未决项
 ```
 
-输入契约、根模型、状态和 YAML 分片遵守[共同设计](../shared/contracts.md)。当前增量构建仍按表组织；每个单元最多接收三条已核验字段候选及少量联合行例、两组定义候选。它们尚不构成完整的跨表语义组包，可能遗漏按表切分的引用链。
+输入契约、根模型、状态和 YAML 分片遵守[共同设计](../shared/contracts.md)。逐表模式每个单元最多接收三条已核验字段候选及少量联合行例；新默认实验模式跳过逐表语义计划，组包阶段跨表处理定义与关系。两种模式都受候选核验、卡片、种子和 LLM 预算限制，未处理范围保留在 coverage 与 manifest。
 
 ## 2. 模块与接口
 
@@ -42,7 +42,7 @@ CSV → 分批导入、快照定位、全字段基础统计
 | `r2/ingest.py` | `ingest_csv(snapshot, config) -> ImportManifest` | CSV 流式导入、源行定位、类型辅助列、DuckDB 索引 |
 | `r2/meta_graph.py` | `build_graph(snapshot) -> MetaGraph` | 技术节点、声明边、来源与邻居查询 |
 | `ontology_r2/profiling.py`（首版） | `profile_fields` | 分组 SQL 聚合、空值/格式计数及有限取值样本；精确频次和分层取样待做 |
-| `ontology_r2/discovery.py`（首版） | `propose_candidates`、`validate_candidate`、`discover_and_check` | 声明/名称/原值候选及单列精确核验；结构化引用、条件提案与计划编译待做 |
+| `ontology_r2/discovery.py`（首版） | `propose_candidates`、`validate_candidate`、`discover_and_check` | 元数据/名称/原值候选、已出现类型值的条件分支和单列全输入核验；一般化 JSON 路径、复合键与异名转换待做 |
 | `ontology_r2/datahub_adapter.py`（可选） | `export_datahub_metadata` | 将表、列、声明主键和来源写入 DataHub metadata-file；不替代本地图或实现血缘 |
 | `r2/plans.py` | `propose_plans(schema, summaries) -> list[ExtractionPlan]` | LLM 有界角色判别、计划验证、条件覆盖检查 |
 | `r2/relations.py` | `discover(plans, store) -> CandidateIterator` | 标识匹配、候选召回、公式/条件解析和关联统计 |
@@ -55,13 +55,13 @@ CSV → 分批导入、快照定位、全字段基础统计
 
 当前技术节点：`DatasetSnapshot`、`Table`、`Column`、`Constraint`、`Source`。当前技术边包括 `table_has_column`、`has_declared_constraint`、`declared_fk`、`documented_by`、`sample_from`、`includes_source`。这些名字属于元数据层，不是新增内部一级业务关系。
 
-每个节点和边都有来源、提取方法和状态。`declared_fk` 只能来自声明外键；候选引用放在 `candidate_record_reference` 中，不能回写成声明。无外键时根据表列角色和检索建立工作邻居，它只表示“值得一起分析”。
+`declared_fk` 只能来自声明外键。已核验字段规则以 `inferred_technical_match` 写入技术图，附带规则 ID、条件和状态，不能回写成声明外键或业务关系。无外键时按列角色和值域建立分析候选。
 
 CSV 记录不全部变成内存图节点。元数据图引用 DuckDB 中的记录集合、统计和候选边；仅选定证据包取少量完整相关记录。
 
 目标电脑为无 Docker 的 Windows 11，因此运行时保留本地技术图与 DuckDB。DataHub 仅作为可选互操作格式：导出表/列 metadata-file，另用隔离环境中的 Lite 做本地存储和读回。Lite 不支持关系图遍历或血缘；完整 DataHub 服务不属于此离线原型的运行依赖。安装与验证命令见[离线说明](DATAHUB_OFFLINE.md)。
 
-设计目标是增加 `candidate_field_association` 技术边，保存候选通道、统计范围和检查状态。首版先把候选与核验写在 `field_candidates.yaml`、`association_checks.yaml`，未并入 `meta_graph.yaml`，更未直接变成 `points_to` 或声明外键。
+字段候选与核验分别写入 `field_candidates.yaml`、`association_checks.yaml`。全输入核验后，`checked_technical` 和 `observed_subset` 规则还会以 `inferred_technical_match` 技术边写入 `meta_graph.yaml`，保留 selector、作用域和状态；`observed_subset` 不能生成全局业务关系。元数据图不把这些边改写成 `declared_fk`，也不自动升级为 `points_to`。
 
 ### 3.1 字段统计路径
 
@@ -126,7 +126,7 @@ evidence_fields: [metric_code, semantic_kind, description]
 
 ### 4.4 名称、定义与上下文候选
 
-以下是目标方案，当前 CSV 实例尚无这一套混合检索和组级调度；可运行的 `text_target` 仍只在既有关系计划执行时使用 SQLite FTS 产生候选。
+当前已有磁盘语义卡、中文 n-gram 词法索引、可选本地向量与有界组包调度；它们只召回少量记录，尚无真实业务 Gold 的召回率验证。既有关系计划的 `text_target` 仍单独使用 SQLite FTS 产生候选。下面是尚待完善的检索与采样目标。
 
 目标文本卡由名称、定义、单位、公式说明、业务域、维度体系、层级、版本组成，保留字段出处。候选集合取以下通道并集：精确标识、名称/别名词法召回、定义语义召回；词法可用 BM25/字符 n-gram，语义用可配置 embedding。
 
@@ -154,13 +154,13 @@ LLM 同意 `same_concept` 先保存为同一概念候选，路线2不据此跨�
 
 每次批量复用计划都检查选择条件、身份范围、必需字段和歧义数。匹配多目标允许合法一对多，如指标依赖两个度量；规则本来要求单目标而实际多义时未决。
 
-### 4.7 关联发现 Agent 与记录组包（待实现）
+### 4.7 关联发现 Agent 与记录组包（首版实现）
 
 专门的 Agent 按候选字段组探索，而非逐行探索。工具只允许读取元数据、分层样本、候选匹配统计和反例。Agent 的输出是受限 YAML 规则候选，包括字段、允许的转换、selector、作用域、适用范围和证据；程序在完整输入上复验，记录唯一、缺失、多义和条件外命中。规则通过技术检查后才可用于连接记录；它仍未自动获得本体关系含义。
 
 随后分开调度关联规则单元和定义记录单元。已验证规则决定哪些跨表行必须放在一起；BM25 与本地向量只补充待比较的定义候选，不能当作连接或身份。每个组按条件分支、口径、单位和稀有模式选代表例与反例，严格控制完整请求大小。组包 YAML、缓存失效、预算和实验细节见[实例组包设计](INSTANCE_BUNDLE_DESIGN.md)。
 
-关系包输出带条件和证据的关系计划候选；概念包输出业务概念对象及 `record→concept` 来源对齐。后者需要扩展现有每表单类型 `BuildPlan`，保留同名异义、作用域和单位冲突，不能仅新增一张表的派生类型。两类 delta 分开校验，再合入内部 YAML 模型。
+关系包输出带条件和证据的关系计划候选；概念包输出业务概念对象及 `record→concept` 来源对齐。类级定义且适用范围清楚时，概念包还能编译 `business_type`；其余概念保持实例级或未决。每张表的 `source_record_type` 只描述源行形状，不代替业务类型。两类输出分开校验，再合入内部 YAML 模型。当前关系计划的端点仍须有整表绑定，尚不支持同一表按记录分派多个业务类型。
 
 ## 5. 百万记录的执行设计
 

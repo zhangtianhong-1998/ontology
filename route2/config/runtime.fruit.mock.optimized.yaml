@@ -1,14 +1,13 @@
-# Generate the ignored local data first: uv run python scripts/generate_fruit_data.py generate --output local_data/fruit_smoke --scale 0.001
-# Copy to a local config if you need different limits. Credentials come from ../.env.
+# Reproducible synthetic engineering run. Mock decisions add no business facts.
 synthetic: true
-dataset: ../local_data/fruit_smoke
+dataset: ../local_data/fruit_smoke_v2
 data_scope: sample
 model_profile: ../ontologies/internal_model.yaml
 env_file: ../.env
 memory_limit: 2GB
 privacy: {exclude_columns: []}
 shard_size: 5000
-progress: {enabled: true, min_interval_seconds: 1.0}
+progress: {enabled: false}
 profiling: {sql_columns_per_group: 32}
 incremental: {mode: source_mapping_only}
 discovery:
@@ -37,19 +36,16 @@ instance_bundles:
   max_bundle_bytes: 16000
   vector_enabled: false
   max_joint_pairs_per_rule: 2
-  max_llm_bundles: 4
+  max_llm_bundles: 0
   review: true
 llm:
-  mode: agentscope
+  mode: mock
+  responses: ../fixtures/fruit_empty_semantics_mock.yaml
   stream: false
-  # Volcengine DeepSeek V4 Flash: chat_template_kwargs does not disable reasoning;
-  # thinking.type=disabled was verified against the configured endpoint.
   thinking: {mode: disabled, parameter: thinking, effort: medium}
   max_calls: 100
   max_reserved_tokens: 8000000
-  max_input_bytes: 80000
-  # Review of a full table may need more than 2K output tokens. A truncated
-  # finish_reason=length is rejected, even if a tool-call fragment exists.
+  max_input_bytes: 100000
   max_output_tokens: 8192
   max_repairs: 0
   max_retries: 1

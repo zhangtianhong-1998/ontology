@@ -71,4 +71,4 @@ route3/      # RIGOR、AgentScope、SAND、GRAMS、steiner-tree、内部模型�
 
 设计文件、资源下载与算法运行分别验证；源码齐全不表示已适配内部模型。具体运行结果见路线2说明。
 
-路线2的安装、模拟运行和代码包测试见 [运行说明](docs/route2/IMPLEMENTED.md)、[Windows 无 Docker 离线说明](docs/route2/DATAHUB_OFFLINE.md)与[测试说明](docs/route2/TESTING.md)。历史运行记录留在原工作区。
+路线2的安装、模拟运行和代码包测试见 [运行说明](docs/route2/IMPLEMENTED.md)、[Windows 无 Docker 离线说明](docs/route2/DATAHUB_OFFLINE.md)与[测试说明](docs/route2/TESTING.md)。本轮整改、合成数据和在线小样本的验证边界见[优化与验证记录](docs/route2/OPTIMIZATION_AND_VALIDATION_20260925.md)；运行产物仅保存在本机忽略目录 `route2/runs/`。

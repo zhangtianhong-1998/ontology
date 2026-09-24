@@ -16,9 +16,14 @@ progress:
   min_interval_seconds: 1.0
 profiling:
   sql_columns_per_group: 32
+# Route 2 discovers technical links first; bounded record bundles decide
+# business types and relations. The legacy table_semantic mode remains optional.
+incremental:
+  mode: source_mapping_only
 discovery:
   enabled: true
-  max_indexed_fields: 64
+  value_index_mode: full_distinct
+  max_indexed_fields: 0
   max_candidate_validations: 50
   max_evidence_per_unit: 3
   # Only checked raw-equality candidates currently support joined examples.

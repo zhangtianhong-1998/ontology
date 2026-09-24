@@ -70,18 +70,36 @@ def _bound_concept_refs(item):
     item["evidence_ids"] = evidence[:MAX_EVIDENCE_PER_CONCEPT]
 
 
-def _preview_summary(payload, has_results):
+def _preview_summary(payload, has_results, has_ontology):
     """Keep unavailable stages distinct from measured zeroes in the viewer."""
     manifest = payload["manifest"]
     counts = payload["counts"]
     group_replay = manifest.get("experimental_scope") == "focused_group_replay_only"
     count = lambda kind: counts.get(kind, 0) if has_results else None
+    derived = payload["ontology"].get("object_types", [])
+    relation_types = payload["ontology"].get("relation_types", [])
+    type_counts = {
+        "business": sum(item.get("category") == "business_type" for item in derived),
+        "source_record": sum(item.get("category") == "source_record_type" for item in derived),
+        "unclassified": sum(item.get("category") not in ("business_type", "source_record_type")
+                            for item in derived),
+        "relation": len(relation_types),
+        "business_relation": sum(item.get("category") == "business_relation_type"
+                                 for item in relation_types),
+        "record_relation": sum(item.get("category") != "business_relation_type"
+                               for item in relation_types),
+    }
     metrics = [
         {"label": "输入快照记录", "value": manifest.get("input_records")},
         {"label": "已抽取对象", "value": count("objects")},
-        {"label": "业务概念", "value": payload["concept_count"]},
+        {"label": "概念对象", "value": payload["concept_count"]},
+        {"label": "业务派生类型", "value": type_counts["business"] if has_ontology else None},
+        {"label": "源记录类型", "value": type_counts["source_record"]
+         if has_ontology and not group_replay else None},
         {"label": "记录对齐", "value": count("record_alignments")},
         {"label": "已接受对象关系", "value": payload["relation_count"]},
+        {"label": "已见证记录关系", "value": payload["record_relation_count"]},
+        {"label": "业务类型关系", "value": payload["business_relation_count"]},
         {"label": "映射字段", "value": None if group_replay else payload["construction"].get("direct_mapping_columns")},
         {"label": "未决项", "value": count("unresolved")},
         {"label": "本次模型调用", "value": manifest.get("llm", {}).get("calls")},
@@ -94,7 +112,93 @@ def _preview_summary(payload, has_results):
                   "映射阶段未运行，— 表示未执行或无统计，0 表示本次确为零。")
         if hits is not None:
             notice += f" 模型缓存命中 {hits} 次。"
-    return {"metrics": metrics, "notice": notice}
+    return {"metrics": metrics, "type_counts": type_counts if has_ontology else None,
+            "notice": notice}
+
+
+def _metadata_preview(graph, candidates, rule_set, max_nodes):
+    """Show tables first; keep structural and inferred links visibly separate."""
+    all_nodes = {item["id"]: item for item in graph.get("nodes", [])}
+    tables = sorted((item for item in all_nodes.values() if item.get("kind") == "Table"),
+                    key=lambda item: item["id"])
+    visible = tables[:max_nodes]
+    ids = {item["id"] for item in visible}
+    details = {item["id"]: {"columns": [], "constraints": [], "sources": []} for item in visible}
+    links = []
+    for edge in graph.get("edges", []):
+        source, target = edge.get("source"), edge.get("target")
+        if source in ids:
+            node = all_nodes.get(target)
+            kind = {"table_has_column": "columns", "has_declared_constraint": "constraints",
+                    "documented_by": "sources", "sample_from": "sources"}.get(edge.get("type"))
+            if kind and node:
+                details[source][kind].append(node)
+        if edge.get("type") == "declared_fk":
+            source_table = str(source).rsplit(".", 1)[0]
+            target_table = str(target).rsplit(".", 1)[0]
+            if source_table in ids and target_table in ids:
+                links.append({"id": "declared:" + str(source) + "→" + str(target),
+                              "source": source_table, "target": target_table,
+                              "source_field": str(source).rsplit(".", 1)[-1],
+                              "target_field": str(target).rsplit(".", 1)[-1],
+                              "status": "declared", "evidence": edge})
+    verified_whole_pairs = set()
+    for item in rule_set.get("rules", []):
+        if item.get("status") != "checked_technical":
+            continue
+        source, target = item.get("source", {}), item.get("target", {})
+        if source.get("table") in ids and target.get("table") in ids:
+            if not item.get("selector") and not item.get("scope_bindings"):
+                verified_whole_pairs.add((source["table"], source.get("field"),
+                                          target["table"], target.get("field")))
+            links.append({"id": item.get("rule_id"), "source": source["table"],
+                          "target": target["table"], "source_field": source.get("field"),
+                          "target_field": target.get("field"), "status": "verified_technical",
+                          "selector": item.get("selector", {}), "scope_bindings": item.get("scope_bindings", {}),
+                          "verification": item.get("verification", {}),
+                          "semantic_relation": item.get("semantic_relation", "unresolved")})
+    for item in candidates:
+        source, target = item.get("source", {}), item.get("target", {})
+        if source.get("table") in ids and target.get("table") in ids:
+            if (source["table"], source.get("field"), target["table"], target.get("field")) in verified_whole_pairs:
+                continue
+            links.append({"id": "candidate:" + str(item.get("candidate_id")),
+                          "source": source["table"], "target": target["table"],
+                          "source_field": source.get("field"), "target_field": target.get("field"),
+                          "status": "candidate", "retrieval_channels": item.get("retrieval_channels", []),
+                          "decision": item.get("decision", {}),
+                          "shared_sample_value_count": item.get("shared_sample_value_count")})
+    counts = {status: sum(item["status"] == status for item in links)
+              for status in ("declared", "verified_technical", "candidate")}
+    for table in visible:
+        detail = details[table["id"]]
+        detail["columns"].sort(key=lambda node: (node.get("ordinal_position") or 0, node["id"]))
+        detail["sources"].sort(key=lambda node: node["id"])
+        for kind in ("columns", "constraints", "sources"):
+            detail["total_" + kind] = len(detail[kind])
+        detail["sources"] = detail["sources"][:16]
+        detail["constraints"] = detail["constraints"][:32]
+    # Distribute a bounded column budget across tables, so an early wide table
+    # cannot hide every later table's fields from the standalone HTML.
+    column_lists = {table["id"]: details[table["id"]]["columns"] for table in visible}
+    for table in visible:
+        details[table["id"]]["columns"] = []
+    remaining = max_nodes * 8
+    for index in range(128):
+        any_more = False
+        for table in visible:
+            candidates_for_table = column_lists[table["id"]]
+            if index < len(candidates_for_table):
+                any_more = True
+                if remaining:
+                    details[table["id"]]["columns"].append(candidates_for_table[index])
+                    remaining -= 1
+        if not remaining or not any_more:
+            break
+    return {"tables": visible, "details": details, "links": links[:max_nodes * 10],
+            "link_counts": counts, "total_tables": len(tables),
+            "total_nodes": len(all_nodes), "shown_links": min(len(links), max_nodes * 10),
+            "total_links": len(links)}
 
 
 def render_viewer(run, max_nodes=200, *, manifest_override=None):
@@ -112,15 +216,27 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                "knowledge": read("knowledge.yaml", []), "validation": read("validation.yaml", {}), "limit": max_nodes,
                "objects": [], "concepts": [], "concept_count": None,
                "record_alignments": [], "relations": [], "relation_count": None,
+               "record_relation_count": None, "business_relation_count": None,
                "unresolved": [], "evidence": {}, "counts": {}}
     database = run / "work/results.sqlite"
     if database.exists():
         with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as db:
             payload["counts"] = dict(db.execute("SELECT kind,count(*) FROM items GROUP BY kind"))
             payload["relation_count"] = db.execute("SELECT count(*) FROM items WHERE kind='assertions' AND json_extract(body,'$.object') IS NOT NULL").fetchone()[0]
+            payload["business_relation_count"] = db.execute(
+                "SELECT count(*) FROM items WHERE kind='assertions' AND "
+                "json_extract(body,'$.object') IS NOT NULL AND "
+                "json_type(body,'$.source_record_pair') = 'object'").fetchone()[0]
+            payload["record_relation_count"] = (payload["relation_count"]
+                                                - payload["business_relation_count"])
             nodes = {}
             for (raw,) in db.execute("SELECT body FROM items WHERE kind='assertions' AND json_extract(body,'$.object') IS NOT NULL ORDER BY id LIMIT ?", (max_nodes * 2,)):
                 edge = json.loads(raw)
+                edge["viewer_layer"] = ("business_type" if isinstance(edge.get("source_record_pair"), dict)
+                                        else "record")
+                edge["viewer_endpoint_labels"] = (["源概念", "目标概念"]
+                                                  if edge["viewer_layer"] == "business_type"
+                                                  else ["源记录", "目标记录"])
                 needed = {edge["subject"], edge["object"]} - nodes.keys()
                 if len(nodes) + len(needed) > max_nodes:
                     continue
@@ -164,10 +280,11 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                 row = db.execute("SELECT body FROM items WHERE kind='evidence' AND id=?", (key,)).fetchone()
                 if row:
                     payload["evidence"][key] = json.loads(row[0])
-    payload["preview"] = _preview_summary(payload, database.exists())
+    payload["preview"] = _preview_summary(payload, database.exists(), (run / "ontology.yaml").exists())
     graph = read("meta_graph.yaml", {"nodes": [], "edges": []})
-    ids = {n["id"] for n in graph["nodes"][:max_nodes]}
-    payload["metadata"] = {"nodes": graph["nodes"][:max_nodes], "edges": [e for e in graph["edges"] if e["source"] in ids and e["target"] in ids][:max_nodes * 2], "total_nodes": len(graph["nodes"])}
+    payload["metadata"] = _metadata_preview(
+        graph, read("field_candidates.yaml", []),
+        read("association_rules.yaml", {"rules": []}), max_nodes)
     # Audit logs remain on disk. The page contains only bounded graph data and summaries.
     payload["knowledge"] = [{k: v for k, v in item.items() if k != "documents"} for item in payload["knowledge"]]
     payload["construction"] = {**payload["construction"], "steps": [{k: v for k, v in s.items() if k != "attempts"} | {"attempts": [{k: v for k, v in a.items() if k not in ("delta", "accepted_delta")} for a in s["attempts"]]} for s in payload["construction"].get("steps", [])]}

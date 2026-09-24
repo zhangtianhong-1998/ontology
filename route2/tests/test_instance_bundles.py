@@ -3,6 +3,7 @@
 import pytest
 from types import SimpleNamespace
 
+import ontology_r2.instance_bundles as packets_module
 from ontology_r2.instance_bundles import _relation_bundle, _round_robin_rules, _select_seeds, build_instance_bundles
 from ontology_r2.semantic_cards import SemanticCardIndex, build_semantic_cards
 from test_semantic_cards import _dataset
@@ -39,6 +40,28 @@ def test_shared_metric_definition_key_is_not_compiled_as_business_relation():
                 "source": {"table": source, "field": "metric_code"},
                 "target": {"table": "fruit.metric_detail", "field": "metric_code"}}
         assert _relation_bundle(data, rule, {}) == (None, "same_concept_key_requires_alignment")
+
+
+def test_skipped_alignment_lead_does_not_consume_relation_packet_slot(monkeypatch):
+    rules = [
+        {"rule_id": "a", "status": "checked_technical", "numeric_overlap_only": False,
+         "source": {"table": "fruit.metric", "field": "metric_code"},
+         "target": {"table": "fruit.metric_common", "field": "metric_code"}},
+        {"rule_id": "b", "status": "checked_technical", "numeric_overlap_only": False,
+         "source": {"table": "fruit.metric", "field": "measure_code"},
+         "target": {"table": "fruit.measure", "field": "measure_code"}},
+    ]
+    monkeypatch.setattr(packets_module, "_relation_bundle", lambda data, rule, limits: (
+        (None, "same_concept_key_requires_alignment") if rule["rule_id"] == "a"
+        else ({"task_kind": "relation_meaning", "bundle_id": "b"}, None)))
+    index = SimpleNamespace(db=SimpleNamespace(execute=lambda sql: SimpleNamespace(
+        fetchone=lambda: (0,))))
+    result = build_instance_bundles(SimpleNamespace(snapshot_id="snapshot"), index,
+                                    {"rules": rules}, {"max_concept_bundles": 0,
+                                                       "max_relation_bundles": 1})
+    assert result["coverage"]["rules_selected"] == 2
+    assert result["coverage"]["bundles_by_task"]["relation_meaning"] == 1
+    assert result["coverage"]["skipped"][0]["reason"] == "same_concept_key_requires_alignment"
 
 
 def test_lexical_packets_keep_conflicting_scopes_as_unjudged_candidates(tmp_path):

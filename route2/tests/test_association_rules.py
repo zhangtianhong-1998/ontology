@@ -5,7 +5,7 @@ import asyncio
 import duckdb
 
 from ontology_r2.association_rules import _select_agent_candidates, build_association_rules
-from ontology_r2.discovery import validate_candidate
+from ontology_r2.discovery import discover_and_check, validate_candidate
 from ontology_r2.storage import qi
 
 
@@ -242,5 +242,84 @@ def test_scripted_agentscope_react_uses_read_only_tools_then_program_verifies():
         assert rule["origin"] == "agentscope_react"
         assert rule["status"] == "checked_technical"
         assert rule["semantic_relation"] == "unresolved"
+    finally:
+        data.close()
+
+
+def test_discovered_polymorphic_branches_reuse_exact_checks_without_agent():
+    data = Rows({
+        "demo.business_tag": (["business_type", "business_id"],
+                              [("API", "1"), ("CARD", "1"), ("API", "2")]),
+        "demo.market_api": (["api_id"], [("1",), ("2",)]),
+        "demo.dashboard_card": (["card_id"], [("1",)]),
+    })
+    data.tables["demo.market_api"]["pk"] = ["api_id"]
+    data.tables["demo.dashboard_card"]["pk"] = ["card_id"]
+    try:
+        found = discover_and_check(data, {
+            "value_index_mode": "full_distinct", "max_indexed_fields": 0,
+            "max_candidate_validations": 12,
+        })
+        result = asyncio.run(build_association_rules(
+            data, found, {"max_rules": 50, "agent_enabled": False}))
+        branches = [r for r in result["rules"] if r["selector"]]
+        assert {(r["selector"]["business_type"], r["target"]["table"])
+                for r in branches} == {("API", "demo.market_api"),
+                                      ("CARD", "demo.dashboard_card")}
+        assert all(r["status"] == "checked_technical" and
+                   r["semantic_relation"] == "unresolved" for r in branches)
+        assert result["coverage"]["new_full_input_validations"] == 0
+    finally:
+        data.close()
+
+
+def test_negative_reference_stays_subset_until_an_explicit_selector_excludes_it():
+    data = Rows({
+        "demo.ref_rule": (["source_type", "source_field", "record_state"],
+                          [("metric", "M1", "valid"),
+                           ("metric", "UNKNOWN_SYNTHETIC_REFERENCE", "invalid")]),
+        "demo.metric_detail": (["metric_code"], [("M1",)]),
+    })
+    try:
+        found = discover_and_check(data, {
+            "value_index_mode": "full_distinct", "max_indexed_fields": 0,
+            "max_candidate_validations": 3,
+        })
+        lead = next(c for c in found["candidates"]
+                    if c.get("suggested_selector") == {"source_type": "metric"}
+                    and c["target"]["field"] == "metric_code")
+        result = asyncio.run(build_association_rules(data, found, {
+            "max_rules": 20,
+            "proposals": [{"candidate_id": lead["candidate_id"],
+                           "selector": {"source_type": "metric", "record_state": "valid"}}],
+        }))
+        rules = [r for r in result["rules"] if r["candidate_id"] == lead["candidate_id"]]
+        broad = next(r for r in rules if "record_state" not in r["selector"])
+        narrow = next(r for r in rules if r["selector"].get("record_state") == "valid")
+        assert broad["status"] == "observed_subset"
+        assert broad["verification"]["checks"]["missing_in_input"] == 1
+        assert broad["verification"]["counterexamples"][0]["reason"] == "missing_in_input"
+        assert narrow["status"] == "checked_technical"
+        assert narrow["selector"] == {"record_state": "valid", "source_type": "metric"}
+        assert narrow["semantic_relation"] == broad["semantic_relation"] == "unresolved"
+    finally:
+        data.close()
+
+
+def test_missing_scope_prevents_global_technical_status():
+    data = Rows({
+        "demo.source": (["kind", "ref", "market"],
+                        [("linked", "A", "north"), ("linked", "A", "")]),
+        "demo.target": (["code", "market_area"], [("A", "north")]),
+    })
+    try:
+        result = asyncio.run(build_association_rules(
+            data, {"candidates": [candidate()], "checks": []},
+            {"proposals": [{"candidate_id": "lead-1", "selector": {"kind": "linked"},
+                            "scope_bindings": {"market": "market_area"}}]}))
+        rule = next(r for r in result["rules"] if r["scope_bindings"])
+        assert rule["verification"]["checks"]["unique_matches"] == 1
+        assert rule["verification"]["checks"]["missing_scope"] == 1
+        assert rule["status"] == "observed_subset"
     finally:
         data.close()

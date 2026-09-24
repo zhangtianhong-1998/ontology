@@ -68,8 +68,7 @@ def _checked_index(discovery):
     return {item["candidate_id"]: item for item in discovery.get("checks", [])
             if item.get("decision", {}).get("status") == "checked" and
             item.get("scan_scope") == "full_input" and
-            item.get("normalization") == "identity" and
-            not item.get("selector") and not item.get("scope_bindings")}
+            item.get("normalization") == "identity"}
 
 
 def _proposal(raw, candidates):
@@ -111,7 +110,10 @@ def _technical_status(check):
         return "unresolved"
     counts = check["checks"]
     eligible = counts["eligible_references"]
-    if eligible and counts["unique_matches"] == eligible:
+    # A selected source row with a usable reference but no required scope
+    # cannot be certified by the scoped join.  Keep the rule partial even if
+    # every *eligible* row happened to match uniquely.
+    if eligible and counts["unique_matches"] == eligible and not counts.get("missing_scope", 0):
         return "checked_technical"
     if counts["unique_matches"]:
         return "observed_subset"
@@ -355,7 +357,10 @@ async def build_association_rules(data, discovery, options=None, llm=None):
     checked = {cid: item for cid, item in _checked_index(discovery).items()
                if item.get("snapshot_id") == data.snapshot_id and
                cid in candidates and item.get("source") == candidates[cid]["source"] and
-               item.get("target") == candidates[cid]["target"]}
+               item.get("target") == candidates[cid]["target"] and
+               item.get("selector", {}) == candidates[cid].get("suggested_selector", {}) and
+               item.get("scope_bindings", {}) == _inverse_scope(
+                   candidates[cid].get("suggested_scope_bindings", {}))}
     proposals = []
     errors = []
     for raw in options.get("proposals", []):
@@ -382,7 +387,9 @@ async def build_association_rules(data, discovery, options=None, llm=None):
         c["candidate_id"] not in checked,
         c.get("numeric_overlap_only", False), c["candidate_id"]))
     requested = [*proposals,
-                 *((RuleProposal(candidate_id=c["candidate_id"]), "discovery")
+                 *((RuleProposal(candidate_id=c["candidate_id"],
+                                 selector=c.get("suggested_selector", {}),
+                                 scope_bindings=c.get("suggested_scope_bindings", {})), "discovery")
                    for c in base)]
     seen = set()
     rules = []
@@ -401,7 +408,8 @@ async def build_association_rules(data, discovery, options=None, llm=None):
         if len(rules) >= limits["max_rules"]:
             continue
         check = tested_by_agent.get(rule_id)
-        if check is None and not proposal.selector and not proposal.scope_bindings:
+        if check is None and proposal.selector == candidate.get("suggested_selector", {}) and \
+                proposal.scope_bindings == candidate.get("suggested_scope_bindings", {}):
             check = checked.get(proposal.candidate_id)
         error = None
         should_validate = origin != "discovery" and check is None
