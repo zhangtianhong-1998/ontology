@@ -4,11 +4,17 @@ import asyncio
 import csv
 from pathlib import Path
 
-from ontology_r2.incremental import core_context, direct_mapping, unit_context
+from ontology_r2.incremental import _mapping_only, core_context, direct_mapping, unit_context
 from ontology_r2.llm import StructuredLLM
 from ontology_r2.pipeline import build
 from ontology_r2.storage import Dataset, read_yaml, write_yaml
 from test_pipeline import setup
+
+
+def test_large_import_temp_is_mapping_only_but_wide_business_table_is_not():
+    columns = [{"column_name": f"c{index}"} for index in range(70)]
+    assert _mapping_only({"table_name": "fruit_import_staging_temp", "columns": columns})
+    assert not _mapping_only({"table_name": "fruit_sales_wide", "columns": columns})
 
 
 def test_prompt_omits_empty_and_audit_values_but_keeps_physical_mapping(tmp_path):
@@ -20,6 +26,7 @@ def test_prompt_omits_empty_and_audit_values_but_keeps_physical_mapping(tmp_path
         ("creation_date", "date", "记录创建日期"),
         ("empty_column", "text", "备用字段"),
         ("transaction_date", "date", "交易日期"),
+        ("business_description", "text", "业务说明"),
     ):
         table["columns"].append({"column_name": name, "ordinal_position": len(table["columns"]) + 1,
                                  "data_type": data_type, "column_comment": comment,
@@ -33,7 +40,8 @@ def test_prompt_omits_empty_and_audit_values_but_keeps_physical_mapping(tmp_path
         writer.writeheader()
         for row in rows:
             writer.writerow({**row, "creation_date": "2026-01-01",
-                             "empty_column": "", "transaction_date": "2026-01-02"})
+                             "empty_column": "", "transaction_date": "2026-01-02",
+                             "business_description": "水果说明" * 150})
 
     work = tmp_path / "work"
     work.mkdir()
@@ -48,6 +56,11 @@ def test_prompt_omits_empty_and_audit_values_but_keeps_physical_mapping(tmp_path
         assert any(binding["source_column"] == "creation_date"
                    for binding in current["deterministic_bindings"])
         assert all("creation_date" not in row["values"] for row in current["sample"])
+        assert all(len(value) <= 160 for row in current["sample"]
+                   for value in row["values"].values() if value is not None)
+        assert "business_description" in current["sample"][0]["truncated_columns"]
+        assert all("evidence" not in item for item in current["column_roles"])
+        assert all(len(item["column_hints"]) <= 2 for item in context["table_catalog"])
         assert all("columns" not in item for item in context["table_catalog"])
         plan, mapping = direct_mapping(data)
         record_plan = next(item for item in plan.tables if item.table == "demo.records")

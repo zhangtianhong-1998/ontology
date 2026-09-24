@@ -44,6 +44,7 @@ class DerivedType(Strict):
     parent: str
     definition: str
     evidence_ids: list[str]
+    label: str | None = None
 
 
 class TablePlan(Strict):

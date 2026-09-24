@@ -7,13 +7,18 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .association_rules import build_association_rules
 from .column_roles import classify_columns
 from .concept_candidates import recall_concept_candidates
 from .discovery import discover_and_check
-from .incremental import construct
+from .embedding import LocalEmbedder, settings as embedding_settings
+from .group_incremental import construct_from_bundles
+from .incremental import construct, ontology_from_plan
+from .instance_bundles import build_instance_bundles
 from .llm import BudgetExceeded, StructuredLLM
 from .progress import ProgressReporter
 from .relations import Extractor
+from .semantic_cards import SemanticCardIndex, build_semantic_cards
 from .storage import Dataset, Sink, digest, read_yaml, write_yaml
 from .value_aliases import propose_value_alias_candidates
 
@@ -75,8 +80,9 @@ def check_output(sink):
     for field in ("subject", "object"):
         sql = "SELECT count(*) FROM items a WHERE a.kind='assertions' AND json_extract(a.body, ?) IS NOT NULL AND NOT EXISTS (SELECT 1 FROM items o WHERE o.kind='objects' AND o.id=json_extract(a.body, ?))"
         checks["dangling_" + field] = sink.db.execute(sql, ("$." + field, "$." + field)).fetchone()[0]
-    checks["missing_evidence"] = sink.db.execute("SELECT count(*) FROM items a, json_each(a.body, '$.evidence_ids') e WHERE a.kind IN ('assertions','objects','rules') AND NOT EXISTS (SELECT 1 FROM items v WHERE v.kind='evidence' AND v.id=e.value)").fetchone()[0]
+    checks["missing_evidence"] = sink.db.execute("SELECT count(*) FROM items a, json_each(a.body, '$.evidence_ids') e WHERE a.kind IN ('assertions','objects','rules','record_alignments') AND NOT EXISTS (SELECT 1 FROM items v WHERE v.kind='evidence' AND v.id=e.value)").fetchone()[0]
     checks["dangling_rule_member"] = sink.db.execute("SELECT count(*) FROM items a, json_each(a.body, '$.members') e WHERE a.kind='rules' AND NOT EXISTS (SELECT 1 FROM items v WHERE v.kind='objects' AND v.id=e.value)").fetchone()[0]
+    checks["dangling_concept_alignment"] = sink.db.execute("SELECT count(*) FROM items a WHERE a.kind='record_alignments' AND NOT EXISTS (SELECT 1 FROM items o WHERE o.kind='objects' AND o.id=json_extract(a.body,'$.concept_id'))").fetchone()[0]
     checks["mixed_literal_object"] = sink.db.execute("SELECT count(*) FROM items WHERE kind='assertions' AND (json_type(body,'$.object') IS NOT NULL) = (json_type(body,'$.literal') IS NOT NULL)").fetchone()[0]
     return {"passed": not any(checks.values()), "checks": checks, "semantic_quality": "requires_independent_evaluation"}
 
@@ -114,7 +120,7 @@ async def build(config, output):
         profile = read_yaml(config["model_profile"])
         profiling = {**config.get("profiling", {}), "input_scope": config.get("data_scope", "unknown")}
         data = Dataset(config["dataset"], output / "work", config.get("memory_limit", "1GB"),
-                       profiling, progress=progress)
+                       profiling, progress=progress, privacy_config=config.get("privacy"))
         sink = Sink(output, config.get("shard_size", 5000))
         llm = StructuredLLM(config["llm"], output)
         manifest.update(snapshot_id=data.snapshot_id, input_files=data.files, input_tables=len(data.tables), input_records=sum(t["rows"] for t in data.tables.values()), model_profile_hash=digest(profile))
@@ -132,6 +138,16 @@ async def build(config, output):
         manifest["field_discovery"] = {"candidate_count": len(discovery["candidates"]),
                                        "checked_count": discovery["coverage"].get("candidates_checked", 0),
                                        "partial": discovery["coverage"]["partial"]}
+        association = {"rules": [], "coverage": {"status": "disabled", "partial": False},
+                       "agent": {"status": "disabled"}}
+        if config.get("association_rules", {}).get("enabled", False):
+            association = await build_association_rules(
+                data, discovery, config["association_rules"], llm=llm)
+        write_yaml(output / "association_rules.yaml", association)
+        manifest["association_rules"] = {"rules": len(association["rules"]),
+                                          "statuses": association["coverage"].get("statuses", {}),
+                                          "agent": association["agent"],
+                                          "partial": association["coverage"].get("partial", False)}
         concept_result = {"candidates": [], "coverage": {"status": "disabled"}}
         if config.get("concept_recall", {}).get("enabled", False):
             options = {key: value for key, value in config["concept_recall"].items()
@@ -161,8 +177,66 @@ async def build(config, output):
                                                     discovery_candidates=discovery["candidates"],
                                                     concept_candidates=concept_result["candidates"],
                                                     progress=progress)
+        card_report = {"status": "disabled", "partial": False}
+        bundle_report = {"status": "disabled", "partial": False}
+        group_result = {"concepts": [], "record_alignments": [], "steps": [],
+                        "bundles_selected": 0, "bundles_skipped": 0, "partial": False}
+        if config.get("instance_bundles", {}).get("enabled", False):
+            options = config["instance_bundles"]
+            indexed = build_semantic_cards(
+                data, output / "work" / "semantic_cards.sqlite",
+                max_cards=options.get("max_cards", 200000),
+                max_field_chars=options.get("max_field_chars", 512),
+                max_unknown_fields_per_table=options.get("max_unknown_fields_per_table", 4),
+                progress=progress)
+            card_report = indexed["coverage"]
+            write_yaml(output / "semantic_card_coverage.yaml", card_report)
+            index = SemanticCardIndex(indexed["index_path"])
+            try:
+                vector_model = None
+                if options.get("vector_enabled", False):
+                    vector_settings = embedding_settings(config.get("embedding", {}))
+                    if vector_settings["enabled"]:
+                        vector_model = LocalEmbedder(vector_settings)
+                packet_result = build_instance_bundles(data, index, association, options,
+                                                       embedding=vector_model)
+            finally:
+                index.close()
+            bundle_report = packet_result["coverage"]
+            write_yaml(output / "evidence_bundles.yaml", packet_result["bundles"])
+            write_yaml(output / "instance_bundle_coverage.yaml", bundle_report)
+            group_result = await construct_from_bundles(
+                data, profile, plan, packet_result["bundles"], llm,
+                review=options.get("review", True),
+                max_bundles=options.get("max_llm_bundles", 20), progress=progress)
+            plan = group_result["plan"]
+            construction = read_yaml(output / "construction.yaml")
+            construction["group_steps"] = group_result["steps"]
+            construction["final_core_hash"] = digest(plan.model_dump())
+            write_yaml(output / "construction.yaml", construction)
+            write_yaml(output / "group_steps.yaml", group_result["steps"])
+            write_yaml(output / "extraction_plan.yaml", plan.model_dump())
+            ontology = ontology_from_plan(
+                plan, profile, data, read_yaml(output / "direct_mapping.yaml"),
+                construction["steps"])
+            write_yaml(output / "ontology.yaml", ontology)
+        manifest["semantic_cards"] = {"cards_indexed": card_report.get("cards_indexed", 0),
+                                      "rows_scanned": card_report.get("rows_scanned", 0),
+                                      "partial": card_report.get("partial", False)}
+        manifest["instance_bundles"] = {"built": bundle_report.get("bundles_built", 0),
+                                         "coverage": bundle_report, "partial": bundle_report.get("partial", False)}
+        manifest["group_incremental"] = {"accepted": sum(s["status"] == "accepted" for s in group_result["steps"]),
+                                         "steps": len(group_result["steps"]),
+                                         "skipped": group_result["bundles_skipped"],
+                                         "partial": group_result["partial"]}
+        write_yaml(output / "business_concepts.yaml", group_result["concepts"])
+        write_yaml(output / "record_alignments.yaml", group_result["record_alignments"])
         for ev in data.evidence.values():
             sink.put("evidence", ev)
+        for concept in group_result["concepts"]:
+            sink.put("objects", concept)
+        for alignment in group_result["record_alignments"]:
+            sink.put("record_alignments", alignment)
         extractor = Extractor(data, sink, plan, llm, config.get("processing", {}), progress=progress)
         materialized = 0
         preview_materialized = 0
@@ -236,6 +310,10 @@ async def build(config, output):
             "incremental_units_not_accepted": bool(manifest.get("incremental_units_not_accepted")),
             "external_alignment_errors": bool(manifest.get("external_alignment_errors")),
             "field_candidates_not_fully_checked": bool(manifest["field_discovery"]["partial"]),
+            "association_rules_partial": bool(manifest["association_rules"]["partial"]),
+            "semantic_cards_partial": bool(manifest["semantic_cards"]["partial"]),
+            "instance_bundles_partial": bool(manifest["instance_bundles"]["partial"]),
+            "group_incremental_partial": bool(manifest["group_incremental"]["partial"]),
         }
         manifest["partial_reasons"] = [name for name, present in partial_causes.items() if present]
         partial = bool(manifest["partial_reasons"])

@@ -12,6 +12,7 @@ from itertools import combinations
 import re
 import unicodedata
 
+from .column_roles import classify_columns
 from .storage import digest, qi
 
 
@@ -39,17 +40,22 @@ def _forms(value, alias_field):
 
 
 def _fields(data, fields, limit):
-    all_fields = {(table, column) for table, info in data.tables.items()
-                  for column in info["column_names"]}
+    all_fields = set()
+    for table, info in data.tables.items():
+        declared = info.get("columns") or [{"column_name": name}
+                                           for name in info["column_names"]]
+        roles = classify_columns({**info, "columns": declared})
+        all_fields.update((table, item["column"]) for item in roles
+                          if item["role"] != "sensitive")
     if fields is not None:
         requested = list(dict.fromkeys(tuple(field) for field in fields))
         if any(field not in all_fields for field in requested):
-            raise ValueError("Unknown alias candidate field")
+            raise ValueError("Unknown alias candidate field or sensitive field")
         return requested[:limit], max(0, len(requested) - limit)
     by_table = {}
     for table, info in sorted(data.tables.items()):
         by_table[table] = sorted(
-            info["column_names"], key=lambda col: (
+            [column for column in info["column_names"] if (table, column) in all_fields], key=lambda col: (
                 not bool(_ALIAS_NAME.search(col)),
                 not bool(_IMPORTANT_NAME.search(col)),
                 info["column_names"].index(col), col,
@@ -62,7 +68,7 @@ def _fields(data, fields, limit):
                 selected.append((table, by_table[table][position]))
                 if len(selected) == limit:
                     return selected, len(all_fields) - len(selected)
-    return selected, 0
+    return selected, len(all_fields) - len(selected)
 
 
 def _sample(data, selected, max_rows, max_values, max_chars):

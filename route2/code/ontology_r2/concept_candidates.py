@@ -9,6 +9,7 @@ from itertools import combinations
 import re
 import unicodedata
 
+from .column_roles import is_sensitive_column
 from .storage import digest, qi
 
 
@@ -25,9 +26,12 @@ ROLE_LIMITS = {"name": 2, "alias": 2, "description": 2, "formula": 2, "unit": 1,
 
 def _field_roles(table):
     profiles = {item["column"]: item for item in table.get("profiles", [])}
+    excluded = set(table.get("semantic_excluded_columns") or ())
     selected = defaultdict(list)
     for column in table["columns"]:
         name = column["column_name"]
+        if name in excluded or is_sensitive_column(column):
+            continue
         profile = profiles.get(name, {})
         if profile.get("scan_scope") == "full_input" and profile.get("usable_count") == 0:
             continue

@@ -53,8 +53,14 @@ def qi(name):
 
 
 class Dataset:
-    def __init__(self, root, work, memory="1GB", profiling_config=None, progress=None):
+    def __init__(self, root, work, memory="1GB", profiling_config=None, progress=None,
+                 privacy_config=None):
         self.root, self.tables, self.evidence, self.files = Path(root), {}, {}, {}
+        exclusions = (privacy_config or {}).get("exclude_columns", [])
+        if not isinstance(exclusions, list) or any(not isinstance(item, str) for item in exclusions):
+            raise ValueError("privacy.exclude_columns must be a list of schema.table.column names")
+        exclusion_set = set(exclusions)
+        matched_exclusions = set()
         self.indexes = set()
         self.db = duckdb.connect(str(Path(work) / "sources.duckdb"))
         self.db.execute("SET memory_limit = ?", [memory])
@@ -72,7 +78,10 @@ class Dataset:
                 columns = [c["column_name"] for c in table["columns"]]
                 if len(set(columns)) != len(columns) or "__r2_row" in columns:
                     raise ValueError(f"Duplicate/reserved column in {name}")
-                table.update(name=name, sql_name=f"src_{index}", column_names=columns, pk=[])
+                excluded = [column for column in columns if f"{name}.{column}" in exclusion_set]
+                matched_exclusions.update(f"{name}.{column}" for column in excluded)
+                table.update(name=name, sql_name=f"src_{index}", column_names=columns, pk=[],
+                             semantic_excluded_columns=excluded)
                 self.tables[name] = table
                 self.files[str(f.relative_to(self.root))] = file_hash(f)
                 for folder in ("constraints", "foreign_keys"):
@@ -109,6 +118,10 @@ class Dataset:
                     stage.advance(detail=f"{name} {table['rows']} 行")
         if not self.tables:
             raise ValueError("No schema/tables/*.yaml inputs")
+        unknown_exclusions = exclusion_set - matched_exclusions
+        if unknown_exclusions:
+            self.db.close()
+            raise ValueError("Unknown privacy.exclude_columns: " + ", ".join(sorted(unknown_exclusions)))
         bare_names = [t["table_name"] for t in self.tables.values()]
         for t in self.tables.values():
             if bare_names.count(t["table_name"]) > 1 and Path(t["csv_path"]).parent.name != t["schema"]:
@@ -132,10 +145,36 @@ class Dataset:
                 self.tables[name]["profiles"] = profiles
 
     def context(self, tables=None):
+        from .column_roles import classify_columns
+
         selected = set(self.tables) if tables is None else set(tables)
         # Keep the LLM context compact; full P01 statistics stay in profiles.yaml.
         context_keys = ("column", "non_null", "approx_distinct", "distinct_sample", "sample_exhaustive_in_input", "null_count", "empty_count", "usable_count")
-        return {"tables": [{"name": name, "comment": t.get("table_comment"), "columns": t["columns"], "constraints": t["constraints"], "foreign_keys": t["foreign_keys"], "profiles": [{k: p[k] for k in context_keys} for p in t["profiles"]], "sample": list(self.rows(name, limit=3))} for name, t in self.tables.items() if name in selected], "evidence": [e for e in self.evidence.values() if e["source_ref"].get("table") in selected]}
+        result = []
+        safe_by_table = {}
+        for name, table in self.tables.items():
+            if name not in selected:
+                continue
+            safe = {item["column"] for item in classify_columns(table)
+                    if item["role"] != "sensitive"}
+            safe_by_table[name] = safe
+            result.append({"name": name, "comment": table.get("table_comment"),
+                           "columns": [column for column in table["columns"]
+                                       if column["column_name"] in safe],
+                           "constraints": table["constraints"],
+                           "foreign_keys": table["foreign_keys"],
+                           "profiles": [{key: value for key, value in profile.items()
+                                         if key in context_keys}
+                                        for profile in table["profiles"]
+                                        if profile["column"] in safe],
+                           "sample": [{key: value for key, value in row.items()
+                                       if key == "__r2_row" or key in safe}
+                                      for row in self.rows(name, limit=3)]})
+        return {"tables": result, "evidence": [e for e in self.evidence.values()
+                                                  if e["source_ref"].get("table") in safe_by_table
+                                                  and (e["source_ref"].get("column") is None or
+                                                       e["source_ref"]["column"] in
+                                                       safe_by_table[e["source_ref"]["table"]])]}
 
     def rows(self, table, limit=None):
         info = self.tables[table]

@@ -6,6 +6,10 @@ data_scope: unknown
 model_profile: ../ontologies/internal_model.yaml
 env_file: ../.env
 memory_limit: 2GB
+privacy:
+  # Exact schema.table.column names withheld from semantic prompts, card indexing
+  # and relation discovery. The values remain in the local physical source copy.
+  exclude_columns: []
 shard_size: 5000
 progress:
   enabled: true
@@ -15,7 +19,7 @@ profiling:
 discovery:
   enabled: true
   max_indexed_fields: 64
-  max_candidate_validations: 12
+  max_candidate_validations: 50
   max_evidence_per_unit: 3
   # Only checked raw-equality candidates currently support joined examples.
   max_joint_pairs_per_candidate: 1
@@ -36,12 +40,45 @@ alias_recall:
   max_rows_per_table: 5000
   max_values_per_field: 128
   max_pairs: 200
+# Store technical match rules separately from semantic ontology relations.
+# The optional ReAct agent can inspect only bounded, read-only candidates.
+association_rules:
+  enabled: true
+  agent_enabled: true
+  max_rules: 60
+  max_explicit_validations: 8
+  max_agent_candidates: 6
+  max_agent_model_calls: 3
+  max_agent_tool_calls: 8
+  max_agent_full_scans: 3
+  agent_timeout_seconds: 180
+# All source rows are scanned. Only bounded, deduplicated definition cards
+# enter the local FTS index; omitted rows are counted in coverage.
+instance_bundles:
+  enabled: true
+  max_cards: 100000
+  max_field_chars: 512
+  max_unknown_fields_per_table: 4
+  max_concept_bundles: 12
+  max_relation_bundles: 12
+  max_seeds_per_table: 8
+  lexical_top_k: 8
+  max_candidates_per_bundle: 3
+  max_bundle_bytes: 16000
+  vector_enabled: false
+  max_vector_cards: 20000
+  vector_top_k: 8
+  max_joint_pairs_per_rule: 2
+  max_llm_bundles: 20
+  review: true
 llm:
   mode: agentscope
   stream: false
   thinking:
     mode: disabled
-    parameter: chat_template_kwargs
+    # Volcengine DeepSeek V4 Flash accepts thinking.type=disabled. Change this
+    # parameter for another provider (for example Qwen/vLLM).
+    parameter: thinking
     effort: medium
   # Shared by generation, Judge, retrieval, alignment, and semantic matching.
   max_calls: 800
@@ -49,12 +86,12 @@ llm:
   # 90M covers 800 calls even at the 100K input-byte limit.
   max_reserved_tokens: 90000000
   max_input_bytes: 100000
-  max_output_tokens: 4096
+  max_output_tokens: 8192
   # One initial attempt plus four repairs per table; the table pass remains one.
   max_repairs: 4
   # Retry transient 5xx/network errors; a timeout does not repeat unchanged semantic repairs.
   max_retries: 3
-  timeout_seconds: 60
+  timeout_seconds: 180
 # Optional local semantic recall for external ontology cards and accepted core. Set enabled to
 # true after placing the model at ONTOLOGY_EMBEDDING_MODEL_PATH in .env.
 embedding:

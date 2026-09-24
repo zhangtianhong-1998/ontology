@@ -8,6 +8,8 @@ from .storage import read_yaml
 
 MAX_ATTRIBUTES_PER_OBJECT = 16
 MAX_ATTRIBUTE_CHARS = 320
+MAX_SOURCE_REFS_PER_CONCEPT = 24
+MAX_EVIDENCE_PER_CONCEPT = 24
 SQLITE_PARAMETERS_PER_QUERY = 400
 
 
@@ -59,6 +61,15 @@ def _attach_attribute_previews(db, nodes, ontology):
             del selected[MAX_ATTRIBUTES_PER_OBJECT:]
 
 
+def _bound_concept_refs(item):
+    refs = item.get("source_refs", [])
+    item["preview_source_ref_count"] = len(refs)
+    item["source_refs"] = refs[:MAX_SOURCE_REFS_PER_CONCEPT]
+    evidence = item.get("evidence_ids", [])
+    item["preview_evidence_count"] = len(evidence)
+    item["evidence_ids"] = evidence[:MAX_EVIDENCE_PER_CONCEPT]
+
+
 def render_viewer(run, max_nodes=200):
     run = Path(run).resolve()
     if not 10 <= max_nodes <= 1000:
@@ -71,7 +82,9 @@ def render_viewer(run, max_nodes=200):
     payload = {"run_name": run.name, "manifest": read("manifest.yaml", {}), "ontology": read("ontology.yaml", {}),
                "coverage": read("coverage.yaml", {}), "construction": read("construction.yaml", {}),
                "knowledge": read("knowledge.yaml", []), "validation": read("validation.yaml", {}), "limit": max_nodes,
-               "objects": [], "relations": [], "unresolved": [], "evidence": {}, "counts": {}}
+               "objects": [], "concepts": [], "concept_count": 0,
+               "record_alignments": [], "relations": [],
+               "unresolved": [], "evidence": {}, "counts": {}}
     database = run / "work/results.sqlite"
     if database.exists():
         with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as db:
@@ -95,9 +108,25 @@ def render_viewer(run, max_nodes=200):
                     nodes.setdefault(item["id"], item)
             payload["objects"] = list(nodes.values())
             _attach_attribute_previews(db, payload["objects"], payload["ontology"])
+            for item in payload["objects"]:
+                if item["id"].startswith("concept:"):
+                    _bound_concept_refs(item)
+            payload["concept_count"] = db.execute(
+                "SELECT count(*) FROM items WHERE kind='objects' AND id LIKE 'concept:%'").fetchone()[0]
+            payload["concepts"] = [json.loads(r[0]) for r in db.execute(
+                "SELECT body FROM items WHERE kind='objects' AND id LIKE 'concept:%' "
+                "ORDER BY id LIMIT ?", (max_nodes,))]
+            for concept in payload["concepts"]:
+                _bound_concept_refs(concept)
+            payload["record_alignments"] = [json.loads(r[0]) for r in db.execute(
+                "SELECT body FROM items WHERE kind='record_alignments' ORDER BY id LIMIT ?",
+                (max_nodes,))]
             payload["unresolved"] = [json.loads(r[0]) for r in db.execute("SELECT body FROM items WHERE kind='unresolved' ORDER BY id LIMIT ?", (max_nodes,))]
             refs = set()
-            for item in payload["objects"] + payload["relations"] + payload["unresolved"] + payload["ontology"].get("object_types", []) + payload["ontology"].get("relation_types", []):
+            for item in (payload["objects"] + payload["concepts"] + payload["record_alignments"]
+                         + payload["relations"] + payload["unresolved"]
+                         + payload["ontology"].get("object_types", [])
+                         + payload["ontology"].get("relation_types", [])):
                 refs.update(item.get("evidence_ids", []))
             for result in payload["knowledge"]:
                 for claim in result.get("claims", []):

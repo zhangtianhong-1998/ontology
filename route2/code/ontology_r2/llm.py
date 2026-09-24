@@ -27,7 +27,10 @@ TASK_PROMPTS = {
     "alignment": "外部模型仅作参考。非 unmapped 结论必须逐字引用内部和候选说明；exact 还要求定义与范围一致，名称相似不足以判定。不得修改内部对象身份。",
     "plan": "生成当前 unit 的语义增量。直接映射已经存在，不重建全库。tables 只含当前表，relations 只含当前表发出的关系。复用 current_core 中的类型和关系；不得删除映射、改写其他表或重复发明同义类型。只添加有当前源证据支持的定义和关系，无新增信息可返回空增量。concept_candidate_evidence 是定义记录的有界候选，核对名称、定义、单位和范围后才可提出概念类型，不能仅凭共词合并。field_association_evidence 中的联合记录只证明候选字段匹配；结合双方定义、作用域、反例判断关系含义，不因匹配就认定业务关系。source_path 只用于已有 JSON 键路径；context_columns 保存业务范围。样本成员用 observed_member，只有显式范围规则才能用 allowed_member。",
     "final_plan": "修复当前单元的 previous_delta；逐条处理 errors。只返回本单元完整修正增量，不能返回整份 core。保留原始条件、否定和来源；知识不足可返回空增量。",
-    "review": "独立复核 delta 与 candidate_core。逐项检查源字段、关系用途、范围、可用资料中的反证、与 current_core 的冲突及重复类型。不要因为结构校验通过就默认业务语义正确。有可修复错误时返回 corrected_delta，否则拒绝并列出具体错误；禁止扩展到本单元外。",
+    "review": "独立复核 delta 与 candidate_core。逐项检查源字段、关系用途、范围、可用资料中的反证、与 current_core 的冲突及重复类型。不要因为结构校验通过就默认业务语义正确。无错误时只返回 accepted=true、errors=[]、corrected_delta=null，不复述整份 core；有可修复错误时才返回 corrected_delta，否则拒绝并列出具体错误。禁止扩展到本单元外。",
+    "concept_bundle": "这是跨表定义记录包。请判断包内记录是否支持一个共同的业务概念，或者应保持不同/未决。概念对象不是物理表类型；root_type 只能来自五类根。scope 只能使用 records[*].scope 中实际出现的键和值；记录没有 scope 就返回 {}，不要把多个值拼成一个范围。每条对齐的 quote 只能从该记录 fields[*].value 原样摘录，不能拼写 field=value 或合并多个字段。名称共词、BM25、向量分数均只负责召回，不能单独证明 exact；单位、口径、版本或范围冲突时用 narrower/related 或 unresolved。没有足够来源定义时返回 no_change/unresolved。",
+    "relation_bundle": "这是已完成技术匹配检查的跨表行包，但匹配不等于业务关系。请比较源/目标字段说明、正反例及适用条件；仅在业务用途明确时提出关系。parent_relation 只能是 contains/depends_on/related_to/points_to。source_quote 与 target_quote 必须分别逐字来自同一条 examples.positive 所指源/目标记录的非关联键 fields[*].value；不能仅引用编码原值、字段注释或拼接文本。字段注释只帮助理解用途，不独立证明业务关系。label 和 definition 须描述记录所代表的业务对象之间的含义，不能只描述物理表或编码的连接。无法辨别时返回 unresolved。",
+    "group_review": "复核候选语义增量与证据包：逐字引用是否成立、单位/口径/作用域冲突是否被处理、是否把技术匹配冒充业务关系、是否把物理表冒充概念类型。证据不足则 accepted=false 并列出具体 errors。复核不是独立业务真值证明。",
 }
 
 KNOWLEDGE_PROMPTS = {
@@ -68,6 +71,8 @@ class StructuredLLM:
         self.mode = config.get("mode", "agentscope")
         self.transport = transport_settings(config)
         self.calls, self.reserved_tokens, self.actual_tokens, self.cached = 0, 0, 0, 0
+        self.wire_responses, self.usage_reported_responses, self.incomplete_responses = 0, 0, 0
+        self.finish_reasons = defaultdict(int)
         self.positions = defaultdict(int)
         self.responses = read_yaml(config["responses"]) if self.mode == "mock" else None
         self.model = None
@@ -115,8 +120,22 @@ class StructuredLLM:
                 await asyncio.sleep(min(2 ** (attempt - 1), 10))
                 self.admit(budget_request)
                 self.trace({"stage": "llm_retry", "task": task, "attempt": attempt + 1})
+            model = self.get_model()
+
+            def observe_wire(reason, usage):
+                self.wire_responses += 1
+                self.finish_reasons[reason] += 1
+                if reason not in ("stop", "tool_calls"):
+                    self.incomplete_responses += 1
+                if usage is not None:
+                    self.usage_reported_responses += 1
+                    self.actual_tokens += usage["input_tokens"] + usage["output_tokens"]
+                self.trace({"stage": "llm_wire_response", "task": task, "attempt": attempt + 1,
+                            "finish_reason": reason, "usage": usage})
+
+            observer_token = model.wire_observer.set(observe_wire)
             try:
-                response = await complete(self.get_model(), messages, timeout=self.config.get("timeout_seconds", 60),
+                response = await complete(model, messages, timeout=self.config.get("timeout_seconds", 60),
                                           on_delta=lambda content: self.trace({"stage": "llm_stream_delta", "task": task, "content": content}), **kwargs)
             except (APIConnectionError, APIStatusError) as exc:
                 retryable = (not isinstance(exc, APITimeoutError) and
@@ -126,8 +145,9 @@ class StructuredLLM:
                 self.trace({"stage": "llm_transient_error", "task": task,
                             "attempt": attempt + 1, "error_type": type(exc).__name__})
                 continue
+            finally:
+                model.wire_observer.reset(observer_token)
             if response.usage:
-                self.actual_tokens += response.usage.input_tokens + response.usage.output_tokens
                 self.trace({"stage": "llm_usage", "task": task, "usage": asdict(response.usage)})
             return response
 
@@ -186,7 +206,7 @@ class StructuredLLM:
         return result
 
     def metrics(self):
-        return {"mode": self.mode, "model": os.getenv("ONTOLOGY_LLM_MODEL") if self.mode != "mock" else "recorded_fixture", "framework": "agentscope-2.0.8", "prompt_hash": digest([SYSTEM, TASK_PROMPTS, KNOWLEDGE_PROMPTS]), "transport": self.transport, "calls": self.calls, "reserved_token_upper_bound": self.reserved_tokens, "provider_reported_tokens": self.actual_tokens if self.mode != "mock" else None, "cache_hits": self.cached}
+        return {"mode": self.mode, "model": os.getenv("ONTOLOGY_LLM_MODEL") if self.mode != "mock" else "recorded_fixture", "framework": "agentscope-2.0.8", "prompt_hash": digest([SYSTEM, TASK_PROMPTS, KNOWLEDGE_PROMPTS]), "transport": self.transport, "calls": self.calls, "reserved_token_upper_bound": self.reserved_tokens, "provider_reported_tokens": self.actual_tokens if self.mode != "mock" else None, "provider_wire_responses": self.wire_responses if self.mode != "mock" else None, "provider_usage_reported_responses": self.usage_reported_responses if self.mode != "mock" else None, "provider_incomplete_responses": self.incomplete_responses if self.mode != "mock" else None, "provider_finish_reasons": dict(self.finish_reasons) if self.mode != "mock" else None, "cache_hits": self.cached}
 
     async def close(self):
         if self.model is not None:

@@ -87,3 +87,27 @@ def test_unknown_or_missing_profiles_do_not_hide_possible_business_fields():
     assert [r["role"] for r in roles] == ["unknown", "semantic"]
     assert all(r["include_in_semantic_prompt"] for r in roles)
     assert all(r["deterministic_binding"] is None for r in roles)
+
+
+def test_explicit_audit_metadata_is_deterministic_but_business_owner_remains_semantic():
+    roles = classify_columns(_table([
+        _column("delete_flag", "integer", "删除标志"),
+        _column("created_by", "text", "创建人"),
+        _column("business_owner", "text", "业务负责人"),
+    ]))
+    assert [item["role"] for item in roles] == [
+        "audit_metadata", "audit_metadata", "semantic"]
+    assert all(not item["include_in_semantic_prompt"] for item in roles[:2])
+
+
+def test_credential_and_personal_columns_are_never_sent_as_value_evidence():
+    columns = [
+        _column("password"), _column("api_key"), _column("secretToken"),
+        _column("connection_url"), _column("mobile_phone"),
+        _column("custom", comment="认证密钥"), _column("metric_name", comment="指标名称"),
+    ]
+    roles = classify_columns(_table(columns))
+    assert [item["role"] for item in roles[:6]] == ["sensitive"] * 6
+    assert all(not item["include_in_semantic_prompt"] for item in roles[:6])
+    assert all(not item["join_eligible"] for item in roles[:6])
+    assert roles[-1]["include_in_semantic_prompt"]

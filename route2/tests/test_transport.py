@@ -24,7 +24,7 @@ def transport_environment(monkeypatch):
 
 
 @contextmanager
-def provider(monkeypatch, answer, *, finish="tool_calls", delay=0, reject=False):
+def provider(monkeypatch, answer, *, finish="tool_calls", delay=0, reject=False, report_usage=True):
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -47,7 +47,7 @@ def provider(monkeypatch, answer, *, finish="tool_calls", delay=0, reject=False)
                     "role": "assistant", "content": None, "reasoning_content": "hidden-reasoning-marker",
                     "tool_calls": [{"id": "call-" + str(len(requests)), "type": "function", "function": {"name": name, "arguments": arguments}}]}
                 payload = {**common, "object": "chat.completion", "choices": [{"index": 0, "finish_reason": finish,
-                    "message": message}], "usage": usage}
+                    "message": message}], "usage": usage if report_usage else None}
                 raw = json.dumps(payload).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -76,7 +76,8 @@ def provider(monkeypatch, answer, *, finish="tool_calls", delay=0, reject=False)
                         time.sleep(delay)
                 if finish is not None:
                     send([{"index": 0, "delta": {}, "finish_reason": finish}])
-                send([], usage=usage)
+                if report_usage:
+                    send([], usage=usage)
                 self.wfile.write(b"data: [DONE]\n\n")
             except (BrokenPipeError, ConnectionResetError):
                 pass
@@ -175,6 +176,30 @@ def test_incomplete_outputs_are_rejected_without_cache(tmp_path, monkeypatch, st
         with pytest.raises(ValueError):
             asyncio.run(ask_once(llm))
     assert len(requests) == llm.calls == 1
+    assert not list(llm.cache.glob("*.json"))
+    metrics = llm.metrics()
+    assert metrics["provider_reported_tokens"] == 20
+    assert metrics["provider_wire_responses"] == metrics["provider_usage_reported_responses"] == 1
+    assert metrics["provider_finish_reasons"] == {finish or "missing": 1}
+    assert metrics["provider_incomplete_responses"] == int(finish not in ("stop", "tool_calls"))
+    trace = (tmp_path / "trace.jsonl").read_text()
+    wire = [event for event in map(json.loads, trace.splitlines()) if event["stage"] == "llm_wire_response"]
+    assert wire == [{"stage": "llm_wire_response", "task": "review", "attempt": 1,
+                     "finish_reason": finish or "missing", "usage": {"input_tokens": 10, "output_tokens": 10}}]
+    assert "hidden-reasoning-marker" not in trace and "local-test-secret" not in trace
+
+
+def test_incomplete_response_without_usage_reports_unknown_tokens(tmp_path, monkeypatch):
+    with provider(monkeypatch, lambda body, number: ("submit_result", {"accepted": True}),
+                  finish="length", report_usage=False):
+        llm = StructuredLLM({"mode": "agentscope", "stream": True}, tmp_path)
+        with pytest.raises(ValueError, match="Incomplete provider response"):
+            asyncio.run(ask_once(llm))
+    metrics = llm.metrics()
+    assert metrics["provider_reported_tokens"] == 0
+    assert metrics["provider_wire_responses"] == 1
+    assert metrics["provider_usage_reported_responses"] == 0
+    assert metrics["provider_finish_reasons"] == {"length": 1}
     assert not list(llm.cache.glob("*.json"))
 
 

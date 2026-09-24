@@ -37,6 +37,13 @@ def traversal(data):
     return order + sorted(pending), sorted(pending)
 
 
+def _mapping_only(table):
+    """Large transient import tables retain physical mappings without a type call."""
+    name = table["table_name"].casefold()
+    return len(table["columns"]) >= 50 and bool(re.search(
+        r"(?:import|staging).*temp|temp.*(?:import|staging)", name))
+
+
 def _prompt_table(data, name, *, sample=False):
     table = data.tables[name]
     roles = classify_columns(table)
@@ -46,10 +53,12 @@ def _prompt_table(data, name, *, sample=False):
         "name": name, "comment": table.get("table_comment"),
         "columns": [column for column in table["columns"] if column["column_name"] in semantic],
         "deterministic_bindings": [item["deterministic_binding"] for item in roles
-                                   if item["role"] in ("audit_time", "technical_identifier")],
+                                   if item["role"] in ("audit_time", "audit_metadata", "technical_identifier")],
         "empty_in_input": [item["column"] for item in roles if item["role"] == "empty"],
-        "column_roles": [{"column": item["column"], "role": item["role"],
-                          "evidence": item["evidence"]} for item in roles],
+        # Schema/profile evidence remains in the local artifacts. Repeating its
+        # per-column counters in every table packet adds no semantic context.
+        "column_roles": [{"column": item["column"], "role": item["role"]}
+                         for item in roles if item["include_in_semantic_prompt"]],
         "constraints": table["constraints"], "foreign_keys": table["foreign_keys"],
         "profiles": [{"column": column, "usable_count": profiles[column]["usable_count"],
                       "approx_distinct_usable": profiles[column]["approx_distinct_usable"]}
@@ -60,9 +69,13 @@ def _prompt_table(data, name, *, sample=False):
         result["sampled_columns"] = sample_columns
         result["sample_columns_not_shown"] = [column for column in table["column_names"]
                                               if column in semantic and column not in sample_columns]
-        result["sample"] = [{"record_id": data.record_id(name, row), "row_number": row["__r2_row"],
-                             "values": {column: row[column] for column in sample_columns}}
-                            for row in data.rows(name, limit=3)]
+        result["sample"] = [{
+            "record_id": data.record_id(name, row), "row_number": row["__r2_row"],
+            "values": {column: row[column][:160] if row[column] is not None else None
+                       for column in sample_columns},
+            "truncated_columns": [column for column in sample_columns
+                                  if row[column] is not None and len(row[column]) > 160],
+        } for row in data.rows(name, limit=3)]
     return result
 
 
@@ -90,8 +103,8 @@ def unit_context(data, name, candidate_targets=()):
                  if role["include_in_semantic_prompt"]]
         catalog.append({"name": table_name, "comment": table.get("table_comment"),
                         "column_hints": [{"name": col["column_name"], "comment": col.get("column_comment")}
-                                         for col in hints[:6]],
-                        "other_semantic_column_count": max(0, len(hints) - 6)})
+                                         for col in hints[:2]],
+                        "other_semantic_column_count": max(0, len(hints) - 2)})
     return {"tables": [_prompt_table(data, table_name, sample=table_name == name)
                        for table_name in sorted(relevant)],
             "table_catalog": catalog,
@@ -282,6 +295,17 @@ async def construct(data, profile, config, output, llm, manifest,
         for index, unit in enumerate(order):
             before = digest(core.model_dump())
             step = {"unit": unit, "index": index, "core_before": before, "status": "rejected", "attempts": []}
+            if _mapping_only(data.tables[unit]):
+                step.update(status="mapping_only", reason="large_transient_import_table",
+                            core_after=before)
+                steps.append(step)
+                write_yaml(output / "incremental" / f"step-{index:04}.yaml", step)
+                llm.trace({"stage": "incremental_unit", "unit": unit,
+                           "status": "mapping_only", "core_before": before,
+                           "core_after": before})
+                if unit_stage:
+                    unit_stage.advance(detail=f"{unit}: mapping_only")
+                continue
             core_hits = semantic_core_hits(core, data, unit,
                                            [s["unit"] for s in steps if s["status"] == "accepted"],
                                            embedding, embedding_config["core_top_k"]) if embedding is not None else []
@@ -425,7 +449,9 @@ async def construct(data, profile, config, output, llm, manifest,
         "iteration_policy": iteration_policy,
         "steps": steps, "direct_mapping_tables": len(mapping["tables"]), "direct_mapping_columns": sum(len(t["columns"]) for t in mapping["tables"]),
         "final_core_valid": True, "final_core_hash": digest(core.model_dump())})
-    manifest["incremental_units_not_accepted"] = [s["unit"] for s in steps if s["status"] != "accepted"]
+    manifest["incremental_units_not_accepted"] = [s["unit"] for s in steps
+                                                   if s["status"] not in ("accepted", "mapping_only")]
+    manifest["mapping_only_units"] = [s["unit"] for s in steps if s["status"] == "mapping_only"]
     manifest["external_alignment_errors"] = [s["unit"] for s in steps if s.get("external_error")]
     if embedding is not None:
         manifest["embedding"] = embedding.report()

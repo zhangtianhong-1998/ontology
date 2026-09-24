@@ -13,11 +13,12 @@
 - [需求与 US](../docs/route2/requirements.md)、[SDD](../docs/route2/SDD.md)、[开发任务](../docs/route2/implementation.md)
 - [字段统计与关联发现详细设计](../docs/route2/FIELD_PROFILING_DESIGN.md)、[方案比较与合成验证](../docs/route2/FIELD_ASSOCIATION_EVALUATION.md)
 - [百万记录下的实例检索与增量组包设计](../docs/route2/INSTANCE_BUNDLE_DESIGN.md)
+- [水果经营合成输入生成与验证](scripts/FRUIT_FIXTURE.md)、[本机实验记录](../docs/route2/EXPERIMENT_FRUIT.md)
 - [Windows 11 无 Docker 离线运行与 DataHub 文件导出](../docs/route2/DATAHUB_OFFLINE.md)
 - [上游代码与模型版本](resources.yaml)、[本体文件入口](ontologies/sources.yaml)
 
 `code/RIGOR`、`code/AgentScope` 是未修改上游源码的 Git 子模块指针，查看源码时需在线初始化或提前转移；运行 `code/ontology_r2` 原型不需要它们。此路线没有 SAND、GRAMS 或 Steiner Tree 依赖。`config/example.yaml` 是较完整设计的配置草案，实际运行请用 `runtime.mock.yaml`。
 
-当前 `profiling.py` 已按列组统计 CSV 快照，`discovery.py` 以有限字段倒排和精确核验提出关联候选，并在构建前给 LLM 提供证据；预算外范围单独报告。它们尚未完成结构化引用、条件自动发现和业务关系接受。`config/profiling.design.yaml` 仍是设计草案，不是运行配置。
+当前 `profiling.py` 已按列组统计 CSV 快照，`discovery.py` 以有限字段倒排和精确核验提出关联候选。`association_rules.py` 可选用受限 ReAct 探索条件化物理匹配，`semantic_cards.py` 与 `instance_bundles.py` 对记录值做有界检索和组包，再由 `group_incremental.py` 进行证据约束下的增量抽取。技术匹配不自动成为业务关系；候选遗漏、未决结果和预算外范围均单独报告。结构化引用的自动发现和真实数据的语义质量验证仍未完成。`config/profiling.design.yaml` 仍是设计草案，不是运行配置。
 
 无 Docker 的目标电脑继续运行本地原型。`ontology-r2 export-datahub` 可将已有 `meta_graph.yaml` 中的表/列元数据导出为 DataHub metadata-file；需要本地查询时，可另装 DataHub Lite，但 Lite 不提供图遍历或血缘。

@@ -1,6 +1,7 @@
 """Provider controls and complete responses for both JSON and SSE transports."""
 import asyncio
 import os
+from contextvars import ContextVar
 
 from agentscope.model import OpenAIChatModel
 
@@ -60,10 +61,28 @@ def check_finish(reason):
         raise ValueError("Incomplete provider response: missing or unsuccessful finish_reason")
 
 
+def safe_finish_reason(reason):
+    """Keep provider-controlled text out of traces while retaining the outcome."""
+    if reason is None:
+        return "missing"
+    return reason if reason in ("stop", "tool_calls", "length", "content_filter", "function_call") else "other"
+
+
+def wire_usage(usage):
+    """Extract only token counts from a provider response, including failed ones."""
+    if usage is None:
+        return None
+    input_tokens = getattr(usage, "prompt_tokens", None)
+    output_tokens = getattr(usage, "completion_tokens", None)
+    if any(type(value) is not int or value < 0 for value in (input_tokens, output_tokens)):
+        return None
+    return {"input_tokens": input_tokens, "output_tokens": output_tokens}
+
+
 class CheckedStream:
     """Observe wire completion before the SDK drops finish_reason metadata."""
     def __init__(self, stream):
-        self.stream, self.reason = stream, None
+        self.stream, self.reason, self.usage = stream, None, None
 
     async def __aenter__(self):
         await self.stream.__aenter__()
@@ -76,21 +95,37 @@ class CheckedStream:
         async for chunk in self.stream:
             if chunk.choices and chunk.choices[0].finish_reason is not None:
                 self.reason = chunk.choices[0].finish_reason
+            if chunk.usage is not None:
+                self.usage = chunk.usage
             yield chunk
 
 
 class CheckedChatModel(OpenAIChatModel):
     """Keep native parsing/accumulation, but reject truncated provider output."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.wire_observer = ContextVar(f"ontology_wire_observer_{id(self)}", default=None)
+
+    def _observe_wire(self, reason, usage):
+        observer = self.wire_observer.get()
+        if observer is not None:
+            observer(safe_finish_reason(reason), wire_usage(usage))
+
     async def _parse_stream_response(self, start_datetime, response):
         checked = CheckedStream(response)
-        async for chunk in super()._parse_stream_response(start_datetime, checked):
-            yield chunk
+        try:
+            async for chunk in super()._parse_stream_response(start_datetime, checked):
+                yield chunk
+        finally:
+            self._observe_wire(checked.reason, checked.usage)
         check_finish(checked.reason)
 
     def _parse_completion_response(self, start_datetime, response, audio_format="wav"):
+        reason = response.choices[0].finish_reason if len(response.choices) == 1 else None
+        self._observe_wire(reason, response.usage)
         if len(response.choices) != 1:
             raise ValueError("Expected exactly one completion choice")
-        check_finish(response.choices[0].finish_reason)
+        check_finish(reason)
         return super()._parse_completion_response(start_datetime, response, audio_format)
 
 

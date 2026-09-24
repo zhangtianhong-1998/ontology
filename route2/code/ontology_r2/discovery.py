@@ -9,6 +9,7 @@ from contextlib import nullcontext
 from itertools import combinations
 import re
 
+from .column_roles import classify_columns
 from .storage import digest, qi
 
 
@@ -94,7 +95,12 @@ def propose_candidates(data, *, max_candidates_total=2000,
               max_fields_per_common_value)
     if any(not isinstance(x, int) or x <= 0 for x in limits):
         raise ValueError("Discovery limits must be positive integers")
-    fields = _fields(data)
+    all_fields = _fields(data)
+    excluded = {(table, item["column"])
+                for table, info in data.tables.items() if info.get("columns")
+                for item in classify_columns(info)
+                if item["role"] in ("empty", "audit_time", "audit_metadata", "sensitive")}
+    fields = [field for field in all_fields if field not in excluded]
     proposals = defaultdict(lambda: {"channels": set(), "shared_sample_values": set()})
     declared = set()
     for table, info in sorted(data.tables.items()):
@@ -102,7 +108,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
             source = (table, fk["column_name"])
             target = (f"{fk['referenced_schema']}.{fk['referenced_table']}",
                       fk["referenced_column"])
-            if source in fields and target in fields:
+            if source in all_fields and target in all_fields:
                 declared.add((source, target))
                 proposals[(source, target)]["channels"].add("declared_fk")
 
@@ -215,7 +221,10 @@ def propose_candidates(data, *, max_candidates_total=2000,
     indexed_set = set(indexed_fields)
     return {"candidates": candidates, "coverage": {
         "input_scope": "unknown", "scan_scope": "full_input_for_selected_field_samples",
-        "fields_considered": len(fields),
+        "fields_considered": len(all_fields),
+        "candidate_fields_considered": len(fields),
+        "candidate_fields_excluded_empty_or_audit": [f"{table}.{column}"
+                                                      for table, column in sorted(excluded)],
         "value_index_fields": len(indexed_fields),
         "fields_not_value_indexed": [f"{t}.{c}" for t, c in fields
                                      if (t, c) not in indexed_set],

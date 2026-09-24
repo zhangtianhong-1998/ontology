@@ -78,6 +78,26 @@ def test_explicit_column_comment_recalls_pair_when_value_budget_skips_target():
         data.close()
 
 
+def test_audit_value_overlap_does_not_consume_candidate_budget():
+    data = SmallDataset({
+        "demo.source": (["creation_date", "ref_code"], [("2026-01-01", "K17")], []),
+        "demo.target": (["creation_date", "code"], [("2026-01-01", "K17")], ["code"]),
+    })
+    for table in data.tables.values():
+        table["columns"] = [
+            {"column_name": name, "column_comment": "审计创建时间" if name == "creation_date"
+             else "指标引用编码" if name == "ref_code" else "指标编码"}
+            for name in table["column_names"]]
+    try:
+        found = propose_candidates(data, max_candidates_total=2)
+        assert all("creation_date" not in (item["source"]["field"], item["target"]["field"])
+                   for item in found["candidates"])
+        find_candidate(found, "demo.source", "ref_code", "demo.target", "code")
+        assert len(found["coverage"]["candidate_fields_excluded_empty_or_audit"]) == 2
+    finally:
+        data.close()
+
+
 def test_low_prevalence_conditional_link_is_not_lost_to_whole_column_ratio():
     source = [("linked" if i in (7, 41) else "other",
                f"K{i:03}" if i in (7, 41) else f"U{i:03}")

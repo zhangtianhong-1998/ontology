@@ -20,6 +20,10 @@ _AUDIT_NAMES = {
     "deleted_time", "inserted_at", "insert_time", "etl_time",
     "load_time", "loaded_at", "ingest_time", "ingested_at", "sync_time",
 }
+_AUDIT_METADATA_NAMES = {
+    "delete_flag", "deleted_flag", "is_deleted", "created_by", "create_by",
+    "last_updated_by", "updated_by", "modified_by", "last_modified_by",
+}
 _BUSINESS_TIME_CUES = re.compile(
     r"业务|交易|订单|合同|发生|生效|失效|统计|报告|结算|账期|预测|销售|"
     r"business|transaction|order|contract|event|effective|report|settlement|"
@@ -36,6 +40,19 @@ _SEMANTIC_COMMENT_CUES = re.compile(
     r"编码|业务|区域|地区|来源|关联|指向|类型|取值|值域|周期|日期|时间"
 )
 _TECHNICAL_ID_NAMES = {"id", "pk", "pk_id", "row_id", "record_id", "uuid", "guid"}
+_SENSITIVE_NAME = re.compile(
+    r"(?:^|_)(?:password|passwd|pwd|secret|token|credential|api_key|access_key|"
+    r"private_key|client_secret|authorization|auth_header|connection_url|"
+    r"connection_string|dsn|account_name|email|phone|mobile|id_card)(?:_|$)", re.IGNORECASE,
+)
+_SENSITIVE_COMMENT = re.compile(r"密码|密钥|令牌|凭据|私钥|认证头|连接口令|身份证|手机号")
+
+
+def is_sensitive_column(column: dict[str, Any]) -> bool:
+    """Conservative value-redaction boundary for common credential fields."""
+    name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(column.get("column_name") or ""))
+    comment = str(column.get("column_comment") or "")
+    return bool(_SENSITIVE_NAME.search(name) or _SENSITIVE_COMMENT.search(comment))
 
 
 def _table_name(table: dict[str, Any]) -> str:
@@ -85,6 +102,7 @@ def classify_columns(table: dict[str, Any]) -> list[dict[str, Any]]:
     """
     table_name = _table_name(table)
     pk = set(table.get("pk") or ())
+    excluded = set(table.get("semantic_excluded_columns") or ())
     profiles = {p["column"]: p for p in table.get("profiles", ()) if p.get("column")}
     result = []
     for column in table.get("columns", ()):
@@ -96,10 +114,15 @@ def classify_columns(table: dict[str, Any]) -> list[dict[str, Any]]:
             re.search(r"(?:^|_)(?:id|code|key)$", normalized)
         )
 
-        if _empty_in_input(profile):
+        if name in excluded or is_sensitive_column(column):
+            role, reason = "sensitive", "excluded from semantic processing by configuration or credential-like name"
+            join_eligible = False
+        elif _empty_in_input(profile):
             role, reason = "empty", "no usable values in the full imported CSV snapshot"
         elif normalized in _AUDIT_NAMES and not _BUSINESS_TIME_CUES.search(comment):
             role, reason = "audit_time", "explicit audit timestamp name without business-time evidence"
+        elif normalized in _AUDIT_METADATA_NAMES and not _BUSINESS_TIME_CUES.search(comment):
+            role, reason = "audit_metadata", "explicit audit metadata name without business-context evidence"
         elif (name in pk and (normalized in _TECHNICAL_ID_NAMES or normalized.endswith("_id"))
               and not _BUSINESS_TIME_CUES.search(comment)):
             role, reason = "technical_identifier", "declared primary key with a technical ID name"
@@ -109,7 +132,7 @@ def classify_columns(table: dict[str, Any]) -> list[dict[str, Any]]:
         else:
             role, reason = "unknown", "insufficient evidence to remove from semantic analysis"
 
-        deterministic = role in ("empty", "audit_time", "technical_identifier")
+        deterministic = role in ("empty", "audit_time", "audit_metadata", "technical_identifier", "sensitive")
         result.append({
             "column": name,
             "role": role,
