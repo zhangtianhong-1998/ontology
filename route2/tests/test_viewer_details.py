@@ -1,7 +1,9 @@
 import asyncio
 import json
 import sqlite3
+import sys
 
+from ontology_r2.cli import main as cli_main
 from ontology_r2.pipeline import build
 from ontology_r2.visualization import (
     MAX_ATTRIBUTES_PER_OBJECT,
@@ -90,3 +92,38 @@ def test_viewer_previews_concepts_and_record_alignments_with_source_evidence(tmp
     assert data["evidence"][evidence["id"]]["raw_fragment"] == "水果均价"
     assert data["construction"]["group_steps"][0]["status"] == "accepted"
     assert 'data-mode="concepts"' in html and 'data-mode="alignments"' in html
+
+
+def test_group_replay_viewer_distinguishes_unrun_stage_and_registers_cli_output(tmp_path, monkeypatch):
+    run = tmp_path / "group-replay"
+    (run / "work").mkdir(parents=True)
+    write_yaml(run / "manifest.yaml", {
+        "status": "partial", "input_records": 1213,
+        "experimental_scope": "focused_group_replay_only",
+        "llm": {"calls": 0, "cache_hits": 9},
+    })
+    write_yaml(run / "construction.yaml", {
+        "steps": [], "group_steps": [{"bundle_id": "bundle:1", "status": "accepted"}],
+        "direct_mapping_columns": 0,
+    })
+    with sqlite3.connect(run / "work/results.sqlite") as db:
+        db.execute("CREATE TABLE items (kind TEXT, id TEXT, body TEXT)")
+
+    monkeypatch.setattr(sys, "argv", ["ontology-r2", "visualize", "--run", str(run), "--max-nodes", "10"])
+    cli_main()
+
+    data = payload((run / "viewer.html").read_text())
+    metrics = {item["label"]: item["value"] for item in data["preview"]["metrics"]}
+    assert metrics["输入快照记录"] == 1213
+    assert metrics["已接受对象关系"] == 0
+    assert metrics["映射字段"] is None
+    assert "仅展示本次执行的 1 个语义组" in data["preview"]["notice"]
+    assert "模型缓存命中 9 次" in data["preview"]["notice"]
+    assert data["manifest"]["viewer"] == "viewer.html"
+    assert data["manifest"] == read_yaml(run / "manifest.yaml")
+
+    (run / "work/results.sqlite").unlink()
+    data = payload(render_viewer(run, 10).read_text())
+    metrics = {item["label"]: item["value"] for item in data["preview"]["metrics"]}
+    assert metrics["已抽取对象"] is None
+    assert metrics["已接受对象关系"] is None

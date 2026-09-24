@@ -70,7 +70,34 @@ def _bound_concept_refs(item):
     item["evidence_ids"] = evidence[:MAX_EVIDENCE_PER_CONCEPT]
 
 
-def render_viewer(run, max_nodes=200):
+def _preview_summary(payload, has_results):
+    """Keep unavailable stages distinct from measured zeroes in the viewer."""
+    manifest = payload["manifest"]
+    counts = payload["counts"]
+    group_replay = manifest.get("experimental_scope") == "focused_group_replay_only"
+    count = lambda kind: counts.get(kind, 0) if has_results else None
+    metrics = [
+        {"label": "输入快照记录", "value": manifest.get("input_records")},
+        {"label": "已抽取对象", "value": count("objects")},
+        {"label": "业务概念", "value": payload["concept_count"]},
+        {"label": "记录对齐", "value": count("record_alignments")},
+        {"label": "已接受对象关系", "value": payload["relation_count"]},
+        {"label": "映射字段", "value": None if group_replay else payload["construction"].get("direct_mapping_columns")},
+        {"label": "未决项", "value": count("unresolved")},
+        {"label": "本次模型调用", "value": manifest.get("llm", {}).get("calls")},
+    ]
+    notice = None
+    if group_replay:
+        groups = len(payload["construction"].get("group_steps", []))
+        hits = manifest.get("llm", {}).get("cache_hits")
+        notice = (f"聚焦语义组重放：仅展示本次执行的 {groups} 个语义组；输入记录为快照规模。"
+                  "映射阶段未运行，— 表示未执行或无统计，0 表示本次确为零。")
+        if hits is not None:
+            notice += f" 模型缓存命中 {hits} 次。"
+    return {"metrics": metrics, "notice": notice}
+
+
+def render_viewer(run, max_nodes=200, *, manifest_override=None):
     run = Path(run).resolve()
     if not 10 <= max_nodes <= 1000:
         raise ValueError("max_nodes must be between 10 and 1000")
@@ -79,11 +106,12 @@ def render_viewer(run, max_nodes=200):
         file = run / name
         return read_yaml(file) if file.exists() else fallback
 
-    payload = {"run_name": run.name, "manifest": read("manifest.yaml", {}), "ontology": read("ontology.yaml", {}),
+    payload = {"run_name": run.name, "manifest": manifest_override if manifest_override is not None else read("manifest.yaml", {}),
+               "ontology": read("ontology.yaml", {}),
                "coverage": read("coverage.yaml", {}), "construction": read("construction.yaml", {}),
                "knowledge": read("knowledge.yaml", []), "validation": read("validation.yaml", {}), "limit": max_nodes,
-               "objects": [], "concepts": [], "concept_count": 0,
-               "record_alignments": [], "relations": [],
+               "objects": [], "concepts": [], "concept_count": None,
+               "record_alignments": [], "relations": [], "relation_count": None,
                "unresolved": [], "evidence": {}, "counts": {}}
     database = run / "work/results.sqlite"
     if database.exists():
@@ -136,6 +164,7 @@ def render_viewer(run, max_nodes=200):
                 row = db.execute("SELECT body FROM items WHERE kind='evidence' AND id=?", (key,)).fetchone()
                 if row:
                     payload["evidence"][key] = json.loads(row[0])
+    payload["preview"] = _preview_summary(payload, database.exists())
     graph = read("meta_graph.yaml", {"nodes": [], "edges": []})
     ids = {n["id"] for n in graph["nodes"][:max_nodes]}
     payload["metadata"] = {"nodes": graph["nodes"][:max_nodes], "edges": [e for e in graph["edges"] if e["source"] in ids and e["target"] in ids][:max_nodes * 2], "total_nodes": len(graph["nodes"])}

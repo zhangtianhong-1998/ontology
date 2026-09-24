@@ -37,7 +37,19 @@ def main():
         return
     if args.command == "visualize":
         from .visualization import render_viewer
-        print(render_viewer(args.run, args.max_nodes))
+        from .storage import read_yaml, write_yaml
+        manifest_path = Path(args.run) / "manifest.yaml"
+        manifest = read_yaml(manifest_path) if manifest_path.exists() else None
+        if manifest is not None:
+            manifest["viewer"] = "viewer.html"
+            manifest.pop("viewer_error", None)
+            if "partial_reasons" in manifest:
+                manifest["partial_reasons"] = [reason for reason in manifest["partial_reasons"]
+                                               if reason != "viewer_error"]
+        target = render_viewer(args.run, args.max_nodes, manifest_override=manifest)
+        if manifest is not None:
+            write_yaml(manifest_path, manifest)
+        print(target)
         return
     if args.command == "make-demo":
         from .demo import make_demo

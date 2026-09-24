@@ -344,7 +344,8 @@ async def build(config, output):
             try:
                 viewer_task = progress.task("生成可视化", 1) if progress else nullcontext(None)
                 with viewer_task as stage:
-                    render_viewer(output, config.get("visualization", {}).get("max_nodes", 200))
+                    render_viewer(output, config.get("visualization", {}).get("max_nodes", 200),
+                                  manifest_override={**manifest, "viewer": "viewer.html"})
                     if stage:
                         stage.advance()
                 manifest["viewer"] = "viewer.html"

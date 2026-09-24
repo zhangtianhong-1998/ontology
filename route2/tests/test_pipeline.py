@@ -40,6 +40,12 @@ def test_end_to_end_real_stdio_mcp(tmp_path):
     output = tmp_path / "run"
     result = asyncio.run(build(config, output))
     assert result["status"] == "complete", result
+    assert result["viewer"] == "viewer.html"
+    assert read_yaml(output / "manifest.yaml")["viewer"] == "viewer.html"
+    assert (output / "viewer.html").is_file()
+    page_manifest = json.loads((output / "viewer.html").read_text().split(
+        '<script id="result-data" type="application/json">', 1)[1].split('</script>', 1)[0])["manifest"]
+    assert page_manifest == read_yaml(output / "manifest.yaml")
     assert link_rows(output) == {(1, 1), (2, 2), (8, 3)}
     reasons = {x["reason"] for x in items(output, "unresolved")}
     assert {"missing_target", "ambiguous_identity", "condition_unknown"} <= reasons
