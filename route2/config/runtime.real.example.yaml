@@ -17,6 +17,25 @@ discovery:
   max_indexed_fields: 64
   max_candidate_validations: 12
   max_evidence_per_unit: 3
+  # Only checked raw-equality candidates currently support joined examples.
+  max_joint_pairs_per_candidate: 1
+  max_joint_example_bytes: 16000
+# Bounded definition-record evidence enters the per-table LLM packet; pairs remain unjudged.
+concept_recall:
+  enabled: true
+  max_definition_tables: 8
+  max_records_per_table: 32
+  max_total_records: 256
+  max_candidates: 60
+  max_field_chars: 160
+  max_candidates_per_unit: 2
+# Diagnostic alias leads only; no relation plan is generated from sample matches.
+alias_recall:
+  enabled: true
+  max_fields: 64
+  max_rows_per_table: 5000
+  max_values_per_field: 128
+  max_pairs: 200
 llm:
   mode: agentscope
   stream: false
@@ -33,6 +52,8 @@ llm:
   max_output_tokens: 4096
   # One initial attempt plus four repairs per table; the table pass remains one.
   max_repairs: 4
+  # Retry transient 5xx/network errors; a timeout does not repeat unchanged semantic repairs.
+  max_retries: 3
   timeout_seconds: 60
 # Optional local semantic recall for external ontology cards and accepted core. Set enabled to
 # true after placing the model at ONTOLOGY_EMBEDDING_MODEL_PATH in .env.
@@ -49,8 +70,13 @@ mcp:
 external:
   enabled: false
 processing:
-  materialize_all_objects: true
-  max_object_records: 1000000
+  # Keep the ontology experiment bounded: relation plans materialize referenced records.
+  # Turn this on only when a full instance copy (and its disk cost) is needed.
+  materialize_all_objects: false
+  # Retain a few source records for the local viewer even without accepted relations.
+  preview_objects_per_table: 3
+  # When enabled, exceeding the cap appears in manifest.partial_reasons.
+  max_object_records: 1200000
   max_relation_records: 100000
   max_text_groups: 100
   candidate_top_k: 10

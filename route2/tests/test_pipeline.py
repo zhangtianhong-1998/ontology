@@ -55,6 +55,29 @@ def test_end_to_end_real_stdio_mcp(tmp_path):
     assert coverage["nonempty_applicable_records"] == 5 and coverage["matched_records"] == 3
 
 
+def test_relation_execution_materializes_only_linked_records(tmp_path):
+    config = setup(tmp_path, mcp=False)
+    config["processing"]["materialize_all_objects"] = False
+    result = asyncio.run(build(config, tmp_path / "run"))
+    assert result["status"] == "complete", result
+    assert link_rows(tmp_path / "run") == {(1, 1), (2, 2), (8, 3)}
+    assert read_yaml(tmp_path / "run/metrics.yaml")["materialized_records"] == 0
+    assert len(items(tmp_path / "run", "objects")) == 6
+
+
+def test_bounded_preview_keeps_record_details_without_relation_plans(tmp_path):
+    config = setup(tmp_path, scenario="unrelated", mcp=False)
+    config["processing"].update(materialize_all_objects=False,
+                                preview_objects_per_table=2)
+    result = asyncio.run(build(config, tmp_path / "run"))
+    assert result["status"] == "complete", result
+    assert result["object_preview"]["records_materialized"] == 4
+    assert result["object_preview"]["scope"].startswith("first_rows_per_table_only")
+    assert len(items(tmp_path / "run", "objects")) == 4
+    assert not link_rows(tmp_path / "run")
+    assert "preview_attributes" in (tmp_path / "run/viewer.html").read_text()
+
+
 def test_no_example_business_or_relations_required(tmp_path):
     result = asyncio.run(build(setup(tmp_path, "unrelated"), tmp_path / "run"))
     assert result["status"] == "complete", result

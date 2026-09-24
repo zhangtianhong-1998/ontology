@@ -6,6 +6,59 @@ from pathlib import Path
 from .storage import read_yaml
 
 
+MAX_ATTRIBUTES_PER_OBJECT = 16
+MAX_ATTRIBUTE_CHARS = 320
+SQLITE_PARAMETERS_PER_QUERY = 400
+
+
+def _attribute_rank(column):
+    name = column.casefold()
+    if any(part in name for part in ("name", "title", "description", "definition", "comment", "meaning", "formula", "label", "名称", "说明", "定义", "口径")):
+        return 0
+    if name in ("id", "code", "key", "sn", "number", "uuid") or name.endswith(("_id", "_code", "_no", "_number")):
+        return 1
+    if any(part in name for part in ("time", "date", "created", "updated", "modified", "时间", "日期")):
+        return 2
+    return 3
+
+
+def _attach_attribute_previews(db, nodes, ontology):
+    """Scan literal assertions once; retain only a small, useful card per shown node."""
+    if not nodes:
+        return
+    by_id = {node["id"]: node for node in nodes}
+    catalog = {attr["id"]: attr for attr in ontology.get("attributes", [])}
+    ids = list(by_id)
+    for start in range(0, len(ids), SQLITE_PARAMETERS_PER_QUERY):
+        batch = ids[start:start + SQLITE_PARAMETERS_PER_QUERY]
+        placeholders = ",".join("?" for _ in batch)
+        cursor = db.execute(
+            "SELECT json_extract(body,'$.subject'), json_extract(body,'$.attribute'), "
+            "json_extract(body,'$.literal.value') FROM items "
+            "WHERE kind='assertions' AND json_type(body,'$.literal') IS NOT NULL "
+            f"AND json_extract(body,'$.subject') IN ({placeholders})",
+            batch,
+        )
+        for subject, attribute, raw_value in cursor:
+            node = by_id[subject]
+            node["preview_attribute_count"] = node.get("preview_attribute_count", 0) + 1
+            meta = catalog.get(attribute, {})
+            column = meta.get("source_column") or attribute.rsplit(":", 1)[-1].rsplit(".", 1)[-1]
+            value = str(raw_value) if raw_value is not None else ""
+            preview = {"column": column, "value": value[:MAX_ATTRIBUTE_CHARS],
+                       "truncated": len(value) > MAX_ATTRIBUTE_CHARS}
+            if meta.get("literal_type"):
+                preview["literal_type"] = meta["literal_type"]
+            if meta.get("declared_data_type"):
+                preview["declared_data_type"] = meta["declared_data_type"]
+            selected = node.setdefault("preview_attributes", [])
+            if any(item["column"] == column and item["value"] == preview["value"] for item in selected):
+                continue
+            selected.append(preview)
+            selected.sort(key=lambda item: (_attribute_rank(item["column"]), item["column"], item["value"]))
+            del selected[MAX_ATTRIBUTES_PER_OBJECT:]
+
+
 def render_viewer(run, max_nodes=200):
     run = Path(run).resolve()
     if not 10 <= max_nodes <= 1000:
@@ -41,6 +94,7 @@ def render_viewer(run, max_nodes=200):
                 if len(nodes) < max_nodes:
                     nodes.setdefault(item["id"], item)
             payload["objects"] = list(nodes.values())
+            _attach_attribute_previews(db, payload["objects"], payload["ontology"])
             payload["unresolved"] = [json.loads(r[0]) for r in db.execute("SELECT body FROM items WHERE kind='unresolved' ORDER BY id LIMIT ?", (max_nodes,))]
             refs = set()
             for item in payload["objects"] + payload["relations"] + payload["unresolved"] + payload["ontology"].get("object_types", []) + payload["ontology"].get("relation_types", []):

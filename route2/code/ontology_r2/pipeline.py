@@ -7,12 +7,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .column_roles import classify_columns
+from .concept_candidates import recall_concept_candidates
 from .discovery import discover_and_check
 from .incremental import construct
 from .llm import BudgetExceeded, StructuredLLM
 from .progress import ProgressReporter
 from .relations import Extractor
 from .storage import Dataset, Sink, digest, read_yaml, write_yaml
+from .value_aliases import propose_value_alias_candidates
 
 
 def load_config(path):
@@ -78,6 +81,24 @@ def check_output(sink):
     return {"passed": not any(checks.values()), "checks": checks, "semantic_quality": "requires_independent_evaluation"}
 
 
+def attach_concept_evidence(data, result):
+    """Register sampled definition fragments so any derived type can cite a row."""
+    for candidate in result["candidates"]:
+        for record in candidate["records"]:
+            for entries in record["fields"].values():
+                for entry in entries:
+                    evidence_id = "record:" + digest([record["record_id"], entry["column"]])[:24]
+                    entry["record_evidence_id"] = evidence_id
+                    data.evidence[evidence_id] = {
+                        "id": evidence_id, "origin": "observed_record",
+                        "raw_fragment": entry["value"],
+                        "raw_fragment_truncated": entry["truncated"],
+                        "source_ref": {"table": record["table"], "record_id": record["record_id"],
+                                       "row": record["row_number"], "column": entry["column"],
+                                       "snapshot_id": data.snapshot_id},
+                    }
+
+
 async def build(config, output):
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -99,6 +120,8 @@ async def build(config, output):
         manifest.update(snapshot_id=data.snapshot_id, input_files=data.files, input_tables=len(data.tables), input_records=sum(t["rows"] for t in data.tables.values()), model_profile_hash=digest(profile))
         write_yaml(output / "meta_graph.yaml", technical_graph(data))
         write_yaml(output / "profiles.yaml", {name: t["profiles"] for name, t in data.tables.items()})
+        write_yaml(output / "column_roles.yaml", {name: classify_columns(table)
+                                                   for name, table in data.tables.items()})
         discovery = {"candidates": [], "checks": [], "coverage": {"status": "disabled", "partial": False}}
         if config.get("discovery", {}).get("enabled", True):
             discovery = discover_and_check(data, config.get("discovery", {}), progress=progress)
@@ -109,14 +132,43 @@ async def build(config, output):
         manifest["field_discovery"] = {"candidate_count": len(discovery["candidates"]),
                                        "checked_count": discovery["coverage"].get("candidates_checked", 0),
                                        "partial": discovery["coverage"]["partial"]}
+        concept_result = {"candidates": [], "coverage": {"status": "disabled"}}
+        if config.get("concept_recall", {}).get("enabled", False):
+            options = {key: value for key, value in config["concept_recall"].items()
+                       if key not in ("enabled", "max_candidates_per_unit")}
+            stage = progress.task("定义记录候选召回", 1) if progress else nullcontext(None)
+            with stage as task:
+                concept_result = recall_concept_candidates(data, **options)
+                if task:
+                    task.advance(detail=f"{len(concept_result['candidates'])} 对")
+            attach_concept_evidence(data, concept_result)
+        write_yaml(output / "concept_candidates.yaml", concept_result)
+        manifest["concept_recall"] = {"candidate_count": len(concept_result["candidates"]),
+                                       "coverage": concept_result["coverage"]}
+        alias_result = {"candidates": [], "coverage": {"status": "disabled"}}
+        if config.get("alias_recall", {}).get("enabled", False):
+            options = {key: value for key, value in config["alias_recall"].items() if key != "enabled"}
+            stage = progress.task("别名字段候选召回", 1) if progress else nullcontext(None)
+            with stage as task:
+                alias_result = propose_value_alias_candidates(data, **options)
+                if task:
+                    task.advance(detail=f"{len(alias_result['candidates'])} 对")
+        write_yaml(output / "alias_candidates.yaml", alias_result)
+        manifest["alias_recall"] = {"candidate_count": len(alias_result["candidates"]),
+                                     "coverage": alias_result["coverage"]}
         plan, ontology, knowledge = await construct(data, profile, config, output, llm, manifest,
                                                     discovery_checks=discovery["checks"],
                                                     discovery_candidates=discovery["candidates"],
+                                                    concept_candidates=concept_result["candidates"],
                                                     progress=progress)
         for ev in data.evidence.values():
             sink.put("evidence", ev)
         extractor = Extractor(data, sink, plan, llm, config.get("processing", {}), progress=progress)
         materialized = 0
+        preview_materialized = 0
+        preview_per_table = config.get("processing", {}).get("preview_objects_per_table", 0)
+        if type(preview_per_table) is not int or not 0 <= preview_per_table <= 100:
+            raise ValueError("processing.preview_objects_per_table must be 0..100")
         if config.get("processing", {}).get("materialize_all_objects", True):
             cap = config.get("processing", {}).get("max_object_records", 1000000)
             total = min(cap, sum(data.tables[t.table]["rows"] for t in plan.tables))
@@ -138,6 +190,22 @@ async def build(config, output):
                             pending = 0
                 if stage and pending:
                     stage.advance(pending)
+        else:
+            if preview_per_table:
+                total = sum(min(preview_per_table, data.tables[t.table]["rows"])
+                            for t in plan.tables)
+                preview_task = progress.task("记录预览物化", total) if progress else nullcontext(None)
+                with preview_task as stage:
+                    for table in plan.tables:
+                        for row in data.rows(table.table, limit=preview_per_table):
+                            extractor.object(table.table, row)
+                            preview_materialized += 1
+                            if stage:
+                                stage.advance(detail=table.table)
+                materialized += preview_materialized
+        manifest["object_preview"] = {"per_table_first_rows": preview_per_table if preview_materialized else 0,
+                                      "records_materialized": preview_materialized,
+                                      "scope": "first_rows_per_table_only; not representative" if preview_materialized else "none"}
         stats = await extractor.execute(progress=progress)
         write_yaml(output / "coverage.yaml", {"tables": [{"table": name, "input_records": t["rows"], "object_plan": name in extractor.tables, "source_relation_plans": [p.id for p in plan.relations if p.source_table == name]} for name, t in data.tables.items()], "relation_plans": stats["plans"], "implicit_relation_recall": "unknown; absent plans do not prove absence of business relations"})
         unmodeled_tables = sorted(data.tables.keys() - {t.table for t in plan.tables})
@@ -153,8 +221,24 @@ async def build(config, output):
             if stage:
                 stage.advance()
         write_yaml(output / "validation.yaml", validation)
-        write_yaml(output / "metrics.yaml", {"counts": counts, "extraction": stats, "materialized_records": materialized, "llm": llm.metrics(), "semantic_quality": "synthetic_only" if config.get("synthetic") else "unjudged"})
-        partial = unmodeled_tables or stats["unprocessed_records"] or stats["semantic_budget_exhausted"] or manifest.get("object_materialization_partial") or manifest.get("knowledge_questions_not_processed") or any(k["status"] in ("error", "unavailable", "budget_exhausted") for k in knowledge) or manifest.get("external_import_incomplete") or manifest.get("incremental_units_not_accepted") or manifest.get("external_alignment_errors") or manifest["field_discovery"]["partial"]
+        write_yaml(output / "metrics.yaml", {"counts": counts, "extraction": stats,
+                                             "materialized_records": materialized,
+                                             "preview_materialized_records": preview_materialized,
+                                             "llm": llm.metrics(), "semantic_quality": "synthetic_only" if config.get("synthetic") else "unjudged"})
+        partial_causes = {
+            "unmodeled_tables": bool(unmodeled_tables),
+            "relation_records_unprocessed": bool(stats["unprocessed_records"]),
+            "semantic_budget_exhausted": bool(stats["semantic_budget_exhausted"]),
+            "object_materialization_cap": bool(manifest.get("object_materialization_partial")),
+            "knowledge_questions_unprocessed": bool(manifest.get("knowledge_questions_not_processed")),
+            "knowledge_failed_or_capped": any(k["status"] in ("error", "unavailable", "budget_exhausted") for k in knowledge),
+            "external_import_incomplete": bool(manifest.get("external_import_incomplete")),
+            "incremental_units_not_accepted": bool(manifest.get("incremental_units_not_accepted")),
+            "external_alignment_errors": bool(manifest.get("external_alignment_errors")),
+            "field_candidates_not_fully_checked": bool(manifest["field_discovery"]["partial"]),
+        }
+        manifest["partial_reasons"] = [name for name, present in partial_causes.items() if present]
+        partial = bool(manifest["partial_reasons"])
         manifest["status"] = "failed" if not validation["passed"] else "partial" if partial else "complete"
         manifest["ontology_hash"] = digest(ontology)
         manifest["semantic_completeness"] = "unknown; complete describes execution only"
@@ -190,5 +274,6 @@ async def build(config, output):
                 manifest["viewer_error"] = type(exc).__name__
                 if manifest["status"] == "complete":
                     manifest["status"] = "partial"
+                manifest.setdefault("partial_reasons", []).append("viewer_error")
             write_yaml(output / "manifest.yaml", manifest)
     return manifest

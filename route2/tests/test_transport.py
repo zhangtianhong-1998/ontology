@@ -31,8 +31,9 @@ def provider(monkeypatch, answer, *, finish="tool_calls", delay=0, reject=False)
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append(body)
-            if reject:
-                self.send_response(400)
+            rejection = reject(body, len(requests)) if callable(reject) else 400 if reject else None
+            if rejection:
+                self.send_response(rejection)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(b'{"error":{"message":"unsupported thinking parameter","type":"invalid_request_error"}}')
@@ -128,6 +129,7 @@ def test_full_extraction_json_and_sse_with_explicit_thinking_disabled(tmp_path, 
     assert result["llm"]["provider_reported_tokens"] == 80
     assert all(b["stream"] is stream and all(b[k] == v for k, v in expected.items()) for b in requests)
     assert all(b["tool_choice"] == "auto" for b in requests)
+    assert all("企业知识检索已关闭" in json.dumps(b["messages"], ensure_ascii=False) for b in requests)
     events = (tmp_path / "run/trace.jsonl").read_text()
     assert "hidden-reasoning-marker" not in events and "local-test-secret" not in events
     assert ("llm_stream_delta" in events) is stream
@@ -197,6 +199,25 @@ def test_stream_consumption_deadline_and_provider_rejection_do_not_fallback(tmp_
         with pytest.raises(BadRequestError):
             asyncio.run(ask_once(llm))
         assert len(requests) == 1 and requests[0]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_transient_provider_retry_counts_each_wire_call(tmp_path, monkeypatch):
+    reject_first = lambda body, number: 503 if number == 1 else None
+    with provider(monkeypatch, lambda body, number: ("submit_result", {"accepted": True}),
+                  reject=reject_first) as requests:
+        llm = StructuredLLM({"mode": "agentscope", "max_retries": 1, "max_calls": 2}, tmp_path)
+        assert asyncio.run(ask_once(llm)).accepted
+        assert len(requests) == llm.calls == 2
+        assert len(list(llm.cache.glob("*.json"))) == 1
+        assert "llm_retry" in (tmp_path / "trace.jsonl").read_text()
+
+    with provider(monkeypatch, lambda body, number: ("submit_result", {"accepted": True}),
+                  reject=reject_first) as requests:
+        llm = StructuredLLM({"mode": "agentscope", "max_retries": 1, "max_calls": 1}, tmp_path / "capped")
+        with pytest.raises(Exception, match="budget exhausted"):
+            asyncio.run(ask_once(llm))
+        assert len(requests) == llm.calls == 1
+        assert not list(llm.cache.glob("*.json"))
 
 
 def test_environment_overrides_invalidate_cache_and_provider_default_omits_controls(tmp_path, monkeypatch):

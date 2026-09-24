@@ -16,6 +16,7 @@ llm:
     effort: medium
   temperature: 0
   timeout_seconds: 60
+  max_retries: 3
 ```
 
 - `stream: true` 使用 SSE 流式接口，`false` 使用普通 JSON 响应。两者都要求服务支持结构化工具调用。
@@ -23,6 +24,7 @@ llm:
 - `thinking.parameter` 必须与服务的接口约定一致，不能按模型名称猜测。
 - `thinking.effort` 仅用于 `enabled + reasoning_effort`。某些模型不接受 temperature；可配置为 `null`，此时不发送该参数。
 - 增量生成、Judge 等结构化请求只提供 `submit_result` 工具，并发送 `tool_choice: auto`，兼容不接受指定工具模式的服务。返回时仍要求恰好一次 `submit_result` 调用且参数符合 schema；纯文本或其他工具调用会报错，不写入缓存。企业检索的 ReAct 工具循环由 AgentScope 单独管理。
+- `timeout_seconds` 覆盖一次连接及完整响应消费。`max_retries` 为 0～5，默认 3；结构化调用及 ReAct 模型调用遇连接错误或 HTTP 5xx 可重试，每次实际发送都计入共享调用预算。超时、HTTP 4xx、损坏 JSON、纯文本答复和不完整工具调用不会按同一提示词盲目重试。逐表构建遇超时会停止该表后续相同请求，保留原有直接映射，并在构建步骤记下 `timeout`。重试行为仍需在实际模型服务上验证。
 
 真实模型运行配置 `runtime.real.example.yaml` 与 `runtime.no-thinking.yaml` 均设 `llm.max_calls: 800`、`llm.max_repairs: 4`。后者表示每张表最多 5 次生成与校验尝试，接受后立即停止，并非全库遍历 5 轮。生成、Judge、检索、对齐及文本判定共用 800 次调用；缓存命中不消耗调用次数。`llm.max_reserved_tokens: 90000000` 是按每次请求 UTF-8 字节数加输出上限累计的准入预算，可容纳 800 次达到 `max_input_bytes: 100000` 的请求；不代表实际 token 消耗。若需把企业 MCP 的 ReAct 检索也改为最多 5 轮，另设 `mcp.max_rounds: 5`，它不受 `llm.max_repairs` 控制。
 
@@ -66,9 +68,11 @@ uv run ontology-r2 build --config config/runtime.no-thinking.yaml --output runs/
 
 ## 完整性与验证
 
-SDK 负责拼接工具调用的分片。主程序在收到完整响应后才解析 JSON、校验模型和写入缓存、本体。断流、超时、`length` / `content_filter` 终止和损坏 JSON 都会失败，已接受的本体增量按原流程保留。
+SDK 负责拼接工具调用的分片。主程序在收到完整响应后才解析 JSON、校验模型和写入缓存、本体。连接失败按上面的规则有限重试；超时、`length` / `content_filter` 终止和损坏 JSON 会失败，已接受的本体增量按原流程保留。
 
 一次接口调用包含连接和消费完整响应的统一超时；token 用量只统计最终累计值一次。流式过程将可见工具参数写入 `llm_stream_delta` 事件，最终结果继续保留完整结构化输出。隐藏的思考字段不写入轨迹；Agent 内需要继续调用工具的消息仍交由 SDK 处理。
+
+`llm_input_budget` 在请求前记录输入各部分的字节数；超过 `max_input_bytes` 时直接失败，不会截断证据后继续生成。共享预算按实际发出的模型调用计数。一次运行若正常走完输出阶段，`manifest.partial_reasons` 会列出候选未核验、知识失败、增量未接受或记录上限等部分完成原因；若提前异常中止，查看 `manifest.error` 和 `trace.jsonl`。
 
 `tests/test_transport.py` 用本地 HTTP 服务验证 JSON/SSE、分片拼接、思考开关的实际请求字段、环境变量覆盖、ReAct 共用配置、超时和不完整响应。它验证接口行为，不能证明某个在线模型确实遵从了关闭指令。
 
@@ -92,3 +96,5 @@ embedding:
 `max_cards` 是外部本体卡的硬上限，超限直接报错，不会静默只索引一部分。`core_top_k` 限制进入当前工作单元的相似表数，不裁剪 core 本身。`min_cosine_similarity` 只过滤外部本体的低分向量候选，默认 0.35 是待业务样本校准的启发式门槛；FTS 候选不受影响。`embedding_report.yaml` 记录模型文件哈希、维度、文档及查询的编码次数。百万行 CSV 不逐行编码，也不为每条记录调用 embedding 或 LLM。Qwen3-Embedding-0.6B 在本机离线加载的 smoke 测试得到 1024 维；“营业收入的定义”对相关收入文本和无关天气文本的余弦分别为 0.7564/0.1215，只验证模型可加载并能区分该测试对，不能证明真实业务检索质量。
 
 企业 MCP 的候选集合仍由服务端决定。客户端 ReAct Agent 控制查询改写、循环检索和摘要；本地重排只调整已返回候选的顺序，无法扩大服务端召回，也无法保证 MCP 本身采用向量搜索。真实企业 MCP 的召回效果仍需单独评估，见 [实现状态](STATUS.md) 和 [测试说明](TESTING.md)。
+
+真实数据示例默认 `mcp.enabled: false`。关闭时，增量生成和 Judge 的提示词明确限定为数据库元数据、记录样本和已核验候选；检索关闭或失败不代表跨表关系不存在。启用时只有读取到可引用原文且核对来源的 claim 才进入生成上下文；`fetch.text` 为空白或为 `None`、`null` 等占位值会被拒收，原因写入 `knowledge.yaml` 的 `document_errors` 和轨迹。当前只支持 `fetch(document_id) -> {id,text,...}` 形式；企业服务若要另调接口获取正文，需要单独适配。`mcp.max_units` 未设置时只检索前 10 个工作单元，其余会记为预算耗尽。

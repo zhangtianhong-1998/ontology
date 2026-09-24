@@ -79,7 +79,8 @@ class RetrievalModel(ChatModelBase):
         if self.llm.mode == "mock":
             response = self.mock_response()
         else:
-            response = await self.llm.complete(messages, task="react", tools=tools, tool_choice=tool_choice, **kwargs)
+            response = await self.llm.complete(messages, task="react", budget_request=raw_request,
+                                               tools=tools, tool_choice=tool_choice, **kwargs)
         self.llm.trace({"stage": "react_model_response", "round": self.calls, "content": visible(response.content)})
         return response
 
@@ -124,8 +125,22 @@ def rerank_hits(query, hits, embedding):
              "model_sha256": embedding.model_sha256}} for index, score in ranked]
 
 
+def invalid_original_text(value):
+    """Reject missing or placeholder fetch bodies, not meaningful text containing those words."""
+    if value is None:
+        return "null_text"
+    if not isinstance(value, str):
+        return "non_string_text"
+    normalized = value.strip()
+    if not normalized:
+        return "empty_text"
+    if normalized.casefold() in {"none", "null", "nil", "undefined", "nan", "n/a"}:
+        return "placeholder_text"
+    return None
+
+
 async def retrieve(question, source_context, session, config, llm, embedding=None):
-    state = {"docs": {}, "hits": {}, "queries": [], "tool_calls": 0, "failure": None}
+    state = {"docs": {}, "hits": {}, "queries": [], "tool_calls": 0, "failure": None, "document_errors": []}
     maximum = min(5, max(1, config.get("max_rounds", 3)))
     allowed = {e["id"] for e in source_context.get("evidence", [])}
     model = RetrievalModel(llm, state, source_context, maximum + 1)
@@ -172,8 +187,16 @@ async def retrieve(question, source_context, session, config, llm, embedding=Non
                 if len(state["docs"]) >= config.get("max_documents", 10):
                     raise BudgetExceeded("Document count limit reached")
                 doc = await call(config.get("fetch_tool", "fetch"), {"document_id": document_id})
-                if doc.get("id") != document_id or not isinstance(doc.get("text"), str):
+                if doc.get("id") != document_id:
                     raise ValueError("MCP fetch requires matching id and original text")
+                issue = invalid_original_text(doc.get("text"))
+                if issue:
+                    diagnostic = {"document_id": document_id, "reason": issue}
+                    state["document_errors"].append(diagnostic)
+                    state["failure"] = "error"
+                    llm.trace({"stage": "mcp_document_rejected", "unit": source_context.get("unit"), **diagnostic})
+                    return json.dumps({"error": "InvalidDocumentText", **diagnostic,
+                                       "message": "文档正文为空或是占位值，不能作为原文证据"}, ensure_ascii=False)
                 if len(json.dumps(doc, ensure_ascii=False).encode()) > config.get("max_document_bytes", 16000):
                     raise BudgetExceeded("Document exceeds evidence budget; no silent truncation")
                 state["docs"][document_id] = doc
@@ -212,6 +235,7 @@ async def retrieve(question, source_context, session, config, llm, embedding=Non
         llm.trace({"stage": "knowledge_error", "error_type": reason})
     status = state["failure"] or ("conflict" if any(c["polarity"] == "contradicts" for c in claims) else "useful" if claims else "no_evidence")
     return {"status": status, "stop_reason": reason, "claims": claims, "remaining_gaps": gaps,
-            "documents": list(state["docs"].values()), "queries": state["queries"], "rounds": min(model.calls, maximum),
+            "documents": list(state["docs"].values()), "document_errors": state["document_errors"],
+            "queries": state["queries"], "rounds": min(model.calls, maximum),
             "model_calls": model.calls, "tool_calls": state["tool_calls"], "unit": source_context.get("unit"),
             "agent": "agentscope.agent.Agent/ReActConfig", "system_prompt_hash": digest(RETRIEVAL_SYSTEM)}

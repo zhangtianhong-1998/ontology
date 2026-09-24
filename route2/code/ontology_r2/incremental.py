@@ -1,7 +1,9 @@
 """Direct mappings and transactional, table-scoped semantic deltas."""
 from copy import deepcopy
+import json
 import re
 
+from .column_roles import classify_columns
 from .models import BuildPlan, TablePlan
 from .storage import digest
 from .validation import validate_plan
@@ -35,26 +37,85 @@ def traversal(data):
     return order + sorted(pending), sorted(pending)
 
 
-def unit_context(data, name):
+def _prompt_table(data, name, *, sample=False):
+    table = data.tables[name]
+    roles = classify_columns(table)
+    semantic = {item["column"] for item in roles if item["include_in_semantic_prompt"]}
+    profiles = {item["column"]: item for item in table["profiles"]}
+    result = {
+        "name": name, "comment": table.get("table_comment"),
+        "columns": [column for column in table["columns"] if column["column_name"] in semantic],
+        "deterministic_bindings": [item["deterministic_binding"] for item in roles
+                                   if item["role"] in ("audit_time", "technical_identifier")],
+        "empty_in_input": [item["column"] for item in roles if item["role"] == "empty"],
+        "column_roles": [{"column": item["column"], "role": item["role"],
+                          "evidence": item["evidence"]} for item in roles],
+        "constraints": table["constraints"], "foreign_keys": table["foreign_keys"],
+        "profiles": [{"column": column, "usable_count": profiles[column]["usable_count"],
+                      "approx_distinct_usable": profiles[column]["approx_distinct_usable"]}
+                     for column in table["column_names"] if column in semantic],
+    }
+    if sample:
+        sample_columns = _example_columns(table, None, limit=12)
+        result["sampled_columns"] = sample_columns
+        result["sample_columns_not_shown"] = [column for column in table["column_names"]
+                                              if column in semantic and column not in sample_columns]
+        result["sample"] = [{"record_id": data.record_id(name, row), "row_number": row["__r2_row"],
+                             "values": {column: row[column] for column in sample_columns}}
+                            for row in data.rows(name, limit=3)]
+    return result
+
+
+def _example_columns(table, key, limit=4):
+    roles = {item["column"]: item for item in classify_columns(table)}
+    ranked = []
+    for index, column in enumerate(table["columns"]):
+        name = column["column_name"]
+        if name == key or not roles[name]["include_in_semantic_prompt"]:
+            continue
+        description = name + " " + str(column.get("column_comment") or "")
+        priority = 0 if re.search(r"name|alias|definition|description|formula|meaning|scope|unit|名称|别名|定义|描述|公式|口径|单位", description, re.I) else 1
+        ranked.append((priority, index, name))
+    return [name for _, _, name in sorted(ranked)[:limit]]
+
+
+def unit_context(data, name, candidate_targets=()):
     targets = {f["referenced_schema"] + "." + f["referenced_table"] for f in data.tables[name]["foreign_keys"]}
-    relevant = {name} | targets.intersection(data.tables)
-    context = data.context(relevant)
-    context["table_catalog"] = [{"name": n, "comment": t.get("table_comment"), "columns": t["columns"]}
-                                for n, t in data.tables.items()]
-    return context
+    candidate_targets = [target for target in dict.fromkeys(candidate_targets)
+                         if target != name and target in data.tables]
+    relevant = {name} | targets.intersection(data.tables) | set(candidate_targets[:3]).intersection(data.tables)
+    catalog = []
+    for table_name, table in data.tables.items():
+        hints = [column for column, role in zip(table["columns"], classify_columns(table))
+                 if role["include_in_semantic_prompt"]]
+        catalog.append({"name": table_name, "comment": table.get("table_comment"),
+                        "column_hints": [{"name": col["column_name"], "comment": col.get("column_comment")}
+                                         for col in hints[:6]],
+                        "other_semantic_column_count": max(0, len(hints) - 6)})
+    return {"tables": [_prompt_table(data, table_name, sample=table_name == name)
+                       for table_name in sorted(relevant)],
+            "table_catalog": catalog,
+            "candidate_targets_not_expanded": candidate_targets[3:],
+            "evidence": [{"id": item["id"]} for item in data.evidence.values()
+                         if item.get("origin") != "observed_record"
+                         and item["source_ref"].get("table") in relevant]}
 
 
-def core_context(core, unit, data, semantic_neighbors=()):
+def core_context(core, unit, data, semantic_neighbors=(), candidate_targets=()):
     neighbors = {unit} | {f["referenced_schema"] + "." + f["referenced_table"] for f in data.tables[unit]["foreign_keys"]}
+    neighbors.update(candidate_targets)
     for relation in core.relations:
         if unit in (relation.source_table, relation.target_table):
             neighbors.update((relation.source_table, relation.target_table))
     neighbors.update(hit["table"] for hit in semantic_neighbors)
     return {"object_types": [t.model_dump() for t in core.object_types], "relation_types": [t.model_dump() for t in core.relation_types],
-            "tables": [t.model_dump() for t in core.tables if t.table in neighbors],
+            "tables": [{**t.model_dump(exclude={"attributes"}),
+                        "mapped_attribute_count": len(t.attributes),
+                        "attribute_mapping_hash": digest(t.attributes)}
+                       for t in core.tables if t.table in neighbors],
             "table_bindings": [{"table": t.table, "object_type": t.object_type} for t in core.tables],
             "relations": [r.model_dump() for r in core.relations if r.source_table in neighbors or r.target_table in neighbors],
-            "context_scope": "all_type_definitions_and_selected_table_neighborhood",
+            "context_scope": "all_type_definitions_and_selected_table_summaries; full mappings validated locally",
             "semantic_neighbors": list(semantic_neighbors), "full_core_hash": digest(core.model_dump())}
 
 
@@ -140,7 +201,8 @@ def ontology_from_plan(plan, profile, data, mapping, steps):
 
 
 async def construct(data, profile, config, output, llm, manifest,
-                    discovery_checks=(), discovery_candidates=(), progress=None):
+                    discovery_checks=(), discovery_candidates=(),
+                    concept_candidates=(), progress=None):
     """RIGOR-style enrich/judge/validate/merge; failed deltas never replace core."""
     from contextlib import AsyncExitStack, nullcontext
     from .embedding import LocalEmbedder, settings as embedding_settings
@@ -148,7 +210,9 @@ async def construct(data, profile, config, output, llm, manifest,
     from .knowledge import connect, retrieve
     from .llm import BudgetExceeded
     from .models import AlignmentDecision, ExternalQueries, Review
+    from .row_bundles import joint_examples
     from .storage import write_yaml
+    from openai import APITimeoutError
 
     core, mapping = direct_mapping(data)
     order, cyclic = traversal(data)
@@ -164,6 +228,19 @@ async def construct(data, profile, config, output, llm, manifest,
     max_evidence_per_unit = config.get("discovery", {}).get("max_evidence_per_unit", 3)
     if not isinstance(max_evidence_per_unit, int) or max_evidence_per_unit < 0:
         raise ValueError("discovery.max_evidence_per_unit must be nonnegative")
+    joint_pair_limit = config.get("discovery", {}).get("max_joint_pairs_per_candidate", 1)
+    joint_byte_limit = config.get("discovery", {}).get("max_joint_example_bytes", 16000)
+    if type(joint_pair_limit) is not int or not 0 <= joint_pair_limit <= 2:
+        raise ValueError("discovery.max_joint_pairs_per_candidate must be 0..2")
+    if type(joint_byte_limit) is not int or joint_byte_limit <= 0:
+        raise ValueError("discovery.max_joint_example_bytes must be positive")
+    max_concepts_per_unit = config.get("concept_recall", {}).get("max_candidates_per_unit", 2)
+    if type(max_concepts_per_unit) is not int or not 0 <= max_concepts_per_unit <= 5:
+        raise ValueError("concept_recall.max_candidates_per_unit must be 0..5")
+    concept_by_table = {}
+    for candidate in concept_candidates:
+        for table in {record["table"] for record in candidate["records"]}:
+            concept_by_table.setdefault(table, []).append(candidate)
     max_repairs = config["llm"].get("max_repairs", 2)
     if isinstance(max_repairs, bool) or not isinstance(max_repairs, int) or max_repairs < 0:
         raise ValueError("llm.max_repairs must be a nonnegative integer")
@@ -204,7 +281,6 @@ async def construct(data, profile, config, output, llm, manifest,
         unit_stage = stack.enter_context(progress.task("本体增量构建", len(order))) if progress else None
         for index, unit in enumerate(order):
             before = digest(core.model_dump())
-            context = unit_context(data, unit)
             step = {"unit": unit, "index": index, "core_before": before, "status": "rejected", "attempts": []}
             core_hits = semantic_core_hits(core, data, unit,
                                            [s["unit"] for s in steps if s["status"] == "accepted"],
@@ -212,19 +288,32 @@ async def construct(data, profile, config, output, llm, manifest,
             if embedding is not None:
                 step["semantic_core_neighbors"] = core_hits
             checked_pairs = checks_by_source.get(unit, [])[:max_evidence_per_unit]
-            field_association_evidence = [{
-                "candidate_id": candidate["candidate_id"],
-                "source": candidate["source"], "target": candidate["target"],
-                "retrieval_channels": candidate["retrieval_channels"],
-                "numeric_overlap_only": candidate["numeric_overlap_only"],
-                "checks": {key: check["checks"][key] for key in (
-                    "eligible_references", "unique_matches", "ambiguous_matches",
-                    "missing_in_input", "distinct_eligible_keys",
-                    "distinct_keys_matched", "whole_column_distinct_value_inclusion_ratio")},
-                "semantic_relation": "unresolved",
-            } for candidate, check in checked_pairs]
+            candidate_targets = [candidate["target"]["table"] for candidate, _ in checked_pairs]
+            context = unit_context(data, unit, candidate_targets)
+            field_association_evidence = []
+            for candidate, check in checked_pairs:
+                item = {
+                    "candidate_id": candidate["candidate_id"],
+                    "source": candidate["source"], "target": candidate["target"],
+                    "retrieval_channels": candidate["retrieval_channels"],
+                    "numeric_overlap_only": candidate["numeric_overlap_only"],
+                    "checks": {key: check["checks"][key] for key in (
+                        "eligible_references", "unique_matches", "ambiguous_matches",
+                        "missing_in_input", "distinct_eligible_keys",
+                        "distinct_keys_matched", "whole_column_distinct_value_inclusion_ratio")},
+                    "semantic_relation": "unresolved",
+                }
+                bundle = joint_examples(data, candidate, check,
+                    limit=joint_pair_limit,
+                    source_fields=_example_columns(data.tables[candidate["source"]["table"]], candidate["source"]["field"]),
+                    target_fields=_example_columns(data.tables[candidate["target"]["table"]], candidate["target"]["field"]))
+                size = len(json.dumps(bundle, ensure_ascii=False, default=str).encode())
+                item["joint_examples"] = (bundle if size <= joint_byte_limit
+                                          else {"status": "over_budget", "bytes": size, "semantic_relation": "unresolved"})
+                field_association_evidence.append(item)
             step["field_association_checks_presented"] = len(field_association_evidence)
             local_knowledge, external_context = [], []
+            knowledge_state = "disabled"
             if mcp.get("enabled"):
                 if unavailable:
                     result = {"unit": unit, "status": "unavailable", "claims": [], "error_type": unavailable}
@@ -233,8 +322,9 @@ async def construct(data, profile, config, output, llm, manifest,
                 else:
                     if unit_stage:
                         unit_stage.note(f"{unit} 企业文档检索")
-                    source = {"unit": unit, **context, "current_core": core_context(core, unit, data, core_hits), "root_model": profile}
+                    source = {"unit": unit, **context, "current_core": core_context(core, unit, data, core_hits, candidate_targets), "root_model": profile}
                     result = await retrieve("补充当前源定义在本体增量构建中尚缺少的定义、关系含义及适用条件；已有证据足够时不重复。", source, session, mcp, llm, embedding=embedding)
+                knowledge_state = result["status"]
                 knowledge.append(result)
                 for claim in result.get("claims", []):
                     data.evidence[claim["id"]] = {"id": claim["id"], "origin": "enterprise_document", "raw_fragment": claim["quote"],
@@ -268,8 +358,11 @@ async def construct(data, profile, config, output, llm, manifest,
                 except Exception as exc:
                     step["external_error"] = type(exc).__name__
                     alignments.append({"internal_id": unit, "mapping_kind": "unmapped", "reason": "retrieval_error", "error_type": type(exc).__name__})
-            packet = {"unit": unit, "sources": context, "root_model": profile, "current_core": core_context(core, unit, data, core_hits),
-                      "knowledge": local_knowledge, "external_context": external_context,
+            packet = {"unit": unit, "sources": context, "root_model": profile, "current_core": core_context(core, unit, data, core_hits, candidate_targets),
+                      "knowledge_state": knowledge_state, "knowledge": local_knowledge,
+                      "external_context": external_context,
+                      "concept_candidate_evidence": concept_by_table.get(unit, [])[:max_concepts_per_unit],
+                      "concept_candidate_limits": "Sampled names or aliases only; every pair remains unjudged. Compare definitions, units and scope before proposing a shared concept.",
                       "field_association_evidence": field_association_evidence,
                       "field_association_limits": "Raw-value equality on this input only. No selector or scope was inferred; overlap is not a declared FK or business relation. Candidate pairs without exact checks are omitted."}
             errors, previous = [], None
@@ -279,12 +372,14 @@ async def construct(data, profile, config, output, llm, manifest,
                     if unit_stage:
                         unit_stage.note(f"{unit} 生成 {attempt + 1}/{max_attempts}")
                     task = "plan" if attempt == 0 else "final_plan"
+                    record["phase"] = task
                     delta = await llm.ask(task, {**packet, "errors": errors, "previous_delta": previous}, BuildPlan)
                     record["delta"] = previous = delta.model_dump()
                     candidate = merge_delta(core, delta, unit, data, profile)
                     if unit_stage:
                         unit_stage.note(f"{unit} 校验 {attempt + 1}/{max_attempts}")
-                    review = await llm.ask("review", {**packet, "delta": delta.model_dump(), "candidate_core": core_context(candidate, unit, data, core_hits)}, Review)
+                    record["phase"] = "review"
+                    review = await llm.ask("review", {**packet, "delta": delta.model_dump(), "candidate_core": core_context(candidate, unit, data, core_hits, candidate_targets)}, Review)
                     record["judge"] = review.model_dump()
                     if not review.accepted or review.errors:
                         raise ValueError("Judge rejected: " + "; ".join(review.errors or ["insufficient_semantic_evidence"]))
@@ -306,6 +401,10 @@ async def construct(data, profile, config, output, llm, manifest,
                     errors = [str(exc) if isinstance(exc, (ValueError, BudgetExceeded)) else type(exc).__name__]
                     record.update(errors=errors, error_type=type(exc).__name__)
                     step["attempts"].append(record)
+                    if isinstance(exc, (TimeoutError, APITimeoutError)):
+                        step["status"] = "timeout"
+                        step["stop_reason"] = "unchanged_request_would_repeat_timeout"
+                        break
                     if isinstance(exc, BudgetExceeded):
                         step["status"] = "budget_exhausted"
                         break
