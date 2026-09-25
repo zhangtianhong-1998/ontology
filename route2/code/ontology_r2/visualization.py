@@ -117,25 +117,37 @@ def _preview_summary(payload, has_results, has_ontology):
 
 
 def _metadata_preview(graph, candidates, rule_set, max_nodes):
-    """Show tables first; keep structural and inferred links visibly separate."""
+    """Keep the local technical graph navigable without merging its edge kinds."""
     all_nodes = {item["id"]: item for item in graph.get("nodes", [])}
+    node_kinds = {}
+    for node in all_nodes.values():
+        kind = node.get("kind", "Unknown")
+        node_kinds[kind] = node_kinds.get(kind, 0) + 1
+    edge_kinds = {}
+    for edge in graph.get("edges", []):
+        kind = edge.get("type", "unknown")
+        edge_kinds[kind] = edge_kinds.get(kind, 0) + 1
     tables = sorted((item for item in all_nodes.values() if item.get("kind") == "Table"),
                     key=lambda item: item["id"])
     visible = tables[:max_nodes]
     ids = {item["id"] for item in visible}
-    details = {item["id"]: {"columns": [], "constraints": [], "sources": []} for item in visible}
+    details = {item["id"]: {"columns": [], "constraints": [], "sources": [],
+                           "record_types": []} for item in visible}
     links = []
+    column_owner = {edge.get("target"): edge.get("source")
+                    for edge in graph.get("edges", []) if edge.get("type") == "table_has_column"}
     for edge in graph.get("edges", []):
         source, target = edge.get("source"), edge.get("target")
         if source in ids:
             node = all_nodes.get(target)
             kind = {"table_has_column": "columns", "has_declared_constraint": "constraints",
-                    "documented_by": "sources", "sample_from": "sources"}.get(edge.get("type"))
+                    "documented_by": "sources", "sample_from": "sources",
+                    "mapped_as_source_record_type": "record_types"}.get(edge.get("type"))
             if kind and node:
                 details[source][kind].append(node)
         if edge.get("type") == "declared_fk":
-            source_table = str(source).rsplit(".", 1)[0]
-            target_table = str(target).rsplit(".", 1)[0]
+            source_table = column_owner.get(source) or str(source).rsplit(".", 1)[0]
+            target_table = column_owner.get(target) or str(target).rsplit(".", 1)[0]
             if source_table in ids and target_table in ids:
                 links.append({"id": "declared:" + str(source) + "→" + str(target),
                               "source": source_table, "target": target_table,
@@ -143,21 +155,48 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                               "target_field": str(target).rsplit(".", 1)[-1],
                               "status": "declared", "evidence": edge})
     verified_whole_pairs = set()
+    verified_rule_ids = set()
+    ruled_candidate_ids = set()
     for item in rule_set.get("rules", []):
-        if item.get("status") != "checked_technical":
+        if item.get("status") not in ("checked_technical", "observed_subset"):
             continue
         source, target = item.get("source", {}), item.get("target", {})
         if source.get("table") in ids and target.get("table") in ids:
-            if not item.get("selector") and not item.get("scope_bindings"):
+            verified_rule_ids.add(item.get("rule_id"))
+            ruled_candidate_ids.add(item.get("candidate_id"))
+            if (item.get("status") == "checked_technical" and not item.get("selector")
+                    and not item.get("scope_bindings")):
                 verified_whole_pairs.add((source["table"], source.get("field"),
                                           target["table"], target.get("field")))
             links.append({"id": item.get("rule_id"), "source": source["table"],
                           "target": target["table"], "source_field": source.get("field"),
-                          "target_field": target.get("field"), "status": "verified_technical",
+                          "target_field": target.get("field"),
+                          "status": "verified_technical" if item["status"] == "checked_technical"
+                          else "observed_subset",
                           "selector": item.get("selector", {}), "scope_bindings": item.get("scope_bindings", {}),
                           "verification": item.get("verification", {}),
                           "semantic_relation": item.get("semantic_relation", "unresolved")})
+    # A saved meta_graph.yaml may be opened without its separate rule file.
+    # Preserve inferred links from that graph but never label them as FKs.
+    for edge in graph.get("edges", []):
+        if edge.get("type") != "inferred_technical_match" or edge.get("rule_id") in verified_rule_ids:
+            continue
+        source, target = edge.get("source"), edge.get("target")
+        source_table, target_table = column_owner.get(source), column_owner.get(target)
+        if source_table not in ids or target_table not in ids:
+            continue
+        links.append({"id": edge.get("rule_id") or f"inferred:{source}→{target}",
+                      "source": source_table, "target": target_table,
+                      "source_field": all_nodes.get(source, {}).get("column_name"),
+                      "target_field": all_nodes.get(target, {}).get("column_name"),
+                      "status": "verified_technical" if edge.get("status") == "checked_technical"
+                      else "observed_subset", "selector": edge.get("selector", {}),
+                      "scope_bindings": edge.get("scope_bindings", {}),
+                      "semantic_relation": edge.get("semantic_relation", "unresolved"),
+                      "evidence": edge})
     for item in candidates:
+        if item.get("candidate_id") in ruled_candidate_ids:
+            continue
         source, target = item.get("source", {}), item.get("target", {})
         if source.get("table") in ids and target.get("table") in ids:
             if (source["table"], source.get("field"), target["table"], target.get("field")) in verified_whole_pairs:
@@ -169,15 +208,16 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                           "decision": item.get("decision", {}),
                           "shared_sample_value_count": item.get("shared_sample_value_count")})
     counts = {status: sum(item["status"] == status for item in links)
-              for status in ("declared", "verified_technical", "candidate")}
+              for status in ("declared", "verified_technical", "observed_subset", "candidate")}
     for table in visible:
         detail = details[table["id"]]
         detail["columns"].sort(key=lambda node: (node.get("ordinal_position") or 0, node["id"]))
         detail["sources"].sort(key=lambda node: node["id"])
-        for kind in ("columns", "constraints", "sources"):
+        for kind in ("columns", "constraints", "sources", "record_types"):
             detail["total_" + kind] = len(detail[kind])
         detail["sources"] = detail["sources"][:16]
         detail["constraints"] = detail["constraints"][:32]
+        detail["record_types"] = detail["record_types"][:4]
     # Distribute a bounded column budget across tables, so an early wide table
     # cannot hide every later table's fields from the standalone HTML.
     column_lists = {table["id"]: details[table["id"]]["columns"] for table in visible}
@@ -195,10 +235,44 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                     remaining -= 1
         if not remaining or not any_more:
             break
-    return {"tables": visible, "details": details, "links": links[:max_nodes * 10],
+    # Give every displayed table a chance to retain its strongest technical
+    # connection before filling the rest of the finite HTML preview. A source-
+    # ordered slice can hide all links of late tables in a dense graph.
+    link_limit = max_nodes * 10
+    priority = {"declared": 0, "verified_technical": 1,
+                "observed_subset": 2, "candidate": 3}
+    ordered = sorted(links, key=lambda item: (
+        priority.get(item["status"], 9), item["source"], item["target"],
+        str(item.get("source_field") or ""), str(item.get("target_field") or ""),
+        str(item["id"])))
+    by_table = {table["id"]: [] for table in visible}
+    for link in ordered:
+        for table_id in {link["source"], link["target"]}:
+            by_table[table_id].append(link)
+    selected, selected_ids = [], set()
+    offset = 0
+    while len(selected) < link_limit:
+        found = False
+        for table in visible:
+            queue = by_table[table["id"]]
+            if offset < len(queue):
+                found = True
+                link = queue[offset]
+                if link["id"] not in selected_ids:
+                    selected.append(link)
+                    selected_ids.add(link["id"])
+                    if len(selected) >= link_limit:
+                        break
+        if not found:
+            break
+        offset += 1
+    return {"tables": visible, "details": details, "links": selected,
             "link_counts": counts, "total_tables": len(tables),
-            "total_nodes": len(all_nodes), "shown_links": min(len(links), max_nodes * 10),
-            "total_links": len(links)}
+            "total_nodes": len(all_nodes), "shown_links": len(selected),
+            "total_links": len(links), "node_kinds": node_kinds,
+            "edge_kinds": edge_kinds,
+            "snapshot_ids": sorted(item["id"] for item in all_nodes.values()
+                                   if item.get("kind") == "DatasetSnapshot")}
 
 
 def render_viewer(run, max_nodes=200, *, manifest_override=None):
@@ -270,7 +344,8 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
             for item in (payload["objects"] + payload["concepts"] + payload["record_alignments"]
                          + payload["relations"] + payload["unresolved"]
                          + payload["ontology"].get("object_types", [])
-                         + payload["ontology"].get("relation_types", [])):
+                         + payload["ontology"].get("relation_types", [])
+                         + payload["ontology"].get("attributes", [])):
                 refs.update(item.get("evidence_ids", []))
             for result in payload["knowledge"]:
                 for claim in result.get("claims", []):

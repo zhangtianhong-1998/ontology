@@ -14,20 +14,20 @@ def test_controlled_packets_compile_business_types_and_evidence_bounded_relation
     summary = run(output)
     assert summary["fixture_rows"] == summary["semantic_cards"] == 6
     assert summary["checked_technical_rules"] == 1
-    assert summary["concept_bundles"] == 3
+    assert summary["concept_bundles"] == 6
     assert summary["relation_bundles"] == 1
     assert {item["parent"] for item in summary["accepted_business_types"]} == {
         "Metric", "Measure", "Dimension"}
-    assert summary["step_statuses"] == ["accepted"] * 4
+    assert summary["step_statuses"] == ["accepted"] * 7
     assert summary["relation_level"] == "source_record_relation_and_one_exact_concept_pair"
     assert summary["evaluation_scope"].startswith("engineering_contract_only")
 
     ontology = read_yaml(output / "ontology.yaml")
     business = [item for item in ontology["object_types"]
                 if item["category"] == "business_type"]
-    assert len(business) == 3
+    assert len(business) == 6
     assert all(item["evidence_scope"] == "definition_record" for item in business)
-    assert len(read_yaml(output / "business_concepts.yaml")) == 3
+    assert len(read_yaml(output / "business_concepts.yaml")) == 6
     assert len(read_yaml(output / "record_alignments.yaml")) == 6
 
     plan = read_yaml(output / "extraction_plan.yaml")
@@ -44,10 +44,10 @@ def test_controlled_packets_compile_business_types_and_evidence_bounded_relation
     assert record_relation["range"] == ["source_record_type:fruit.fruit_measure_definition"]
     assert record_relation["evidence_scope"] == plan["relations"][0]["evidence_scope"] == (
         "sample_semantic_with_full_technical_check")
-    assert business_relation["domain"] == [next(item["id"] for item in business
-                                                  if item["parent"] == "Metric")]
-    assert business_relation["range"] == [next(item["id"] for item in business
-                                                 if item["parent"] == "Measure")]
+    business_by_id = {item["id"]: item for item in business}
+    assert len(business_relation["domain"]) == len(business_relation["range"]) == 1
+    assert business_by_id[business_relation["domain"][0]]["parent"] == "Metric"
+    assert business_by_id[business_relation["range"][0]]["parent"] == "Measure"
     assert business_relation["evidence_scope"] == (
         "one_positive_pair_with_exact_type_alignments")
     assert all(item["predicate"] != business_relation["id"] for item in plan["relations"])

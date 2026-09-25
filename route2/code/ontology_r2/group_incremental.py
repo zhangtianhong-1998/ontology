@@ -27,6 +27,11 @@ class ConceptBundleDecision(Strict):
     label: str = ""
     definition: str = ""
     root_type: Literal["GeneralObject", "Measure", "Metric", "Dimension", "Term"] | None = None
+    # The table name is only a retrieval hint. A quantitative business type
+    # needs a source-grounded reason for its Metric/Measure boundary.
+    classification_basis: Literal["business_driven_metric", "aggregation_or_filter_measure",
+                                  "other", "unresolved"] = "unresolved"
+    classification_quote: str = ""
     # An accepted source-grounded concept is not automatically a class.
     # Existing responses without this field remain instance-level candidates.
     ontology_level: Literal["type", "instance", "unresolved"] = "unresolved"
@@ -140,6 +145,12 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
     records = _record_map(bundle)
     if not records or not decision.alignments:
         raise ValueError("Concept has no source records")
+    exact_allowlist = bundle.get("exact_alignment_record_ids")
+    if exact_allowlist is not None:
+        if (not isinstance(exact_allowlist, list) or not exact_allowlist
+                or len(exact_allowlist) != len(set(exact_allowlist))
+                or any(record_id not in records for record_id in exact_allowlist)):
+            raise ValueError("Invalid exact alignment record allowlist")
     for key, value in decision.scope.items():
         if not any(record.get("scope", {}).get(key) == value for record in records.values()):
             raise ValueError("Concept scope is absent from the bundle records")
@@ -153,7 +164,14 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         if item.mapping_kind == "unresolved":
             continue
         if item.mapping_kind == "exact":
-            if record.get("root_hint") and record["root_hint"] != decision.root_type:
+            if exact_allowlist is not None and item.record_id not in exact_allowlist:
+                raise ValueError("Exact alignment is outside the representative record allowlist")
+            # Metric and Measure are distinguished by the definition's meaning,
+            # not by a table-name hint. Other root mismatches remain guarded.
+            hint = record.get("root_hint")
+            if hint and hint != decision.root_type and not (
+                    hint in ("Metric", "Measure")
+                    and decision.root_type in ("Metric", "Measure")):
                 raise ValueError("Exact source record root differs from proposed concept root")
             if _member_or_field_record(record):
                 raise ValueError("Member or field record cannot be exact to its parent concept")
@@ -167,6 +185,17 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         selected.append((item, record))
     if not exact_records:
         raise ValueError("New concept requires an exact source definition record")
+    if decision.ontology_level == "type" and decision.root_type in ("Metric", "Measure"):
+        expected = ("business_driven_metric" if decision.root_type == "Metric"
+                    else "aggregation_or_filter_measure")
+        if decision.classification_basis != expected:
+            raise ValueError("Metric/Measure type requires a matching classification basis")
+        if not decision.classification_quote.strip() or not any(
+                role in ("description", "formula")
+                and not entry.get("truncated")
+                and decision.classification_quote in str(entry["value"])
+                for record in exact_records for role, entry in _entries(record)):
+            raise ValueError("Metric/Measure classification quote is absent from an exact definition")
     exact_scope = {}
     for record in exact_records:
         for key, value in (record.get("scope") or {}).items():
@@ -213,6 +242,7 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         alignments.append({
             "id": "alignment:" + digest([data.snapshot_id, item.record_id, concept_id, item.mapping_kind])[:24],
             "source_record_id": item.record_id,
+            "source_card_id": record.get("card_id"),
             "concept_id": concept_id,
             "mapping_kind": item.mapping_kind,
             "scope": effective_scope,
@@ -221,6 +251,28 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         })
     if not alignments:
         raise ValueError("All concept alignments are unresolved")
+    property_sources = {}
+    for record in exact_records:
+        for role, entry in _entries(record):
+            if role not in ("name", "alias", "description", "formula", "unit", "scope"):
+                continue
+            column = entry["column"]
+            evidence_id = "record:" + digest([data.snapshot_id, record["record_id"], column])[:24]
+            data.evidence[evidence_id] = {
+                "id": evidence_id, "origin": "observed_record",
+                "raw_fragment": str(entry["value"]), "raw_fragment_truncated": False,
+                "source_ref": {"table": record["table"], "record_id": record["record_id"],
+                               "row": record.get("row_number"), "column": column,
+                               "snapshot_id": data.snapshot_id},
+            }
+            key = (role, record["table"], column)
+            property_sources.setdefault(key, set()).add(evidence_id)
+            all_evidence.add(evidence_id)
+    source_properties = [
+        {"role": role, "source_table": table, "source_column": column,
+         "evidence_ids": sorted(evidence_ids)}
+        for (role, table, column), evidence_ids in sorted(property_sources.items())
+    ]
     concept = {"id": concept_id, "type": decision.root_type, "label": decision.label.strip(),
                "definition": decision.definition.strip(), "identity_scope": "snapshot_only",
                "ontology_level": decision.ontology_level,
@@ -230,8 +282,11 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                "unclassified_scope": {key: value for key, value in effective_scope.items()
                                       if key not in decision.scope_roles},
                "unit": unit or None,
-               "source_refs": [{"record_id": item["source_record_id"]}
-                                                      for item in alignments],
+               "source_properties": source_properties,
+               "source_refs": [{"record_id": item["source_record_id"],
+                                "card_id": item.get("source_card_id"),
+                                "scope": "representative_record; additional indexed rows remain in card_sources"}
+                               for item in alignments],
                "evidence_ids": sorted(all_evidence),
                "decision": "accepted_by_automatic_checks"}
     return concept, alignments
@@ -247,7 +302,9 @@ def _compiled_object_type(concept):
         evidence_ids=concept["evidence_ids"],
         evidence_scope="definition_record",
         applicability_scope=concept["applicability_scope"],
+        unit=concept["unit"], derivation_kind="exact_definition",
         source_concept_ids=[concept["id"]],
+        source_properties=concept["source_properties"],
     )
 
 
@@ -504,12 +561,14 @@ def _type_context(core, bundle, limit=12):
 
 
 async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *, review=True,
-                                 max_bundles=20, progress=None):
+                                 max_bundles=20, max_repairs_per_bundle=0, progress=None):
     """One bounded group pass; failures do not change accepted plan or objects."""
     from .llm import BudgetExceeded
 
     if type(max_bundles) is not int or max_bundles < 0:
         raise ValueError("max_bundles must be nonnegative")
+    if type(max_repairs_per_bundle) is not int or not 0 <= max_repairs_per_bundle <= 2:
+        raise ValueError("max_repairs_per_bundle must be an integer in 0..2")
     accepted_exact, concepts, alignments, steps = {}, {}, [], []
     accepted_record_relations = []
     selected = _balanced_selection(bundles, max_bundles)
@@ -528,8 +587,28 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                     "current_relations": [{"id": item.id, "parent": item.parent}
                                           for item in core.relation_types[-12:]]}
                 if bundle["task_kind"] == "concept_induction":
-                    decision = await llm.ask("concept_bundle", payload, ConceptBundleDecision)
-                    compiled = compile_concept(data, profile, bundle, decision, accepted_exact)
+                    concept_payload = payload
+                    for attempt in range(max_repairs_per_bundle + 1):
+                        decision = await llm.ask(
+                            "concept_bundle", concept_payload, ConceptBundleDecision)
+                        try:
+                            compiled = compile_concept(
+                                data, profile, bundle, decision, accepted_exact)
+                            break
+                        except ValueError as exc:
+                            if attempt >= max_repairs_per_bundle:
+                                raise
+                            concept_payload = {
+                                **payload, "previous_decision": decision.model_dump(),
+                                "compiler_error": str(exc),
+                                "repair_instruction": (
+                                    "Correct only the cited validation error using this same "
+                                    "evidence bundle. A proposed new concept requires an exact "
+                                    "alignment to one of exact_alignment_record_ids with a "
+                                    "verbatim quote; otherwise return unresolved. Do not invent "
+                                    "records, scope, units, or facts."),
+                            }
+                            step["repair_calls"] = attempt + 1
                     if compiled:
                         concept, new_alignments = compiled
                         old = concepts.get(concept["id"])
@@ -555,11 +634,21 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                   or existing.applicability_scope != new_type.applicability_scope):
                                 raise ValueError("Conflicting derived object type ID")
                             else:
-                                merged = existing.model_copy(update={
+                                sources = {(item.role, item.source_table, item.source_column):
+                                           item.model_dump() for item in existing.source_properties}
+                                for item in new_type.source_properties:
+                                    key = (item.role, item.source_table, item.source_column)
+                                    if key in sources:
+                                        sources[key]["evidence_ids"] = sorted(
+                                            set(sources[key]["evidence_ids"]) | set(item.evidence_ids))
+                                    else:
+                                        sources[key] = item.model_dump()
+                                merged = DerivedType.model_validate({**existing.model_dump(),
                                     "evidence_ids": sorted(set(existing.evidence_ids)
                                                            | set(new_type.evidence_ids)),
                                     "source_concept_ids": sorted(set(existing.source_concept_ids)
                                                                  | set(new_type.source_concept_ids)),
+                                    "source_properties": [sources[key] for key in sorted(sources)],
                                 })
                                 candidate.object_types[candidate.object_types.index(existing)] = merged
                         errors = validate_plan(candidate, data, profile)
@@ -571,6 +660,16 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                                       if ref["record_id"] not in refs)
                             old["evidence_ids"] = sorted(set(old["evidence_ids"])
                                                          | set(concept["evidence_ids"]))
+                            properties = {(item["role"], item["source_table"], item["source_column"]):
+                                          item for item in old.get("source_properties", [])}
+                            for item in concept["source_properties"]:
+                                key = (item["role"], item["source_table"], item["source_column"])
+                                if key in properties:
+                                    properties[key]["evidence_ids"] = sorted(
+                                        set(properties[key]["evidence_ids"]) | set(item["evidence_ids"]))
+                                else:
+                                    properties[key] = item
+                            old["source_properties"] = [properties[key] for key in sorted(properties)]
                             if old["ontology_level"] == "unresolved":
                                 old["ontology_level"] = concept["ontology_level"]
                                 old["ontology_type_id"] = concept["ontology_type_id"]

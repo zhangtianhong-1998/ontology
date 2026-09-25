@@ -94,8 +94,11 @@ class FixtureDecisions:
             name = seed["fields"]["name"][0]["value"]
             definition = seed["fields"]["description"][0]["value"]
             alignments = []
+            exact_allowed = set(payload["bundle"].get(
+                "exact_alignment_record_ids", [seed["record_id"]]))
             for record in payload["bundle"]["records"]:
-                if (record.get("kind") == "definition"
+                if (record["record_id"] in exact_allowed
+                        and record.get("kind") == "definition"
                         and record.get("root_hint") == seed.get("root_hint")
                         and record.get("fields", {}).get("name", [{}])[0].get("value") == name
                         and record.get("unit", "") == seed.get("unit", "")):
@@ -104,6 +107,10 @@ class FixtureDecisions:
             return ConceptBundleDecision(
                 status="proposed", label=name, definition=definition,
                 root_type=seed["root_hint"], ontology_level="type",
+                classification_basis=("business_driven_metric" if seed["root_hint"] == "Metric"
+                                      else "aggregation_or_filter_measure" if seed["root_hint"] == "Measure"
+                                      else "other"),
+                classification_quote=definition,
                 alignments=alignments,
             )
         if task == "relation_bundle":
@@ -151,7 +158,7 @@ def run(output):
             {"agent_enabled": False, "max_rules": 1}))
         try:
             packets = build_instance_bundles(data, index, association, {
-                "max_concept_bundles": 3, "max_relation_bundles": 1,
+                "max_concept_bundles": 6, "max_relation_bundles": 1,
                 "max_candidates_per_bundle": 2, "max_joint_pairs_per_rule": 1,
             })
         finally:
@@ -159,12 +166,14 @@ def run(output):
         core, mapping = direct_mapping(data)
         result = asyncio.run(construct_from_bundles(
             data, profile, core, packets["bundles"], FixtureDecisions(),
-            max_bundles=4, review=True))
+            max_bundles=7, review=True))
         business_types = [item for item in result["plan"].object_types
                           if item.category == "business_type"]
         relation_types = result["plan"].relation_types
         if len(result["concept_relations"]) != 1:
-            raise AssertionError("Controlled positive pair did not lift to a business relation")
+            raise AssertionError("Controlled positive pair did not lift to a business relation: "
+                                 + repr({"steps": result["steps"],
+                                         "derivations": result["concept_relation_derivations"]}))
         sink = Sink(output)
         try:
             for item in data.evidence.values():

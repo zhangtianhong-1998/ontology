@@ -41,10 +41,15 @@ def validate_plan(plan: BuildPlan, data, profile):
             errors.append("relation domain/range names an unknown object type: " + item.id)
         if item.category == "business_relation_type":
             business_ids = {t.id for t in plan.object_types if t.category == "business_type"}
+            valid_basis = (
+                (item.endpoint_basis == "record_alignment"
+                 and item.evidence_scope == "one_positive_pair_with_exact_type_alignments")
+                or (item.endpoint_basis == "configuration_reference"
+                    and item.evidence_scope == "one_configuration_witness_with_exact_type_alignments")
+            )
             if (not item.domain or not item.range
                     or not set(item.domain + item.range) <= business_ids
-                    or item.endpoint_basis != "record_alignment"
-                    or item.evidence_scope != "one_positive_pair_with_exact_type_alignments"):
+                    or not valid_basis):
                 errors.append("business relation requires exact business type endpoints: " + item.id)
             if any(relation.predicate == item.id for relation in plan.relations):
                 errors.append("one-pair business relation cannot execute as a table plan: " + item.id)

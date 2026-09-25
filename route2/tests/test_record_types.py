@@ -32,9 +32,11 @@ def test_source_record_types_cover_tables_without_pretending_all_are_business_co
     by_type = {item.id: item for item in plan.object_types}
 
     assert len(by_type) == 3
-    assert by_type[by_table["demo.metrics"].object_type].parent == "Metric"
-    assert by_type[by_table["demo.measure"].object_type].parent == "Measure"
-    assert by_type[by_table["demo.references"].object_type].parent == "GeneralObject"
+    assert all(item.parent == "GeneralObject" for item in by_type.values())
+    hints = {item["table"]: item["record_type_classification"]["described_business_root_hint"]
+             for item in mapping["tables"]}
+    assert hints == {"demo.metrics": "Metric", "demo.measure": "Measure",
+                     "demo.references": None}
     assert all(item.category == "source_record_type" for item in by_type.values())
     assert all(item["status"] == "source_mapping_only" for item in mapping["tables"])
     assert mapping["business_semantics"] == "not_inferred"

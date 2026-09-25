@@ -225,6 +225,26 @@ def ontology_from_plan(plan, profile, data, mapping, steps):
                           "literal_type": literal_type, "declared_data_type": c["data_type"], "storage_type": "string",
                           "source_table": table.table, "source_column": column,
                           "evidence_ids": [f"schema:{table.table}:{column}"]})
+    for business_type in plan.object_types:
+        if business_type.category != "business_type":
+            continue
+        by_role = {}
+        for source in business_type.source_properties:
+            by_role.setdefault(source.role, []).append(source)
+        for role, sources in sorted(by_role.items()):
+            evidence_ids = sorted({evidence_id for source in sources
+                                   for evidence_id in source.evidence_ids})
+            attrs.append({
+                "id": "business_property:" + digest([business_type.id, role])[:24],
+                "label": role, "relation_type": "has", "domain": [business_type.id],
+                "literal_type": "string", "storage_type": "string",
+                "evidence_scope": "definition_record",
+                "mapping_status": "definition_record_only",
+                "source_bindings": [
+                    {"table": source.source_table, "column": source.source_column,
+                     "evidence_ids": source.evidence_ids} for source in sources],
+                "evidence_ids": evidence_ids,
+            })
     return {**profile, "object_types": [x.model_dump() for x in plan.object_types],
             "relation_types": [x.model_dump() for x in plan.relation_types], "attributes": attrs,
             "source_mappings": mapping["tables"], "construction": {"mode": "rigor_adapted_incremental_yaml",

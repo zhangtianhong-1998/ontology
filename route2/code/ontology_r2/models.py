@@ -8,6 +8,13 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SourceProperty(Strict):
+    role: Literal["name", "alias", "description", "formula", "unit", "scope"]
+    source_table: str
+    source_column: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
 class Condition(Strict):
     op: Literal["eq", "in", "and", "or", "range"]
     field: str | None = None
@@ -49,14 +56,23 @@ class DerivedType(Strict):
     # Optional schema details keep older YAML plans valid. For object types,
     # applicability_scope describes the definition, not observation coordinates.
     applicability_scope: dict[str, str] = Field(default_factory=dict)
+    unit: str | None = None
     source_concept_ids: list[str] = Field(default_factory=list)
+    # These describe fields on exact definition records. They are not a claim
+    # that every business observation has the same populated property.
+    source_properties: list[SourceProperty] = Field(default_factory=list)
+    derivation_kind: Literal["exact_definition", "shared_supertype"] | None = None
+    induced_from_type_ids: list[str] = Field(default_factory=list)
     # Only object-relation types may narrow their endpoint types.
     domain: list[str] = Field(default_factory=list)
     range: list[str] = Field(default_factory=list)
-    endpoint_basis: Literal["record_alignment", "table_binding", "mixed"] | None = None
+    endpoint_basis: Literal["record_alignment", "table_binding", "mixed",
+                            "configuration_reference"] | None = None
     evidence_scope: Literal["source_schema", "definition_record",
+                            "multiple_definition_records",
                             "sample_semantic_with_full_technical_check",
-                            "one_positive_pair_with_exact_type_alignments"] | None = None
+                            "one_positive_pair_with_exact_type_alignments",
+                            "one_configuration_witness_with_exact_type_alignments"] | None = None
 
 
 class TablePlan(Strict):

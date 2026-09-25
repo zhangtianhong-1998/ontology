@@ -16,6 +16,23 @@ progress:
   min_interval_seconds: 1.0
 profiling:
   sql_columns_per_group: 32
+# Fact candidates are observed CSV tuples only. Exact DISTINCT scans the
+# selected value fields but writes at most this many tuples per table; it does
+# not create ontology instances or call the LLM for each row.
+fact_observations:
+  enabled: true
+  max_candidates_per_table: 200
+  max_dimension_columns: 4
+  max_time_columns: 2
+  max_value_columns: 8
+# One model decision per fact value field; accepted tuples are re-read from the
+# imported snapshot before becoming typed observations. No per-row LLM calls.
+fact_type_binding:
+  enabled: true
+  max_type_candidates_per_field: 8
+  max_source_rows_per_instance: 1000
+  max_binding_calls: 50
+  max_definition_chars: 2048
 # Route 2 discovers technical links first; bounded record bundles decide
 # business types and relations. The legacy table_semantic mode remains optional.
 incremental:
@@ -64,9 +81,18 @@ instance_bundles:
   max_cards: 100000
   max_field_chars: 512
   max_unknown_fields_per_table: 4
-  max_concept_bundles: 12
-  max_relation_bundles: 12
-  max_seeds_per_table: 8
+  # A definition with complete description/formula may form a singleton packet.
+  # These are budgets, not a claim that all distinct definitions are processed.
+  max_concept_bundles: 80
+  max_relation_bundles: 40
+  # Page candidate semantic patterns rather than raw code/reference variants.
+  # A pattern is only a scheduling group, not a business identity or alignment.
+  # Keep the window at the concept budget so every pattern has a reachable page.
+  # A larger request is automatically capped to max_concept_bundles.
+  max_pattern_seed_pool: 80
+  # Later pages visit other patterns, but separate runs do not combine ontology
+  # results or resume accepted types from earlier runs.
+  seed_window_index: 0
   lexical_top_k: 8
   max_candidates_per_bundle: 3
   max_bundle_bytes: 16000
@@ -74,8 +100,33 @@ instance_bundles:
   max_vector_cards: 20000
   vector_top_k: 8
   max_joint_pairs_per_rule: 2
-  max_llm_bundles: 20
+  # At most 120 packet decisions + 120 reviews; shared llm.max_calls remains 800.
+  max_llm_bundles: 120
+  # One correction attempt for a structured proposal rejected by the compiler.
+  max_repairs_per_bundle: 1
   review: true
+# A separate bounded pass may induce a shared superclass only from two
+# already accepted, source-grounded business definitions. It adds LLM calls.
+type_generalization:
+  enabled: true
+  max_pairs: 40
+  max_decisions: 10
+  max_packet_bytes: 16000
+# Same-name business types remain separate unless all complete source
+# definitions/formulas are pairwise checked and accepted. This pass is before
+# fact field binding, so a verified pair can share one canonical observation type.
+type_equivalence:
+  enabled: true
+  max_pairs: 40
+  max_decisions: 20
+  max_packet_bytes: 16000
+# A configuration row with two independently checked definition references is
+# a relation witness, never an endpoint. Predicate judgment has its own gate.
+configuration_relations:
+  enabled: true
+  max_specs: 20
+  max_pairs_per_spec: 200
+  max_semantic_decisions: 10
 llm:
   mode: agentscope
   stream: false

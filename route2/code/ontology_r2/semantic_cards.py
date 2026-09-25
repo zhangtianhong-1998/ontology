@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .column_roles import classify_columns
 from .concept_candidates import _field_roles
+from .row_semantics import classify_row_purpose, profile_joint_distinct
 from .storage import digest, qi
 
 
@@ -73,7 +74,10 @@ def _columns(table, max_unknown_fields_per_table):
     }
 
 
-def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_index_chars):
+def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_index_chars,
+              row_purpose="unresolved"):
+    if row_purpose == "business_fact":
+        return None
     fields = {}
     signature_fields = {}
     for role, columns in [*((role, roles.get(role, ())) for role in _CARD_ROLES),
@@ -96,9 +100,9 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
             signature_fields[role] = originals
     informative_reference = any(_CONTENT_REFERENCE.search(entry["column"])
                                 for entry in fields.get("reference", ()))
-    if _context_table(table_name) and fields:
+    if row_purpose == "configuration_data":
         kind = "reference"
-    elif fields.get("name"):
+    elif row_purpose == "definition_data" and fields.get("name"):
         kind = "definition"
     elif informative_reference:
         kind = "reference"
@@ -118,10 +122,24 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
     index_text_truncated = len(search_text) > max_index_chars
     search_text = search_text[:max_index_chars]
     signature = digest([table_name, kind, signature_fields])
+    semantic_fields = {role: [[column, _norm(raw)] for column, raw in signature_fields[role]]
+                       for role in _CARD_ROLES if role in signature_fields}
+    semantic_preview_truncated = any(entry["truncated"] for role in _CARD_ROLES
+                                     for entry in fields.get(role, ()))
+    # A pattern is a retrieval/scheduling group, never a business identity.
+    # A truncated semantic preview cannot safely stand for another card, even
+    # though the unabridged source value was available when fingerprinting.
+    pattern_signature = digest([table_name, kind, semantic_fields,
+                                signature if semantic_preview_truncated else None])
+    reference_signature = (digest(signature_fields["reference"])
+                           if signature_fields.get("reference") else None)
     return {"kind": kind, "table": table_name, "name": names[0] if names else "",
             "aliases": aliases, "scope": scope, "unit": units[0] if units else "",
             "fields": fields, "search_text": search_text,
-            "index_text_truncated": index_text_truncated, "signature": signature}
+            "index_text_truncated": index_text_truncated, "signature": signature,
+            "pattern_signature": pattern_signature,
+            "reference_signature": reference_signature,
+            "semantic_preview_truncated": semantic_preview_truncated}
 
 
 def _root_hint(table):
@@ -144,7 +162,8 @@ def _connect(path):
 def _table_quotas(specs, max_cards):
     """Reserve across tables before scanning; no first-table monopoly."""
     quotas = {name: 0 for name, table, *_ in specs}
-    active = [(name, table, weight) for name, table, *_, weight in specs if table["rows"] > 0]
+    active = [(name, table, weight) for name, table, *_, weight in specs
+              if table["rows"] > 0 and weight > 0]
     active.sort(key=lambda item: (-item[2], item[0]))
     if max_cards < len(active):
         for name, _, _ in active[:max_cards]:
@@ -194,6 +213,7 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
     db.executescript("""
       CREATE TABLE cards (
         card_id TEXT PRIMARY KEY, signature TEXT NOT NULL UNIQUE,
+        pattern_id TEXT NOT NULL, reference_signature TEXT,
         snapshot_id TEXT NOT NULL, table_name TEXT NOT NULL, kind TEXT NOT NULL,
         root_hint TEXT NOT NULL, name TEXT NOT NULL, name_norm TEXT NOT NULL,
         scope_json TEXT NOT NULL, unit TEXT NOT NULL,
@@ -205,6 +225,7 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
                             PRIMARY KEY (card_id, name_norm));
       CREATE INDEX aliases_name ON aliases(name_norm);
       CREATE INDEX cards_table_kind ON cards(table_name, kind, card_id);
+      CREATE INDEX cards_pattern ON cards(kind, pattern_id, card_id);
       CREATE INDEX cards_name ON cards(name_norm);
       CREATE TABLE card_sources (
         card_id TEXT NOT NULL, record_id TEXT NOT NULL, row_number INTEGER NOT NULL,
@@ -219,18 +240,23 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
     specs = []
     for table_name, table in data.tables.items():
         roles, reference, fallback, report = _columns(table, max_unknown_fields_per_table)
-        weight = (4 if roles.get("name") and any(roles.get(role) for role in
-                    ("description", "formula", "unit", "scope")) else
-                  3 if roles.get("name") else 2 if roles.get("description") or roles.get("formula") else 1)
-        specs.append((table_name, table, roles, reference, fallback, report, weight))
+        row_purpose = classify_row_purpose(table)
+        quality = (4 if roles.get("name") and any(roles.get(role) for role in
+                   ("description", "formula", "unit", "scope")) else
+                   3 if roles.get("name") else 2 if roles.get("description") or roles.get("formula") else 1)
+        purpose_weight = {"definition_data": 8, "configuration_data": 1,
+                          "unresolved": 1, "business_fact": 0}[row_purpose["purpose"]]
+        weight = purpose_weight * quality
+        specs.append((table_name, table, roles, reference, fallback, report, row_purpose, weight))
     quotas = _table_quotas(specs, max_cards)
     specs.sort(key=lambda item: (-item[-1], item[0]))
     task = progress.task("语义卡索引", sum(t["rows"] for t in data.tables.values())) if progress else nullcontext(None)
     try:
         with task as stage:
             unused_prior_quota = 0
-            for table_name, table, roles, reference, fallback, columns_report, _ in specs:
+            for table_name, table, roles, reference, fallback, columns_report, row_purpose, _ in specs:
                 effective_quota = quotas[table_name] + unused_prior_quota
+                joint_distinct = profile_joint_distinct(data, table_name, row_purpose)
                 selected = list(dict.fromkeys([*table["pk"], *[field for fields in roles.values() for field in fields],
                                                *reference, *fallback]))
                 selected_sql = ", ".join(qi(field) for field in selected)
@@ -246,9 +272,12 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
                             row = dict(zip(names, values))
                             counts["rows_scanned"] += 1
                             card = _row_card(table_name, row, roles, reference, fallback,
-                                             max_field_chars, max_index_chars)
+                                             max_field_chars, max_index_chars,
+                                             row_purpose["purpose"])
                             if card is None:
                                 counts["rows_without_card"] += 1
+                                if row_purpose["purpose"] == "business_fact":
+                                    counts["rows_skipped_business_fact"] += 1
                                 continue
                             signature = card["signature"]
                             found = db.execute("SELECT card_id FROM cards WHERE signature=?", (signature,)).fetchone()
@@ -262,8 +291,10 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
                             if found is None:
                                 card_id = "card:" + digest([data.snapshot_id, signature])[:24]
                                 root = _root_hint(table)
-                                db.execute("""INSERT INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                                           (card_id, signature, data.snapshot_id, table_name, card["kind"], root,
+                                pattern_id = "pattern:" + digest([data.snapshot_id, card["pattern_signature"]])[:24]
+                                db.execute("""INSERT INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                           (card_id, signature, pattern_id, card["reference_signature"],
+                                            data.snapshot_id, table_name, card["kind"], root,
                                             card["name"], _norm(card["name"]),
                                             json.dumps(card["scope"], ensure_ascii=False, sort_keys=True),
                                             card["unit"], json.dumps(card["fields"], ensure_ascii=False),
@@ -292,22 +323,36 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
                 finally:
                     cursor.close()
                 unused_prior_quota = effective_quota - counts["cards_indexed"]
-                by_table[table_name] = {**counts, **columns_report, "input_rows": table["rows"],
+                by_table[table_name] = {**counts, **columns_report,
+                                        "row_purpose": row_purpose,
+                                        "joint_distinct": joint_distinct,
+                                        "input_rows": table["rows"],
                                         "reserved_card_quota": quotas[table_name],
                                         "effective_card_quota": effective_quota}
                 total.update(counts)
+        patterns_indexed = db.execute("SELECT count(DISTINCT pattern_id) FROM cards").fetchone()[0]
+        definition_patterns = db.execute(
+            "SELECT count(DISTINCT pattern_id) FROM cards WHERE kind='definition'").fetchone()[0]
         coverage = {
             "snapshot_id": data.snapshot_id, "scan_scope": "full_imported_csv_snapshot",
             "rows_scanned": total["rows_scanned"], "rows_indexed": total["rows_indexed"],
-            "cards_indexed": indexed_cards, "rows_omitted_cap": total["rows_omitted_cap"],
+            "cards_indexed": indexed_cards, "patterns_indexed": patterns_indexed,
+            "definition_patterns_indexed": definition_patterns,
+            "pattern_semantics": "candidate_only; same pattern never merges reference variants or record identities",
+            "rows_omitted_cap": total["rows_omitted_cap"],
             "rows_without_card": total["rows_without_card"],
+            "rows_skipped_business_fact": total["rows_skipped_business_fact"],
+            "business_fact_rows_instantiated": 0,
+            "business_fact_instances_created": 0,
+            "row_purpose_classification_granularity": "table_level_heuristic",
+            "business_fact_processing": "excluded_from_definition_cards_only; no_fact_instance_path_in_this_stage",
             "cards_with_index_text_truncated": total["cards_with_index_text_truncated"],
             "kind_rows": {kind: total["kind_" + kind] for kind in ("definition", "reference", "uncertain")},
             "by_table": by_table, "omitted_examples": omitted_examples,
             "partial": bool(total["rows_omitted_cap"] or any(
                 item["unknown_columns_not_examined"] for item in by_table.values())),
             "index_limit": max_cards, "max_index_chars": max_index_chars,
-            "quota_method": "weighted_by_table_role_with_one_card_floor_and_forward_unused_capacity",
+            "quota_method": "definition_priority_weighted_by_table_with_one_card_floor_and_forward_unused_capacity",
             "card_capacity_unspent": max_cards - indexed_cards,
             "indexed_record_mapping": "all rows accepted into cards",
             "lexical_method": "NFKC casefold + Chinese 2/3 grams + Latin whole words; SQLite FTS5 BM25",
@@ -346,9 +391,11 @@ class SemanticCardIndex:
         item["record_id"] = item.pop("representative_record_id")
         item["row_number"] = item.pop("representative_row_number")
         item["index_text_truncated"] = bool(item["index_text_truncated"])
+        item["root_hint_basis"] = "table_name_and_comment_weak_hint_not_classification"
         # Card fields are retrieval context. Evidence IDs are registered only
         # when a group decision cites a concrete record value.
         item.pop("signature", None)
+        item.pop("reference_signature", None)
         item.pop("name_norm", None)
         return item
 
@@ -382,10 +429,93 @@ class SemanticCardIndex:
         return {"cards": [self._card(row) for row in rows], "total": total,
                 "complete": True, "reason": None}
 
-    def seeds(self, limit, *, per_table=16, kind=None):
-        """Round-robin, bounded seeds across tables; never claims full coverage."""
+    def pattern_window(self, limit, *, window_index=0, kind="definition"):
+        """Page distinct semantic *patterns*, preserving every card separately.
+
+        Representatives are selected by stable card_id. The order interleaves
+        source tables before paging, so the first page cannot be monopolized
+        by a single large table. A pattern is only a candidate scheduling unit;
+        its non-representative records remain unaligned.
+        """
+        if type(limit) is not int or not 0 < limit <= 1000:
+            raise ValueError("pattern window limit must be an integer in 1..1000")
+        if type(window_index) is not int or not 0 <= window_index <= 1000000:
+            raise ValueError("window_index must be an integer in 0..1000000")
+        if kind not in ("definition", "reference", "uncertain"):
+            raise ValueError("Unknown card kind")
+        total = self.db.execute(
+            "SELECT count(DISTINCT pattern_id) FROM cards WHERE kind=?", (kind,)).fetchone()[0]
+        total_cards = self.db.execute(
+            "SELECT count(*) FROM cards WHERE kind=?", (kind,)).fetchone()[0]
+        offset = window_index * limit
+        rows = self.db.execute("""
+          WITH grouped AS (
+            SELECT pattern_id, table_name, root_hint,
+                   min(card_id) AS representative_card_id,
+                   count(*) AS pattern_card_count,
+                   sum(occurrence_count) AS pattern_record_count,
+                   count(DISTINCT reference_signature) AS reference_variant_count
+            FROM cards WHERE kind=?
+            GROUP BY pattern_id, table_name, root_hint
+          ), numbered AS (
+            SELECT *, row_number() OVER (
+              PARTITION BY table_name ORDER BY pattern_id) AS table_rank
+            FROM grouped
+          )
+          SELECT pattern_id, representative_card_id, pattern_card_count,
+                 pattern_record_count, reference_variant_count
+          FROM numbered
+          ORDER BY table_rank, table_name, pattern_id
+          LIMIT ? OFFSET ?
+        """, (kind, limit, offset)).fetchall()
+        before_cards = self.db.execute("""
+          WITH grouped AS (
+            SELECT pattern_id, table_name, count(*) AS card_count
+            FROM cards WHERE kind=? GROUP BY pattern_id, table_name
+          ), ranked AS (
+            SELECT *, row_number() OVER (
+              PARTITION BY table_name ORDER BY pattern_id) AS table_rank
+            FROM grouped
+          ), ordered AS (
+            SELECT card_count, row_number() OVER (
+              ORDER BY table_rank, table_name, pattern_id) AS global_rank
+            FROM ranked
+          )
+          SELECT coalesce(sum(card_count), 0) FROM ordered WHERE global_rank <= ?
+        """, (kind, offset)).fetchone()[0]
+        patterns = []
+        for row in rows:
+            card = self.get(row["representative_card_id"])
+            card["pattern_id"] = row["pattern_id"]
+            card["pattern_card_count"] = row["pattern_card_count"]
+            card["pattern_record_count"] = row["pattern_record_count"]
+            card["reference_variant_count"] = row["reference_variant_count"]
+            card["pattern_nonrepresentative_cards"] = row["pattern_card_count"] - 1
+            card["pattern_status"] = "candidate_only_not_identity_alignment"
+            patterns.append(card)
+        return {"patterns": patterns, "total_patterns": total,
+                "total_cards": total_cards,
+                "window_index": window_index, "window_limit": limit,
+                "patterns_before_window": min(total, offset),
+                "patterns_after_window": max(0, total - offset - len(patterns)),
+                "cards_before_window": before_cards,
+                "cards_in_window": sum(item["pattern_card_count"] for item in patterns),
+                "cards_after_window": max(0, total_cards - before_cards
+                                          - sum(item["pattern_card_count"] for item in patterns)),
+                "next_window_index": (window_index + 1 if offset + len(patterns) < total else None),
+                "ordering": "interleaved_by_table_rank_then_pattern_id"}
+
+    def seeds(self, limit, *, per_table=16, kind=None, window_index=0):
+        """Round-robin one stable, bounded window of cards from each table.
+
+        Window ``n`` reads card positions ``n * per_table`` through
+        ``(n + 1) * per_table - 1`` in card-id order. Repeated runs can visit
+        later definitions without loading the complete corpus into memory.
+        """
         if any(type(value) is not int or not 0 < value <= 1000 for value in (limit, per_table)):
             raise ValueError("limit and per_table must be integers in 1..1000")
+        if type(window_index) is not int or not 0 <= window_index <= 1000000:
+            raise ValueError("window_index must be an integer in 0..1000000")
         if kind is not None and kind not in ("definition", "reference", "uncertain"):
             raise ValueError("Unknown card kind")
         tables = [row[0] for row in self.db.execute("SELECT DISTINCT table_name FROM cards ORDER BY table_name")]
@@ -393,7 +523,8 @@ class SemanticCardIndex:
         for table in tables:
             rows = self.db.execute(
                 "SELECT * FROM cards WHERE table_name=? AND (? IS NULL OR kind=?) "
-                "ORDER BY card_id LIMIT ?", (table, kind, kind, per_table)).fetchall()
+                "ORDER BY card_id LIMIT ? OFFSET ?",
+                (table, kind, kind, per_table, window_index * per_table)).fetchall()
             queues[table] = [self._card(row) for row in rows]
         result = []
         for position in range(per_table):
@@ -405,7 +536,7 @@ class SemanticCardIndex:
         return result
 
     def search(self, query, *, limit=10, kind=None, table=None, scope=None,
-               root_hint=None, exclude_card_id=None):
+               root_hint=None, exclude_card_id=None, exclude_pattern_id=None):
         """Return exact-name/alias and BM25 candidates with explicit filters."""
         if type(limit) is not int or not 0 < limit <= 100:
             raise ValueError("limit must be an integer in 1..100")
@@ -421,6 +552,9 @@ class SemanticCardIndex:
         if exclude_card_id is not None:
             clauses.append("c.card_id<>?")
             params.append(exclude_card_id)
+        if exclude_pattern_id is not None:
+            clauses.append("c.pattern_id<>?")
+            params.append(exclude_pattern_id)
         if isinstance(scope, dict):
             clauses.append("c.scope_json=?")
             params.append(json.dumps(scope, ensure_ascii=False, sort_keys=True))

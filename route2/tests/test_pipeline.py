@@ -16,6 +16,7 @@ from ontology_r2.relations import formula_symbols
 from ontology_r2.storage import Dataset, read_yaml, write_yaml
 from ontology_r2.validation import validate_plan
 from ontology_r2.llm import scope_mock_plan
+from test_semantic_cards import _table
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -48,6 +49,77 @@ def test_checked_field_match_is_a_scoped_technical_graph_edge():
     assert edge["type"] == "inferred_technical_match"
     assert edge["selector"] == {"kind": "metric"}
     assert edge["semantic_relation"] == "unresolved"
+
+
+def test_business_fact_candidates_are_exported_without_llm_instance_claims(tmp_path):
+    config = setup(tmp_path, scenario="unrelated", mcp=False)
+    _table(Path(config["dataset"]), "fruit_profit_fact", {
+        "fact_id": "记录 ID", "fruit_code": "水果编码", "region_code": "经营地区编码",
+        "period": "会计期", "profit_amount": "经营利润金额",
+    }, [
+        {"fact_id": "1", "fruit_code": "APPLE", "region_code": "EAST",
+         "period": "2025Q1", "profit_amount": "100"},
+        {"fact_id": "2", "fruit_code": "APPLE", "region_code": "EAST",
+         "period": "2025Q1", "profit_amount": "100"},
+        {"fact_id": "3", "fruit_code": "APPLE", "region_code": "EAST",
+         "period": "2025Q1", "profit_amount": "110"},
+        {"fact_id": "4", "fruit_code": "BANANA", "region_code": "SOUTH",
+         "period": "2025Q2", "profit_amount": "120"},
+    ], pk="fact_id")
+    config["incremental"] = {"mode": "source_mapping_only"}
+    config["discovery"] = {"enabled": False}
+    config["fact_observations"] = {"enabled": True, "max_candidates_per_table": 2}
+    output = tmp_path / "run"
+    result = asyncio.run(build(config, output))
+    assert result["status"] == "partial", result
+    assert result["llm"]["calls"] == 0
+    assert "fact_observation_candidates_partial" in result["partial_reasons"]
+    candidates = read_yaml(output / "fact_observation_candidates.yaml")
+    fact = next(item for item in candidates["tables"]
+                if item["table"] == "fruit.fruit_profit_fact")
+    assert fact["emitted_candidates"] == 2
+    assert fact["omitted_observed_tuples"] == 1
+    assert all(item["candidate_status"] == "candidate_only"
+               and item["business_type_binding"] == "unresolved"
+               for item in fact["candidates"])
+    coverage = read_yaml(output / "fact_observation_coverage.yaml")
+    assert coverage["status"] == "partial"
+    assert coverage["partial_table_names"] == ["fruit.fruit_profit_fact"]
+    assert result["fact_observations"]["emitted_candidates"] == 2
+
+
+def test_disabled_fact_candidate_stage_still_reports_coverage(tmp_path):
+    config = setup(tmp_path, scenario="unrelated", mcp=False)
+    config["incremental"] = {"mode": "source_mapping_only"}
+    config["discovery"] = {"enabled": False}
+    config["fact_observations"] = {"enabled": False}
+    output = tmp_path / "run"
+    result = asyncio.run(build(config, output))
+    assert result["status"] == "complete", result
+    assert read_yaml(output / "fact_observation_candidates.yaml")["tables"] == []
+    assert read_yaml(output / "fact_observation_coverage.yaml")["status"] == "disabled"
+    assert result["fact_observations"]["candidate_status"] == "candidate_only"
+
+
+def test_optional_business_stages_write_empty_coverage_without_definition_types(tmp_path):
+    config = setup(tmp_path, scenario="unrelated", mcp=False)
+    config["incremental"] = {"mode": "source_mapping_only"}
+    config["discovery"] = {"enabled": False}
+    config["type_generalization"] = {"enabled": True, "max_pairs": 2,
+                                      "max_decisions": 1}
+    config["configuration_relations"] = {"enabled": True, "max_specs": 2,
+                                           "max_pairs_per_spec": 2,
+                                           "max_semantic_decisions": 1}
+    output = tmp_path / "run"
+    result = asyncio.run(build(config, output))
+    assert result["status"] == "complete", result
+    assert result["llm"]["calls"] == 0
+    assert result["type_generalization"]["accepted"] == 0
+    assert result["configuration_relations"]["accepted_business_relations"] == 0
+    assert read_yaml(output / "type_generalization_steps.yaml") == []
+    assert read_yaml(output / "configuration_relation_specs.yaml")["spec_candidates"] == []
+    assert read_yaml(output / "configuration_relation_steps.yaml") == []
+    assert read_yaml(output / "ontology.yaml")["relation_types"] == []
 
 
 def test_end_to_end_real_stdio_mcp(tmp_path):
@@ -444,6 +516,80 @@ def test_twenty_three_tables_preserved_without_foreign_keys(tmp_path):
         assert len(data.tables) == 23
         assert len([n for n in graph["nodes"] if n["kind"] == "Table"]) == 23
         assert not any(e["type"] == "declared_fk" for e in graph["edges"])
+    finally:
+        data.close()
+
+
+def test_local_metadata_graph_bridges_tables_to_source_types_and_declared_keys(tmp_path):
+    from ontology_r2.datahub_adapter import metadata_change_proposals
+    from ontology_r2.pipeline import technical_graph
+
+    config = setup(tmp_path, "linked", mcp=False)
+    work = tmp_path / "work"
+    work.mkdir()
+    data = Dataset(config["dataset"], work)
+    try:
+        graph = technical_graph(data)
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        table = nodes["demo.catalog"]
+        record_type = nodes["source_record_type:demo.catalog"]
+        assert table["source_record_type"] == record_type["id"]
+        assert record_type["kind"] == "SourceRecordType"
+        assert record_type["business_concept_inferred"] is False
+        assert table["datahub_urn"] == next(
+            item["entityUrn"] for item in metadata_change_proposals(graph)
+            if item["aspectName"] == "datasetProperties"
+            and item["aspect"]["json"]["qualifiedName"] == "demo.catalog")
+        assert any(edge["source"] == "demo.catalog" and
+                   edge["target"] == record_type["id"] and
+                   edge["type"] == "mapped_as_source_record_type"
+                   for edge in graph["edges"])
+        assert set(table["declared_primary_key"]) == set(data.tables["demo.catalog"]["pk"])
+        key_edges = [edge for edge in graph["edges"]
+                     if edge["type"] == "declared_key_column"
+                     and edge["source"].startswith("demo.catalog:constraint:")]
+        assert [edge["target"] for edge in key_edges] == [
+            "demo.catalog." + key for key in table["declared_primary_key"]]
+        assert all(nodes[edge["target"]]["is_declared_primary_key"] for edge in key_edges)
+        assert all(nodes["demo.catalog." + name]["analysis_role"]
+                   in {"semantic", "unknown", "empty", "audit_time", "audit_metadata",
+                       "technical_identifier", "sensitive"}
+                   for name in data.tables["demo.catalog"]["column_names"])
+        assert graph["datahub_interchange"]["service_backed"] is False
+        table_constraints = data.tables["demo.catalog"]["constraints"]
+        data.tables["demo.catalog"]["constraints"] = [
+            *table_constraints,
+            {"constraint_name": "demo_catalog_unique", "constraint_type": "u",
+             "definition": "UNIQUE (code)", "constraint_type_name": "UNIQUE"},
+        ]
+        forward = {node["id"] for node in technical_graph(data)["nodes"]
+                   if node["kind"] == "Constraint" and node["id"].startswith("demo.catalog:")}
+        data.tables["demo.catalog"]["constraints"].reverse()
+        reverse = {node["id"] for node in technical_graph(data)["nodes"]
+                   if node["kind"] == "Constraint" and node["id"].startswith("demo.catalog:")}
+        assert forward == reverse
+    finally:
+        data.close()
+
+
+def test_optional_datahub_identity_does_not_block_local_graph(tmp_path, monkeypatch):
+    from ontology_r2.pipeline import technical_graph
+
+    config = setup(tmp_path, "linked", mcp=False)
+    work = tmp_path / "work"
+    work.mkdir()
+    data = Dataset(config["dataset"], work)
+    try:
+        def invalid_urn(_):
+            raise ValueError("unsupported quoted identifier")
+
+        monkeypatch.setattr("ontology_r2.pipeline.dataset_urn", invalid_urn)
+        graph = technical_graph(data)
+        tables = [node for node in graph["nodes"] if node["kind"] == "Table"]
+        assert tables and all(node["datahub_urn"] is None for node in tables)
+        assert all(node["datahub_urn_scope"] == "unsupported_local_identifier"
+                   for node in tables)
+        assert any(node["kind"] == "SourceRecordType" for node in graph["nodes"])
     finally:
         data.close()
 

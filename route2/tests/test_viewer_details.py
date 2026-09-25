@@ -46,10 +46,13 @@ def test_metadata_view_prioritizes_tables_and_separates_link_statuses():
     assert [table["id"] for table in metadata["tables"]] == ["demo.a", "demo.b"]
     assert metadata["details"]["demo.a"]["columns"][0]["id"] == "demo.a.code"
     assert metadata["details"]["demo.a"]["sources"][0]["path"] == "schema/a.yaml"
-    assert metadata["link_counts"] == {"declared": 1, "verified_technical": 1, "candidate": 1}
+    assert metadata["link_counts"] == {"declared": 1, "verified_technical": 1,
+                                       "observed_subset": 0, "candidate": 1}
     assert {link["status"] for link in metadata["links"]} == {
         "declared", "verified_technical", "candidate"}
     assert metadata["links"][1]["semantic_relation"] == "unresolved"
+    assert metadata["node_kinds"]["Table"] == 2
+    assert metadata["edge_kinds"]["table_has_column"] == 1
 
 
 def test_metadata_column_preview_budget_is_shared_across_wide_tables():
@@ -64,6 +67,56 @@ def test_metadata_column_preview_budget_is_shared_across_wide_tables():
     metadata = _metadata_preview({"nodes": nodes, "edges": edges}, [], {"rules": []}, 10)
     assert [len(metadata["details"][table]["columns"]) for table in ("demo.a", "demo.b")] == [40, 40]
     assert [metadata["details"][table]["total_columns"] for table in ("demo.a", "demo.b")] == [100, 100]
+
+
+def test_metadata_link_preview_keeps_late_table_connection():
+    graph = {"nodes": [{"id": name, "kind": "Table"}
+                       for name in ("demo.a", "demo.b", "demo.z")], "edges": []}
+    candidates = [
+        {"candidate_id": f"dense-{index}",
+         "source": {"table": "demo.a", "field": f"code_{index}"},
+         "target": {"table": "demo.b", "field": f"code_{index}"}}
+        for index in range(150)
+    ] + [{"candidate_id": "late", "source": {"table": "demo.z", "field": "code"},
+          "target": {"table": "demo.b", "field": "code"}}]
+    preview = _metadata_preview(graph, candidates, {"rules": []}, 10)
+    assert preview["total_links"] == 151 and preview["shown_links"] == 100
+    assert any(link["id"] == "candidate:late" for link in preview["links"])
+
+
+def test_metadata_graph_fallback_preserves_subset_without_duplicate_candidate():
+    graph = {"nodes": [
+        {"id": "demo.a", "kind": "Table"}, {"id": "demo.b", "kind": "Table"},
+        {"id": "demo.a.code", "kind": "Column", "column_name": "code"},
+        {"id": "demo.b.code", "kind": "Column", "column_name": "code"},
+    ], "edges": [
+        {"source": "demo.a", "target": "demo.a.code", "type": "table_has_column"},
+        {"source": "demo.b", "target": "demo.b.code", "type": "table_has_column"},
+        {"source": "demo.a.code", "target": "demo.b.code",
+         "type": "inferred_technical_match", "status": "observed_subset", "rule_id": "r1"},
+    ]}
+    candidate = {"candidate_id": "c1", "source": {"table": "demo.a", "field": "code"},
+                 "target": {"table": "demo.b", "field": "code"}}
+    rule = {"rule_id": "r1", "candidate_id": "c1", "status": "observed_subset",
+            "source": candidate["source"], "target": candidate["target"]}
+    preview = _metadata_preview(graph, [candidate], {"rules": [rule]}, 10)
+    assert preview["link_counts"]["observed_subset"] == 1
+    assert preview["link_counts"]["candidate"] == 0
+    assert preview["links"][0]["status"] == "observed_subset"
+    fallback = _metadata_preview(graph, [], {"rules": []}, 10)
+    assert fallback["links"][0]["status"] == "observed_subset"
+
+
+def test_metadata_graph_exposes_table_to_source_record_type_mapping():
+    graph = {"nodes": [
+        {"id": "demo.metric", "kind": "Table", "table_name": "metric"},
+        {"id": "source_record_type:demo.metric", "kind": "SourceRecordType",
+         "label": "指标定义记录", "business_concept_inferred": False},
+    ], "edges": [{"source": "demo.metric", "target": "source_record_type:demo.metric",
+                "type": "mapped_as_source_record_type"}]}
+    preview = _metadata_preview(graph, [], {"rules": []}, 10)
+    assert preview["node_kinds"]["SourceRecordType"] == 1
+    assert preview["details"]["demo.metric"]["record_types"][0]["business_concept_inferred"] is False
 
 
 def test_viewer_counts_business_and_source_record_types_separately(tmp_path):
@@ -90,8 +143,77 @@ def test_viewer_counts_business_and_source_record_types_separately(tmp_path):
     assert data["preview"]["type_counts"] == {
         "business": 1, "source_record": 2, "unclassified": 1, "relation": 1,
         "business_relation": 0, "record_relation": 1}
-    assert 'data-type-filter="business"' in html
-    assert 'data-type-filter="source_record"' in html
+    assert 'data-mode="ontology"' in html
+    assert 'data-mode="metadata"' in html
+    assert 'data-type-filter=' not in html
+    assert '<section class="metrics"' not in html
+    assert "['业务类型'" in html and "['源记录类型'" in html
+    assert "业务数据属性" in html and "源记录字段" in html
+    assert "个物理字段映射" in html
+
+
+def test_viewer_shows_verified_equivalence_on_business_type_without_relation_edge(tmp_path):
+    run = tmp_path / "equivalent-types"
+    run.mkdir()
+    write_yaml(run / "manifest.yaml", {"status": "complete"})
+    write_yaml(run / "ontology.yaml", {
+        "object_roots": [{"id": "Metric"}],
+        "object_types": [
+            {"id": "ProfitA", "label": "水果利润", "parent": "Metric",
+             "category": "business_type", "canonical_type_id": "ProfitA",
+             "equivalent_type_ids": ["ProfitB"]},
+            {"id": "ProfitB", "label": "水果利润", "parent": "Metric",
+             "category": "business_type", "canonical_type_id": "ProfitA",
+             "equivalent_type_ids": ["ProfitA"]},
+        ],
+        "relation_types": [],
+        "type_equivalences": [{
+            "id": "type_equivalence:profit", "source_type_id": "ProfitA",
+            "target_type_id": "ProfitB", "canonical_type_id": "ProfitA",
+            "semantic_equivalence_explanation": "完整公式、单位与适用范围一致",
+            "source_description_quote": "水果销售收入扣除成本",
+            "target_description_quote": "水果销售收入减去成本",
+            "source_formula_quote": "收入-成本",
+            "target_formula_quote": "收入-成本",
+            "evidence_ids": ["metric-description-a", "metric-description-b"],
+        }],
+    })
+    html = render_viewer(run, 10).read_text()
+    data = payload(html)
+    assert data["ontology"]["object_types"][1]["canonical_type_id"] == "ProfitA"
+    assert data["ontology"]["type_equivalences"][0]["source_type_id"] == "ProfitA"
+    assert data["ontology"]["relation_types"] == []
+    assert "已验证等价来源类型" in html
+    assert "规范类型" in html and "等价判定依据" in html
+    assert "source_description_quote" in html and "source_formula_quote" in html
+    assert "verifiedEquivalentTypes(x)" in html
+    assert "equivalents,y=>button(name(y),y.id,()=>select('object',y.id))" in html
+
+
+def test_viewer_includes_data_attribute_evidence_and_definition_only_scope(tmp_path):
+    run = tmp_path / "property-evidence"
+    (run / "work").mkdir(parents=True)
+    write_yaml(run / "manifest.yaml", {"status": "complete"})
+    write_yaml(run / "ontology.yaml", {
+        "object_roots": [{"id": "Metric"}],
+        "object_types": [{"id": "Profit", "label": "利润", "parent": "Metric",
+                          "category": "business_type"}],
+        "attributes": [{"id": "business_property:formula", "label": "计算公式",
+                        "relation_type": "has", "domain": ["Profit"],
+                        "literal_type": "string", "evidence_scope": "definition_record",
+                        "mapping_status": "definition_record_only",
+                        "source_bindings": [{"table": "demo.metric", "column": "formula"}],
+                        "evidence_ids": ["record:formula"]}],
+    })
+    with sqlite3.connect(run / "work/results.sqlite") as db:
+        db.execute("CREATE TABLE items (kind TEXT, id TEXT, body TEXT)")
+        evidence = {"id": "record:formula", "raw_fragment": "利润=收入-成本",
+                    "source_ref": {"table": "demo.metric", "column": "formula", "row": 1}}
+        db.execute("INSERT INTO items VALUES (?,?,?)", ("evidence", evidence["id"], json.dumps(evidence)))
+    html = render_viewer(run, 10).read_text()
+    data = payload(html)
+    assert data["evidence"]["record:formula"]["raw_fragment"] == "利润=收入-成本"
+    assert "definition_record_only" in html and "源字段绑定" in html
 
 
 def test_viewer_separates_witnessed_record_and_business_type_relations(tmp_path):
@@ -133,8 +255,9 @@ def test_viewer_separates_witnessed_record_and_business_type_relations(tmp_path)
     assert {item["viewer_layer"]: item["viewer_endpoint_labels"] for item in data["relations"]} == {
         "record": ["源记录", "目标记录"], "business_type": ["源概念", "目标概念"]}
     assert data["preview"]["type_counts"]["business_relation"] == 1
-    assert 'data-mode="business_relations"' in html
-    assert 'data-type-filter="business_relation"' in html
+    assert 'data-mode="ontology"' in html
+    assert "对象属性与连接" in html
+    assert "业务类型关系实例" in html
 
 
 def test_viewer_shows_type_definition_and_bounded_record_attributes(tmp_path):
@@ -168,8 +291,8 @@ def test_viewer_shows_type_definition_and_bounded_record_attributes(tmp_path):
                          if item["id"] == "calculation_depends_on")
     assert relation_type["definition"] == "由源公式明确引用目标定义"
     assert relation_type["evidence_ids"]
-    assert "['标识','id']" in html and "['定义','definition']" in html
-    assert "记录属性" in html
+    assert "field(p,'定义'" in html
+    assert "数据值" in html
 
 
 def test_viewer_previews_concepts_and_record_alignments_with_source_evidence(tmp_path):
@@ -208,7 +331,8 @@ def test_viewer_previews_concepts_and_record_alignments_with_source_evidence(tmp
     assert len(data["concepts"][0]["source_refs"]) == MAX_SOURCE_REFS_PER_CONCEPT
     assert data["evidence"][evidence["id"]]["raw_fragment"] == "水果均价"
     assert data["construction"]["group_steps"][0]["status"] == "accepted"
-    assert 'data-mode="concepts"' in html and 'data-mode="alignments"' in html
+    assert 'data-mode="ontology"' in html and 'data-mode="metadata"' in html
+    assert "objectInstances" in html
 
 
 def test_group_replay_viewer_distinguishes_unrun_stage_and_registers_cli_output(tmp_path, monkeypatch):

@@ -264,6 +264,21 @@ def test_environment_overrides_invalidate_cache_and_provider_default_omits_contr
         assert len(requests) == 2 and third.cached == 1 and third.calls == 0
 
 
+def test_explicit_cache_location_does_not_change_semantic_cache_key(tmp_path, monkeypatch):
+    config = {"mode": "agentscope", "stream": False,
+              "thinking": {"mode": "provider_default"}}
+    with provider(monkeypatch, lambda body, number: ("submit_result", {"accepted": True})) as requests:
+        first = StructuredLLM(config, tmp_path)
+        assert asyncio.run(ask_once(first)).accepted
+        same_location = {**config, "cache_dir": str(first.cache)}
+        replay_output = tmp_path / "replay"
+        replay_output.mkdir()
+        replay = StructuredLLM(same_location, replay_output)
+        assert asyncio.run(ask_once(replay)).accepted
+        assert len(requests) == 1
+        assert replay.cached == 1 and replay.calls == 0
+
+
 @pytest.mark.parametrize("config", [{"stream": "sometimes"}, {"thinking": False}, {"thinking": {"mode": "off"}}, {"thinking": {"parameter": "unknown"}}])
 def test_invalid_transport_config_fails_before_request(tmp_path, config):
     with pytest.raises(ValueError):

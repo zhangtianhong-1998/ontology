@@ -28,9 +28,13 @@ TASK_PROMPTS = {
     "plan": "生成当前 unit 的语义增量。直接映射已经存在，不重建全库。tables 只含当前表，relations 只含当前表发出的关系。复用 current_core 中的类型和关系；不得删除映射、改写其他表或重复发明同义类型。只添加有当前源证据支持的定义和关系，无新增信息可返回空增量。concept_candidate_evidence 是定义记录的有界候选，核对名称、定义、单位和范围后才可提出概念类型，不能仅凭共词合并。field_association_evidence 中的联合记录只证明候选字段匹配；结合双方定义、作用域、反例判断关系含义，不因匹配就认定业务关系。source_path 只用于已有 JSON 键路径；context_columns 保存业务范围。样本成员用 observed_member，只有显式范围规则才能用 allowed_member。",
     "final_plan": "修复当前单元的 previous_delta；逐条处理 errors。只返回本单元完整修正增量，不能返回整份 core。保留原始条件、否定和来源；知识不足可返回空增量。",
     "review": "独立复核 delta 与 candidate_core。逐项检查源字段、关系用途、范围、可用资料中的反证、与 current_core 的冲突及重复类型。不要因为结构校验通过就默认业务语义正确。无错误时只返回 accepted=true、errors=[]、corrected_delta=null，不复述整份 core；有可修复错误时才返回 corrected_delta，否则拒绝并列出具体错误。禁止扩展到本单元外。",
-    "concept_bundle": "这是跨表定义记录包。请判断包内记录是否支持一个共同的业务概念，或者应保持不同/未决。概念对象不是物理表类型；root_type 只能来自五类根。明确 ontology_level：只有可复用的类级定义才选 type，具体记录或观测选 instance，无法区分选 unresolved。scope 只能使用 records[*].scope 中实际出现的键和值；记录没有 scope 就返回 {}，不要把多个值拼成一个范围。对 scope 中每个键在 scope_roles 标明 applicability（定义适用范围）或 observation（地区、期间等具体观测坐标）；不能判定时不要将概念升格为类型。类型定义身份、适用范围与具体观测坐标必须分开，同一个度量可被多个指标复用。每条对齐的 quote 只能从该记录 fields[*].value 原样摘录，不能拼写 field=value 或合并多个字段。名称共词、BM25、向量分数均只负责召回，不能单独证明 exact；单位、口径、版本或范围冲突时用 narrower/related 或 unresolved。没有足够来源定义时返回 no_change/unresolved。",
+    "concept_bundle": "这是定义记录的有界证据包。请判断包内记录是否支持同一可复用业务概念，或应保持不同/未决；物理表类型不是业务概念。同一 pattern 只是调度分组，不证明引用编码相同或对象同一；exact 对齐仅能指向 exact_alignment_record_ids 中的代表记录，其他记录至多 related/narrower，也可不对齐。一个证据完整的代表记录足以提出一个类型，无须将包内其余候选合并。root_hint 仅由表名推测，不是分类事实。Metric 指有业务目标、业务语境或经营口径的指标；Measure 指单纯的数值聚合、过滤或基础定量度量。不能因为记录来自 metric/measure 命名的表就确定根类型。若提出 Metric/Measure 类级类型，分别填写 classification_basis=business_driven_metric/aggregation_or_filter_measure，并从 exact 定义记录的说明或公式逐字摘录 classification_quote；只有名称不能证明分类，无法凭来源辨别则选 unresolved。非 Metric/Measure 类型可填 classification_basis=other，并由 exact 对齐原文证明其含义。明确 ontology_level：只有可复用类级定义才选 type，具体观测选 instance；地区和期间作为观测坐标时不可成为类型身份。scope 只能使用 records[*].scope 中实际出现的键和值；记录没有 scope 就返回 {}，不要拼合多个值。scope_roles 对每个 scope 键标明 applicability 或 observation；不能判定时不要升格为类型。一个度量可以被多个指标复用。每条对齐 quote 只能逐字摘录相应记录 fields[*].value；名称共词、BM25、向量分数只用于召回，不证明 exact。核对单位、口径、版本和范围；证据不足返回 no_change/unresolved。",
     "relation_bundle": "这是已完成技术匹配检查的跨表行包，但匹配不等于业务关系。请比较源/目标字段说明、正反例及适用条件；仅在业务用途明确时提出关系。parent_relation 只能是 contains/depends_on/related_to/points_to；端点的物理类型由程序绑定，你不要输出类型。depends_on 必须有来源公式实际点名目标的证据；共享编码或名称不能证明计算依赖。source_quote 与 target_quote 必须分别逐字来自同一条 examples.positive 所指源/目标记录的非关联键 fields[*].value；不能仅引用编码原值、字段注释或拼接文本。字段注释只帮助理解用途，不独立证明业务关系。label 和 definition 须描述记录所代表的业务对象之间的含义，不能只描述物理表或编码的连接。单例语义支持仍不是整表业务真值；无法辨别时返回 unresolved。",
-    "group_review": "复核候选语义增量与证据包：逐字引用是否成立、单位/口径/作用域冲突是否被处理、是否把技术匹配冒充业务关系、是否把物理表冒充概念类型。证据不足则 accepted=false 并列出具体 errors。复核不是独立业务真值证明。",
+    "group_review": "复核候选语义增量与证据包：逐字引用是否成立、单位/口径/作用域冲突是否被处理、是否把技术匹配冒充业务关系、是否把物理表冒充概念类型。只审查候选实际提出的对齐与关系，不要求包内其余召回记录也必须合并；exact_alignment_record_ids 之外的记录绝不可要求改成 exact。参考 root_hint 是表名弱线索，不可仅凭它推翻有完整定义支持的 Metric/Measure 分类。非 Metric/Measure 的 classification_basis=other 可由 exact 对齐原文支持，不必强行要求不存在的分类字段。引用编码不必成为业务类型的定义属性；若含义或范围确有冲突仍须拒绝。证据不足则 accepted=false 并列出具体 errors。复核不是独立业务真值证明。",
+    "type_generalization": "候选只用于召回。仅当两个已接受的同根业务类型在完整定义或公式中共享同一语义，并且差异可以由各自来源原文中的明确特化词解释时，才提出共同上位类型；否则返回 no_change 或 unresolved。对每个 child 填写 type_id、逐字来自同一条完整说明/公式的 shared_quote 与 specialization_quote，以及该特化词。parent_scope 只能是两侧共有的适用范围，unit 必须兼容，公式的运算符、口径、否定及条件必须保持一致。父类 label/definition 不得包含任一子类特化词，也不得把观察到的地区/年份坐标提升为类型身份。不能将子类对象关系自动提升到父类；没有可逐字核查的共同定义就不生成上位类。",
+    "type_equivalence": "判断两个已接受的同名、同根、同单位、同适用范围业务类型是否确实等价。同名只是候选，不是合并依据。逐条阅读 source_types 中两侧 complete_source_definitions 的完整原文；本阶段仅允许两侧完整说明在去空白与标点后相同、完整公式相同（赋值等号左侧名称可不同）且无范围冲突时返回 proposed。描述同义改写但原文不同也返回 unresolved，待后续更强的语义核验；相同算式不能覆盖不同经营范围。proposed 必须原样复制两侧完整说明到 source_description_quote/target_description_quote，并填写对应 evidence_id；如果有公式，也原样复制各自完整公式到 source_formula_quote/target_formula_quote 并填写对应 evidence_id。source_type_id/target_type_id 必须与候选一致，semantic_equivalence_explanation 说明具体相同的业务口径。任何冲突返回 no_change，原文不足返回 unresolved；不要从名称或观测值推断身份，也不要把地区、年份观测坐标并进类型。",
+    "configuration_relation": "配置记录只充当业务关系证据，不是关系两端。输入中两端定义记录已通过编码唯一定位，但编码相等不证明业务谓词。仅当配置原文明确同时点名两端及关系方向，并且两端完整定义不冲突时提出关系；否则返回 no_change 或 unresolved。若提出，configuration_quote 必须逐字摘录完整配置原文并包含两端名称或编码与明确关系词；source_definition_quote、target_definition_quote 分别逐字摘录对应定义记录完整说明或公式。direction 为配置文本的明确方向，parent_relation 只能使用给出的对象关系根。不能仅靠字段名、源类型标记、共享编码、推测公式或联想常识生成依赖关系。",
+    "fact_type_binding": "这是业务事实数值列到已接受 Metric/Measure 业务类型的字段级绑定；一列只做一次判断，禁止按观测行反复调用。候选类型仅由词面召回，不是身份判断。只有列注释完整写出该业务类型名称、列与类型单位和适用范围兼容，且类型抽象定义与其完整来源定义同义时才返回 bind；多义、缺单位、仅共词、坐标不清则 unresolved。bind 时完整复制列注释作为 source_column_quote，完整复制候选的 definition 作为 type_definition_quote，再从 full_source_definitions 选同一来源的 evidence_id 并完整复制 value 作为 type_source_quote；短公共词不能替代完整原文。不要根据事实数值推断新类型、未观察的维度组合或持久业务主键。",
 }
 
 KNOWLEDGE_PROMPTS = {
@@ -160,7 +164,12 @@ class StructuredLLM:
         request = {"task": task, "input": payload, "schema": schema_dict, "prompt": prompt}
         model_id = os.getenv("ONTOLOGY_LLM_MODEL", "") if self.mode != "mock" else digest(self.responses)
         endpoint_hash = digest(os.getenv("ONTOLOGY_LLM_BASE_URL", "")) if self.mode != "mock" else None
-        key = digest([request, model_id, endpoint_hash, self.mode, self.config, self.transport])
+        # Cache location changes where responses are stored, not what the
+        # model was asked. Permit replay from a prior run's read-only cache.
+        semantic_config = {key: value for key, value in self.config.items()
+                           if key != "cache_dir"}
+        key = digest([request, model_id, endpoint_hash, self.mode,
+                      semantic_config, self.transport])
         file = self.cache / (key + ".json")
         if file.exists():
             self.cached += 1

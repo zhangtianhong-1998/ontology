@@ -8,27 +8,36 @@
 
 代码保留 [RIGOR 对照与本轮改造](RIGOR_COMPARISON.md)中的逐表增量模式，供旧例回归。2026-09-25 起，`runtime.real.example.yaml` 和水果实验配置使用 `incremental.mode: source_mapping_only`：程序先建立完整源映射和字段候选；可选关联 Agent 提出条件规则，程序全量核验；有限的跨表记录包再交给 LLM 判断业务类型与关系。此模式不做逐表 plan/review 调用；MCP 和外部本体若启用，须切回逐表模式，直到它们接入组包流程。运行代码位于 `code/ontology_r2`。
 
-`storage.py/profiling.py` 导入并统计；`discovery.py` 召回和核验字段候选；`column_roles.py` 分流列角色，`concept_candidates.py`、`value_aliases.py` 做有界候选召回，`row_bundles.py` 提取少量已核验的原值相等记录对；`pipeline.py` 调度和实例校验；`incremental.py` 建立直接映射、选择 core 邻域并处理 delta；`models.py/validation.py` 定义计划及校验；`relations.py` 执行记录关联；`knowledge.py` 使用 AgentScope `Agent` + `ReActConfig`，`llm.py` 管理共享模型预算；`external.py` 导入参考模型；`visualization.py/viewer.html` 生成本地浏览页面。`datahub_adapter.py` 可把现有技术图导出为 DataHub metadata-file。下文未落地的 `r2/*` 接口仍为职责草案。
+`storage.py/profiling.py` 导入并统计；`discovery.py` 召回和核验字段候选；`row_semantics.py` 区分表用途并统计有限列组的联合 distinct，`fact_observations.py/fact_type_binding.py` 分别产生实际观测元组和保守的字段级类型绑定；`semantic_cards.py/instance_bundles.py` 建定义模式索引及证据包；`configuration_relations.py/configuration_relation_stage.py` 处理双编码配置见证，`type_generalization.py/type_generalization_stage.py` 处理有据可查的上位类候选，`type_equivalence.py/type_equivalence_stage.py` 核验已接受业务类型的快照内等价。`column_roles.py` 分流列角色，`concept_candidates.py`、`value_aliases.py` 做有界召回，`row_bundles.py` 提取少量已核验的原值相等记录对；`pipeline.py` 调度、校验与输出。其余模块职责沿用前版；`datahub_adapter.py` 仅用于离线 DataHub metadata-file 互操作。下文未落地的 `r2/*` 接口仍为职责草案。
 
 2026-09-23 新增[字段统计与关联发现详细设计](FIELD_PROFILING_DESIGN.md)及[字段关联方案评估](FIELD_ASSOCIATION_EVALUATION.md)。P01、P03、P04 已实现首版，包含实际出现的 `business_type/source_type` 条件分支与全输入核验；分层取样、一般化 JSON 路径、异名值转换和复合键仍未实现。准确范围见[状态表](STATUS.md)。
 
-2026-09-24 根据数据机反馈与组包需求，新增[实例检索与增量组包设计](INSTANCE_BUNDLE_DESIGN.md)。当前已有有界语义卡、中文 n-gram BM25、可选本地向量、概念包和关系包的一轮组级抽取。尚缺分层选例、同义值转换的全量核验、观测值实例化和真实数据 Gold 评估。2026-09-25 的代码与合成实验对照见[优化与验证记录](OPTIMIZATION_AND_VALIDATION_20260925.md)。
+2026-09-24 根据数据机反馈与组包需求，新增[实例检索与增量组包设计](INSTANCE_BUNDLE_DESIGN.md)。当前已有有界语义卡、中文 n-gram BM25、可选本地向量、概念包和关系包的一轮组级抽取，以及条件严格的单表观测值实例化。尚缺分层选例、同义值转换的全量核验、跨表事实实例化和真实数据 Gold 评估。2026-09-25 的代码与合成实验对照见[优化与验证记录](OPTIMIZATION_AND_VALIDATION_20260925.md)。
+
+配置定义行和业务事实行必须使用不同的身份、去重及组包口径。表级 `source_record_type` 是物理行结构，统一挂在 `GeneralObject` 下；表注释提及指标/度量只保存为被描述业务根的弱线索。业务 `Metric/Measure` 类型须由定义记录和分类依据支持，实际经营事实只实例化已经观察到的坐标，不枚举维度组合。设计契约、用户故事和验收场景见[配置定义与业务事实设计](FACT_CONFIG_ONTOLOGY_DESIGN.md)。
+
+当前实现先以表级启发式区分定义、配置、事实与未决表，并对有限候选列组计算完整输入的联合 distinct。定义卡在磁盘索引中同时保留每条原始编码记录与完整语义内容模式；模式用于选代表证据包，不能当作业务对象等价关系。业务事实表输出已出现坐标和值的有限候选；在绑定数值字段前，另对已接受类型作有界、逐对来源核验，只把完整等价组映射到同快照规范类型。随后回查来源行，生成有证据的观测实例；未证实等价的同名类型仍阻断多义绑定。配置行的双编码引用另走“技术匹配→两端定义唯一定位→配置原文语义裁决”，不把配置行当对象关系端点。接受的业务类型可进入独立的上位类归纳阶段；模型决策仍受完整定义、公式、单位和适用范围的程序校验。各阶段的未处理范围单独导出。
 
 ## 1. 总体执行
 
 ```text
 YAML → 元数据图、键/注释/约束索引
 CSV → 分批导入、快照定位、全字段基础统计
+  → 表用途分流、有限字段组的联合 distinct、事实已观察元组去重
   → 选定字段频次/结构、分层样本、局部定义索引
+  → 定义语义模式索引与有界窗口选种子，保留不同编码记录
   → 元数据/值域/文本通道召回字段候选
-  → 原值、复合键、作用域及条件的精确验证
+  → 当前支持的原值、作用域及条件的精确验证（复合键仍待实现）
   → LLM 补语义判断并形成条件抽取计划
   → 标识关联 | 公式绑定 | 文本候选 | 维度条件解析
   → 有来源的候选对象和记录关系
   → 对未决知识问题：企业 MCP 检索 Agent（有界）
   → 对建模术语：外部模型召回与内部术语对齐
   → 按业务证据包迭代生成 Delta、Judge、程序校验
-  → 定义对象、带条件关系、本体、证据与未决项
+  → 已接受定义类型的保守上位类归纳；配置双编码见证的独立语义裁决
+  → 同根同名类型的完整定义逐对等价核验；完整等价组的快照内规范映射
+  → 事实数值列到已接受规范类型的单次判定；已观察元组回查与实例化
+  → 定义对象、带条件关系、事实观测实例、本体、证据与未决项
 ```
 
 输入契约、根模型、状态和 YAML 分片遵守[共同设计](../shared/contracts.md)。逐表模式每个单元最多接收三条已核验字段候选及少量联合行例；新默认实验模式跳过逐表语义计划，组包阶段跨表处理定义与关系。两种模式都受候选核验、卡片、种子和 LLM 预算限制，未处理范围保留在 coverage 与 manifest。
@@ -58,6 +67,8 @@ CSV → 分批导入、快照定位、全字段基础统计
 `declared_fk` 只能来自声明外键。已核验字段规则以 `inferred_technical_match` 写入技术图，附带规则 ID、条件和状态，不能回写成声明外键或业务关系。无外键时按列角色和值域建立分析候选。
 
 CSV 记录不全部变成内存图节点。元数据图引用 DuckDB 中的记录集合、统计和候选边；仅选定证据包取少量完整相关记录。
+
+本地 `meta_graph.yaml` 是运行时技术图，不是 DataHub 服务内读出的图。它应显示表、列、声明主键、来源和表到 `source_record_type` 的映射；DataHub URN 仅用于离线 metadata-file 互操作。页面按选中表展开邻域，并将已核验技术匹配与声明外键以不同状态展示，不能把字段重叠画成业务对象属性。
 
 目标电脑为无 Docker 的 Windows 11，因此运行时保留本地技术图与 DuckDB。DataHub 仅作为可选互操作格式：导出表/列 metadata-file，另用隔离环境中的 Lite 做本地存储和读回。Lite 不支持关系图遍历或血缘；完整 DataHub 服务不属于此离线原型的运行依赖。安装与验证命令见[离线说明](DATAHUB_OFFLINE.md)。
 
@@ -159,6 +170,12 @@ LLM 同意 `same_concept` 先保存为同一概念候选，路线2不据此跨�
 专门的 Agent 按候选字段组探索，而非逐行探索。工具只允许读取元数据、分层样本、候选匹配统计和反例。Agent 的输出是受限 YAML 规则候选，包括字段、允许的转换、selector、作用域、适用范围和证据；程序在完整输入上复验，记录唯一、缺失、多义和条件外命中。规则通过技术检查后才可用于连接记录；它仍未自动获得本体关系含义。
 
 随后分开调度关联规则单元和定义记录单元。已验证规则决定哪些跨表行必须放在一起；BM25 与本地向量只补充待比较的定义候选，不能当作连接或身份。每个组按条件分支、口径、单位和稀有模式选代表例与反例，严格控制完整请求大小。组包 YAML、缓存失效、预算和实验细节见[实例组包设计](INSTANCE_BUNDLE_DESIGN.md)。
+
+当前输入门禁按表级启发式区分 `definition_data/configuration_data/business_fact/unresolved`；混合或证据不足的表保持未决。对少量有语义依据的候选列组做完整输入精确联合 distinct 与重复度分析。定义卡的原始编码和记录独立保留，只把完整语义内容相同的卡归为**候选调度模式**；一个模式的代表记录可以进组包的 exact 对齐白名单，其他编码变体不能因同文自动精确对齐。独特且定义完整的单卡也可组包。模式窗口、组包数和模型请求数各有限额，并分别报告未处理量；相似名称、向量近邻和同列值重叠仍只是候选。
+
+明显业务事实表采用 `fact_observations.py` 对实际出现的维度、期间、数值元组精确分组，不枚举各列值的笛卡尔积。在字段绑定前，`type_equivalence_stage.py` 仅按同根、同名、同单位、同范围召回已接受业务类型；每对需模型逐字引述两端完整来源说明和公式，程序只接受完整说明及公式相同的组合。只有一个同名组的全部类型两两证实等价，才建立同快照 `canonical_type_id`；文字改写、未决或缺失组合都保留分立类型。`fact_type_binding.py` 只对数值字段调用一次结构化模型判断，再核对完整列注释、完整类型与来源定义、单位及适用范围；只有类型唯一或同名备选已全部归到同一规范类型，才按坐标和值回查全部来源行并实例化。合并的来源行若在未选入坐标的非技术字段上取值不同，实例化会拒绝；这仍不能证明单行的坐标完整。未覆盖逐行混合用途、普适的异值别名转换、跨表事实 JOIN 和跨运行本体复用。不同值反向索引回源行的一般关联规则仍未完成。细节及验收边界见[配置定义与业务事实设计](FACT_CONFIG_ONTOLOGY_DESIGN.md)。
+
+该核验由 `type_equivalence.enabled` 控制，`max_pairs`、`max_decisions`、`max_packet_bytes` 限制召回与模型成本。输出包括 `type_equivalence_steps.yaml`、`type_equivalence_assertions.yaml`、`type_equivalence_coverage.yaml`；已证实的组还在 `ontology.yaml` 中保留原业务类型、规范 ID 和来源间断言。未完成与拒绝的组不消失，也不能被同名条件自动合并。输出可追溯模型与程序作出的决定，不构成未经独立业务 Gold 检验的语义正确率证明。
 
 关系包输出带条件和证据的关系计划候选；概念包输出业务概念对象及 `record→concept` 来源对齐。类级定义且适用范围清楚时，概念包还能编译 `business_type`；其余概念保持实例级或未决。每张表的 `source_record_type` 只描述源行形状，不代替业务类型。两类输出分开校验，再合入内部 YAML 模型。当前关系计划的端点仍须有整表绑定，尚不支持同一表按记录分派多个业务类型。
 

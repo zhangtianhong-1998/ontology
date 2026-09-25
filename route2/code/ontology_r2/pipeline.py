@@ -9,17 +9,28 @@ from dotenv import load_dotenv
 
 from .association_rules import build_association_rules
 from .column_roles import classify_columns
+from .configuration_relations import (discover_configuration_relations,
+                                      infer_configuration_specs)
+from .configuration_relation_stage import adjudicate_configuration_relations
 from .concept_candidates import recall_concept_candidates
+from .datahub_adapter import dataset_urn
 from .discovery import discover_and_check
 from .embedding import LocalEmbedder, settings as embedding_settings
+from .fact_observations import build_fact_observation_candidates
+from .fact_type_binding import bind_fact_observations
 from .group_incremental import construct_from_bundles
 from .incremental import construct, ontology_from_plan
 from .instance_bundles import build_instance_bundles
 from .llm import BudgetExceeded, StructuredLLM
 from .progress import ProgressReporter
+from .record_types import source_record_type
 from .relations import Extractor
 from .semantic_cards import SemanticCardIndex, build_semantic_cards
 from .storage import Dataset, Sink, digest, read_yaml, write_yaml
+from .type_generalization import GeneralizationDecision
+from .type_generalization_stage import run_generalization
+from .type_equivalence import EquivalenceDecision
+from .type_equivalence_stage import run_type_equivalence
 from .value_aliases import propose_value_alias_candidates
 
 
@@ -47,23 +58,61 @@ def load_config(path):
 
 
 def technical_graph(data):
+    """Build a local technical graph with explicit source-record type bridges.
+
+    DataHub's dataset/schema shape is used for offline interchange only. No
+    DataHub service or lineage inference is involved in graph construction.
+    """
     nodes, edges = [{"id": "snapshot:" + data.snapshot_id, "kind": "DatasetSnapshot"}], []
     for path, sha in sorted(data.files.items()):
         nodes.append({"id": "source:" + path, "kind": "Source", "path": path, "sha256": sha})
         edges.append({"source": "snapshot:" + data.snapshot_id, "type": "includes_source", "target": "source:" + path})
     for name, t in data.tables.items():
         metadata_file = data.evidence["schema:" + name]["source_ref"]["file"]
-        nodes.append({"id": name, "kind": "Table", **{k: t.get(k) for k in ("schema", "table_name", "table_comment", "relkind", "estimated_rows", "total_size", "data_size")}, "observed_rows": t["rows"]})
+        record_type, classification = source_record_type(name, t)
+        roles = {role["column"]: role for role in classify_columns(t)}
+        try:
+            default_datahub_urn = dataset_urn(name)
+        except ValueError:
+            # The optional interchange format must not make local extraction
+            # fail for a quoted source identifier that DataHub cannot encode.
+            default_datahub_urn = None
+        nodes.append({"id": name, "kind": "Table", **{k: t.get(k) for k in ("schema", "table_name", "table_comment", "relkind", "estimated_rows", "total_size", "data_size")},
+                      "observed_rows": t["rows"], "declared_primary_key": list(t["pk"]),
+                      "source_record_type": record_type.id,
+                      "datahub_urn": default_datahub_urn,
+                      "datahub_urn_scope": ("default_postgres_PROD_interchange" if default_datahub_urn
+                                            else "unsupported_local_identifier"),
+                      "evidence_ids": ["schema:" + name]})
+        nodes.append({"id": record_type.id, "kind": "SourceRecordType", "category": record_type.category,
+                      "label": record_type.label, "definition": record_type.definition,
+                      "parent": record_type.parent, "evidence_ids": record_type.evidence_ids,
+                      "classification_basis": classification["basis"],
+                      "business_concept_inferred": False, "observed_rows": t["rows"]})
+        edges.append({"source": name, "type": "mapped_as_source_record_type", "target": record_type.id,
+                      "semantic_status": "source_structure_only"})
         edges.append({"source": name, "type": "documented_by", "target": "source:" + metadata_file})
         edges.append({"source": name, "type": "sample_from", "target": "source:" + str(Path(t["csv_path"]).relative_to(data.root))})
-        for index, constraint in enumerate(t["constraints"]):
-            cid = name + ":constraint:" + str(index)
+        for constraint in t["constraints"]:
+            cid = name + ":constraint:" + digest([constraint.get("constraint_name"),
+                                                     constraint.get("constraint_type"),
+                                                     constraint.get("definition")])[:16]
             nodes.append({"id": cid, "kind": "Constraint", **constraint})
             edges.append({"source": name, "type": "has_declared_constraint", "target": cid})
             edges.append({"source": cid, "type": "documented_by", "target": "source:" + metadata_file.replace("schema/tables/", "schema/constraints/", 1)})
+            if (constraint.get("constraint_type") == "p" or
+                    str(constraint.get("constraint_type_name", "")).upper() == "PRIMARY KEY"):
+                for position, column_name in enumerate(t["pk"], start=1):
+                    edges.append({"source": cid, "type": "declared_key_column",
+                                  "target": name + "." + column_name, "key_position": position})
         for c in t["columns"]:
             cid = name + "." + c["column_name"]
-            nodes.append({"id": cid, "kind": "Column", **c})
+            nodes.append({"id": cid, "kind": "Column", **c,
+                          "table": name, "datahub_field_path": c["column_name"],
+                          "is_declared_primary_key": c["column_name"] in t["pk"],
+                          "analysis_role": roles[c["column_name"]]["role"],
+                          "semantic_prompt_eligible": roles[c["column_name"]]["include_in_semantic_prompt"],
+                          "evidence_ids": ["schema:" + name + ":" + c["column_name"]]})
             edges.append({"source": name, "type": "table_has_column", "target": cid})
         for fk in t["foreign_keys"]:
             edges.append({"source": name + "." + fk["column_name"], "type": "declared_fk", "target": fk["referenced_schema"] + "." + fk["referenced_table"] + "." + fk["referenced_column"], "raw": fk})
@@ -72,7 +121,10 @@ def technical_graph(data):
         if edge["target"] not in known:
             nodes.append({"id": edge["target"], "kind": "ExternalColumnReference", "availability": "not_in_input"})
             known.add(edge["target"])
-    return {"nodes": nodes, "edges": edges, "lineage_source_available": False}
+    return {"nodes": nodes, "edges": edges, "lineage_source_available": False,
+            "graph_source": "local_schema_and_csv_snapshot",
+            "datahub_interchange": {"format": "metadata-file", "default_platform": "postgres",
+                                    "default_environment": "PROD", "service_backed": False}}
 
 
 def add_inferred_matches(graph, association):
@@ -88,6 +140,7 @@ def add_inferred_matches(graph, association):
             "rule_id": rule["rule_id"], "status": rule["status"],
             "selector": rule.get("selector") or {},
             "scope_bindings": rule.get("scope_bindings") or {},
+            "verification": rule.get("verification") or {},
             "semantic_relation": "unresolved",
         })
     return graph
@@ -123,6 +176,70 @@ def attach_concept_evidence(data, result):
                     }
 
 
+def add_fact_value_attributes(ontology, field_bindings):
+    """Add only value properties whose source field has an accepted type binding."""
+    attributes = {}
+    for binding in field_bindings:
+        if (binding.get("status") != "accepted_field_binding"
+                or binding.get("instances_created", 0) < 1):
+            continue
+        table, column, type_id = (binding["table"], binding["value_column"],
+                                  binding["type_id"])
+        attribute_id = "fact_value_property:" + digest([type_id, table, column])[:24]
+        attributes[(type_id, table, column)] = attribute_id
+        ontology["attributes"].append({
+            "id": attribute_id, "label": column, "relation_type": "has",
+            "domain": [type_id], "literal_type": "decimal",
+            "storage_type": "string", "source_table": table,
+            "source_column": column,
+            "evidence_scope": "observed_fact_value_in_source_snapshot",
+            "mapping_status": "observed_fact_value",
+            "evidence_ids": [f"schema:{table}:{column}",
+                             binding["definition_evidence_id"]],
+        })
+    return attributes
+
+
+def put_fact_instances(sink, instances, value_attributes):
+    """Store typed observations and their actual value assertions together."""
+    for instance in instances:
+        sink.put("objects", instance)
+        attribute_id = value_attributes[(
+            instance["type"], instance["source_ref"]["table"],
+            instance["value_column"])]
+        sink.put("assertions", {
+            "id": "fact_value_assertion:" + digest(
+                [instance["id"], attribute_id, instance["observed_value"]])[:24],
+            "subject": instance["id"], "predicate": "has",
+            "attribute": attribute_id,
+            "literal": {"type": "decimal", "value": instance["observed_value"]},
+            "condition": {"status": "not_applicable"},
+            "evidence_ids": instance["evidence_ids"],
+            "decision": {"status": "accepted",
+                         "method": "field_type_binding_and_source_row_verification"},
+        })
+
+
+def annotate_type_equivalences(ontology, result):
+    """Expose only complete, source-checked equivalence groups in the ontology."""
+    canonical_map = result["canonical_map"]
+    groups = {}
+    for type_id, canonical_id in canonical_map.items():
+        groups.setdefault(canonical_id, set()).add(type_id)
+    for item in ontology.get("object_types", []):
+        if item["id"] not in canonical_map:
+            continue
+        canonical_id = canonical_map[item["id"]]
+        item["canonical_type_id"] = canonical_id
+        item["equivalent_type_ids"] = sorted(groups[canonical_id] - {item["id"]})
+    ontology["type_equivalences"] = [
+        assertion for assertion in result["equivalence_assertions"]
+        if canonical_map.get(assertion["source_type_id"])
+        == canonical_map.get(assertion["target_type_id"])
+        == assertion["canonical_type_id"]
+    ]
+
+
 async def build(config, output):
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -147,6 +264,54 @@ async def build(config, output):
         write_yaml(output / "profiles.yaml", {name: t["profiles"] for name, t in data.tables.items()})
         write_yaml(output / "column_roles.yaml", {name: classify_columns(table)
                                                    for name, table in data.tables.items()})
+        fact_options = config.get("fact_observations", {})
+        if not isinstance(fact_options, dict):
+            raise ValueError("fact_observations must be a mapping")
+        unknown_fact_options = set(fact_options) - {
+            "enabled", "max_candidates_per_table", "max_dimension_columns",
+            "max_time_columns", "max_value_columns"}
+        if unknown_fact_options:
+            raise ValueError("Unknown fact_observations settings: " +
+                             ", ".join(sorted(unknown_fact_options)))
+        if type(fact_options.get("enabled", True)) is not bool:
+            raise ValueError("fact_observations.enabled must be a boolean")
+        fact_result = {"scope": "imported_csv_snapshot_only", "candidate_status": "candidate_only",
+                       "business_type_binding": "unresolved", "tables": [],
+                       "coverage": {"status": "disabled", "partial": False,
+                                    "reason": "fact_observations.enabled=false"}}
+        if fact_options.get("enabled", True):
+            stage = progress.task("业务事实去重候选", 1) if progress else nullcontext(None)
+            with stage as task:
+                fact_result = build_fact_observation_candidates(
+                    data, **{key: value for key, value in fact_options.items() if key != "enabled"})
+                if task:
+                    task.advance(detail=f"{fact_result['coverage']['emitted_candidates']} 个候选")
+            partial_tables = [item["table"] for item in fact_result["tables"]
+                              if item["row_purpose"] == "business_fact" and (
+                                  item["scan_scope"] != "full_input_for_selected_value_columns"
+                                  or item["omitted_observed_tuples"] > 0
+                                  or bool(item.get("value_columns_not_scanned_due_to_candidate_limit"))
+                                  or any(item["selected_columns"].get(key)
+                                         for key in ("omitted_dimensions", "omitted_business_times",
+                                                     "omitted_values")))]
+            fact_result["coverage"].update(
+                status="partial" if partial_tables else "complete",
+                partial=bool(partial_tables), partial_table_names=partial_tables,
+                unresolved_table_names=[item["table"] for item in fact_result["tables"]
+                                        if item["row_purpose"] == "unresolved"],
+                semantic_status="candidate_only_not_business_instance_or_type")
+        write_yaml(output / "fact_observation_candidates.yaml", {
+            key: value for key, value in fact_result.items() if key != "coverage"})
+        write_yaml(output / "fact_observation_coverage.yaml", fact_result["coverage"])
+        manifest["fact_observations"] = {
+            "status": fact_result["coverage"]["status"],
+            "candidate_status": "candidate_only", "business_type_binding": "unresolved",
+            "business_fact_tables": fact_result["coverage"].get("business_fact_tables", 0),
+            "emitted_candidates": fact_result["coverage"].get("emitted_candidates", 0),
+            "omitted_observed_tuples": fact_result["coverage"].get("omitted_observed_tuples", 0),
+            "unresolved_tables": fact_result["coverage"].get("unresolved_tables", 0),
+            "partial": fact_result["coverage"]["partial"],
+        }
         discovery = {"candidates": [], "checks": [], "coverage": {"status": "disabled", "partial": False}}
         if config.get("discovery", {}).get("enabled", True):
             discovery = discover_and_check(data, config.get("discovery", {}), progress=progress)
@@ -233,7 +398,9 @@ async def build(config, output):
             group_result = await construct_from_bundles(
                 data, profile, plan, packet_result["bundles"], llm,
                 review=options.get("review", True),
-                max_bundles=options.get("max_llm_bundles", 20), progress=progress)
+                max_bundles=options.get("max_llm_bundles", 20),
+                max_repairs_per_bundle=options.get("max_repairs_per_bundle", 0),
+                progress=progress)
             plan = group_result["plan"]
             construction = read_yaml(output / "construction.yaml")
             construction["group_steps"] = group_result["steps"]
@@ -245,6 +412,191 @@ async def build(config, output):
                 plan, profile, data, read_yaml(output / "direct_mapping.yaml"),
                 construction["steps"])
             write_yaml(output / "ontology.yaml", ontology)
+        generalization = {"steps": [], "coverage": {"status": "disabled"},
+                          "partial": False}
+        generalization_options = config.get("type_generalization", {})
+        if not isinstance(generalization_options, dict):
+            raise ValueError("type_generalization must be a mapping")
+        if type(generalization_options.get("enabled", False)) is not bool:
+            raise ValueError("type_generalization.enabled must be a boolean")
+        if generalization_options.get("enabled", False):
+            stage = progress.task("业务上位类型归纳", 1) if progress else nullcontext(None)
+            with stage as task:
+                generalization = await run_generalization(
+                    data, profile, plan,
+                    lambda packet: llm.ask("type_generalization", packet,
+                                           GeneralizationDecision),
+                    max_pairs=generalization_options.get("max_pairs", 40),
+                    max_decisions=generalization_options.get("max_decisions", 10),
+                    max_packet_bytes=generalization_options.get("max_packet_bytes", 16000),
+                )
+                if task:
+                    task.advance(detail=str(generalization["coverage"]["statuses"]["accepted"]))
+            plan = generalization["plan"]
+            write_yaml(output / "extraction_plan.yaml", plan.model_dump())
+            construction = read_yaml(output / "construction.yaml")
+            construction["final_core_hash"] = digest(plan.model_dump())
+            construction["type_generalization_steps"] = generalization["steps"]
+            write_yaml(output / "construction.yaml", construction)
+            ontology = ontology_from_plan(
+                plan, profile, data, read_yaml(output / "direct_mapping.yaml"),
+                construction["steps"])
+            write_yaml(output / "ontology.yaml", ontology)
+        write_yaml(output / "type_generalization_steps.yaml", generalization["steps"])
+        write_yaml(output / "type_generalization_coverage.yaml", generalization["coverage"])
+        manifest["type_generalization"] = {
+            "accepted": generalization["coverage"].get("statuses", {}).get("accepted", 0),
+            "model_decision_invocations": generalization["coverage"].get(
+                "model_decision_invocations", 0),
+            "partial": generalization["partial"],
+            "coverage": generalization["coverage"],
+        }
+        config_relation_options = config.get("configuration_relations", {})
+        if not isinstance(config_relation_options, dict):
+            raise ValueError("configuration_relations must be a mapping")
+        if type(config_relation_options.get("enabled", False)) is not bool:
+            raise ValueError("configuration_relations.enabled must be a boolean")
+        configuration_specs = {"spec_candidates": [],
+                               "coverage": {"status": "disabled", "partial": False}}
+        configuration_relations = {"candidates": [],
+                                   "coverage": {"status": "disabled", "partial": False}}
+        if config_relation_options.get("enabled", False):
+            configuration_specs = infer_configuration_specs(
+                data, plan, group_result["concepts"], group_result["record_alignments"],
+                association["rules"],
+                max_specs=config_relation_options.get("max_specs", 20))
+            configuration_relations = discover_configuration_relations(
+                data, plan, group_result["concepts"], group_result["record_alignments"],
+                [item["spec"] for item in configuration_specs["spec_candidates"]],
+                max_pairs_per_spec=config_relation_options.get("max_pairs_per_spec", 200))
+        config_decisions = {"assertions": [], "steps": [],
+                            "coverage": {"status": "disabled", "partial": False,
+                                         "accepted": 0, "attempted": 0, "not_attempted": 0}}
+        if config_relation_options.get("enabled", False):
+            stage = progress.task("配置关系语义裁决", 1) if progress else nullcontext(None)
+            with stage as task:
+                config_decisions = await adjudicate_configuration_relations(
+                    data, profile, plan, configuration_relations["candidates"],
+                    group_result["concepts"], group_result["record_alignments"], llm,
+                    max_candidates=config_relation_options.get("max_semantic_decisions", 10))
+                if task:
+                    task.advance(detail=str(config_decisions["coverage"]["accepted"]))
+            plan = config_decisions["plan"]
+            group_result["concept_relations"].extend(config_decisions["assertions"])
+            write_yaml(output / "extraction_plan.yaml", plan.model_dump())
+            construction = read_yaml(output / "construction.yaml")
+            construction["final_core_hash"] = digest(plan.model_dump())
+            construction["configuration_relation_steps"] = config_decisions["steps"]
+            write_yaml(output / "construction.yaml", construction)
+            ontology = ontology_from_plan(
+                plan, profile, data, read_yaml(output / "direct_mapping.yaml"),
+                construction["steps"])
+            write_yaml(output / "ontology.yaml", ontology)
+        write_yaml(output / "configuration_relation_specs.yaml", configuration_specs)
+        write_yaml(output / "configuration_relation_candidates.yaml", configuration_relations)
+        write_yaml(output / "configuration_relation_steps.yaml", config_decisions["steps"])
+        write_yaml(output / "configuration_relation_coverage.yaml", config_decisions["coverage"])
+        manifest["configuration_relations"] = {
+            "spec_candidates": len(configuration_specs["spec_candidates"]),
+            "endpoint_verified_candidates": configuration_relations["coverage"].get(
+                "endpoint_verified_candidates", 0),
+            "semantic_decisions": config_decisions["coverage"].get("attempted", 0),
+            "accepted_business_relations": config_decisions["coverage"].get("accepted", 0),
+            "predicate_status": "accepted_per_witness_or_unjudged",
+            "partial": bool(configuration_specs["coverage"].get("partial")
+                            or configuration_relations["coverage"].get("partial")
+                            or config_decisions["coverage"].get("partial")),
+        }
+        equivalence_options = config.get("type_equivalence", {})
+        if not isinstance(equivalence_options, dict):
+            raise ValueError("type_equivalence must be a mapping")
+        unknown_equivalence_options = set(equivalence_options) - {
+            "enabled", "max_pairs", "max_decisions", "max_packet_bytes"}
+        if unknown_equivalence_options:
+            raise ValueError("Unknown type_equivalence settings: "
+                             + ", ".join(sorted(unknown_equivalence_options)))
+        if type(equivalence_options.get("enabled", False)) is not bool:
+            raise ValueError("type_equivalence.enabled must be a boolean")
+        equivalence = {
+            "canonical_map": {}, "equivalence_assertions": [], "steps": [],
+            "coverage": {"status": "disabled", "partial": False},
+            "partial": False,
+        }
+        if equivalence_options.get("enabled", False):
+            stage = progress.task("同名业务类型等价核验", 1) if progress else nullcontext(None)
+            with stage as task:
+                equivalence = await run_type_equivalence(
+                    data, plan,
+                    lambda packet: llm.ask("type_equivalence", packet,
+                                           EquivalenceDecision),
+                    max_pairs=equivalence_options.get("max_pairs", 20),
+                    max_decisions=equivalence_options.get("max_decisions", 10),
+                    max_packet_bytes=equivalence_options.get("max_packet_bytes", 16000),
+                )
+                if task:
+                    task.advance(detail=str(equivalence["coverage"][
+                        "complete_equivalence_groups"]))
+        annotate_type_equivalences(ontology, equivalence)
+        write_yaml(output / "ontology.yaml", ontology)
+        write_yaml(output / "type_equivalence_steps.yaml", equivalence["steps"])
+        write_yaml(output / "type_equivalence_assertions.yaml",
+                   equivalence["equivalence_assertions"])
+        write_yaml(output / "type_equivalence_coverage.yaml", equivalence["coverage"])
+        manifest["type_equivalence"] = {
+            "accepted_pairs": len(equivalence["equivalence_assertions"]),
+            "complete_groups": equivalence["coverage"].get(
+                "complete_equivalence_groups", 0),
+            "canonicalized_types": len(equivalence["canonical_map"]),
+            "model_decision_invocations": equivalence["coverage"].get(
+                "model_decision_invocations", 0),
+            "partial": equivalence["partial"],
+        }
+        binding_options = config.get("fact_type_binding", {})
+        if not isinstance(binding_options, dict):
+            raise ValueError("fact_type_binding must be a mapping")
+        unknown_binding_options = set(binding_options) - {
+            "enabled", "max_type_candidates_per_field", "max_source_rows_per_instance",
+            "max_binding_calls", "max_definition_chars"}
+        if unknown_binding_options:
+            raise ValueError("Unknown fact_type_binding settings: "
+                             + ", ".join(sorted(unknown_binding_options)))
+        if type(binding_options.get("enabled", False)) is not bool:
+            raise ValueError("fact_type_binding.enabled must be a boolean")
+        fact_binding = {"field_bindings": [], "instances": [],
+                        "coverage": {"status": "disabled", "partial": False,
+                                     "reason": "fact_type_binding.enabled=false"}}
+        if binding_options.get("enabled", False):
+            stage = progress.task("业务事实类型绑定", 1) if progress else nullcontext(None)
+            with stage as task:
+                fact_binding = await bind_fact_observations(
+                    data, fact_result, plan, llm,
+                    **{key: value for key, value in binding_options.items()
+                       if key != "enabled"},
+                    canonical_type_map=equivalence["canonical_map"],
+                    equivalence_assertions=equivalence["equivalence_assertions"])
+                if task:
+                    task.advance(detail=str(fact_binding["coverage"]["instances_created"]))
+            fact_binding["coverage"]["partial"] = bool(
+                fact_binding["coverage"]["candidate_tuples_not_instantiated"])
+            fact_binding["coverage"]["status"] = (
+                "partial" if fact_binding["coverage"]["partial"] else "complete")
+        write_yaml(output / "business_fact_field_bindings.yaml", fact_binding["field_bindings"])
+        write_yaml(output / "business_fact_instances.yaml", fact_binding["instances"])
+        write_yaml(output / "business_fact_binding_coverage.yaml", fact_binding["coverage"])
+        manifest["fact_type_binding"] = {
+            "status": fact_binding["coverage"]["status"],
+            "binding_attempts": fact_binding["coverage"].get("binding_attempts", 0),
+            "accepted_fields": fact_binding["coverage"].get("accepted_fields", 0),
+            "instances_created": len(fact_binding["instances"]),
+            "candidate_tuples_not_instantiated": fact_binding["coverage"].get(
+                "candidate_tuples_not_instantiated", 0),
+            "partial": fact_binding["coverage"]["partial"],
+        }
+        fact_value_attributes = add_fact_value_attributes(
+            ontology, fact_binding["field_bindings"])
+        if fact_value_attributes:
+            write_yaml(output / "ontology.yaml", ontology)
+        manifest["fact_type_binding"]["value_attributes"] = len(fact_value_attributes)
         manifest["semantic_cards"] = {"cards_indexed": card_report.get("cards_indexed", 0),
                                       "rows_scanned": card_report.get("rows_scanned", 0),
                                       "partial": card_report.get("partial", False)}
@@ -271,6 +623,7 @@ async def build(config, output):
             sink.put("evidence", ev)
         for concept in group_result["concepts"]:
             sink.put("objects", concept)
+        put_fact_instances(sink, fact_binding["instances"], fact_value_attributes)
         for alignment in group_result["record_alignments"]:
             sink.put("record_alignments", alignment)
         for relation in group_result["concept_relations"]:
@@ -348,10 +701,16 @@ async def build(config, output):
             "incremental_units_not_accepted": bool(manifest.get("incremental_units_not_accepted")),
             "external_alignment_errors": bool(manifest.get("external_alignment_errors")),
             "field_candidates_not_fully_checked": bool(manifest["field_discovery"]["partial"]),
+            "fact_observation_candidates_partial": bool(manifest["fact_observations"]["partial"]),
+            "fact_type_binding_partial": bool(manifest["fact_type_binding"]["partial"]),
             "association_rules_partial": bool(manifest["association_rules"]["partial"]),
             "semantic_cards_partial": bool(manifest["semantic_cards"]["partial"]),
             "instance_bundles_partial": bool(manifest["instance_bundles"]["partial"]),
             "group_incremental_partial": bool(manifest["group_incremental"]["partial"]),
+            "type_generalization_partial": bool(manifest["type_generalization"]["partial"]),
+            "type_equivalence_partial": bool(manifest["type_equivalence"]["partial"]),
+            "configuration_relation_candidates_partial": bool(
+                manifest["configuration_relations"]["partial"]),
         }
         manifest["partial_reasons"] = [name for name, present in partial_causes.items() if present]
         partial = bool(manifest["partial_reasons"])

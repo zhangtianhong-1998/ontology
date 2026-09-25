@@ -17,6 +17,18 @@ def _urn_part(value, label):
     return value
 
 
+def dataset_urn(qualified_name, platform="postgres", environment="PROD"):
+    """The default DataHub dataset identity for one local source table.
+
+    This is an interchange identifier. It does not imply that a DataHub
+    service, graph index, or schema-field entity was created.
+    """
+    platform = _urn_part(platform, "platform")
+    qualified_name = _urn_part(qualified_name, "dataset name")
+    environment = _urn_part(environment, "environment")
+    return f"urn:li:dataset:(urn:li:dataPlatform:{platform},{qualified_name},{environment})"
+
+
 def _nullable(value):
     if isinstance(value, bool):
         return not value
@@ -105,7 +117,7 @@ def metadata_change_proposals(meta_graph, platform="postgres", environment="PROD
         table_name = table.get("table_name")
         if not isinstance(table_name, str) or not table_name:
             raise ValueError(f"Missing table_name for {table_id}")
-        urn = f"urn:li:dataset:(urn:li:dataPlatform:{platform},{qualified_name},{environment})"
+        urn = dataset_urn(qualified_name, platform, environment)
         table_edges = [edge for edge in edges if edge.get("source") == table_id]
         columns = [nodes[edge["target"]] for edge in table_edges if edge.get("type") == "table_has_column" and edge.get("target") in nodes]
         columns.sort(key=lambda col: (int(col.get("ordinal_position") or 0), col["column_name"]))

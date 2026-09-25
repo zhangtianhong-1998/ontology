@@ -11,7 +11,7 @@ from ontology_r2.group_incremental import (
     RelationBundleDecision, compile_business_relation, compile_concept, compile_relation,
     construct_from_bundles,
 )
-from ontology_r2.incremental import direct_mapping
+from ontology_r2.incremental import direct_mapping, ontology_from_plan
 from ontology_r2.models import BuildPlan, DerivedType, TablePlan
 from ontology_r2.relations import Extractor
 from ontology_r2.storage import Dataset, Sink, digest, read_yaml
@@ -84,6 +84,22 @@ def test_exact_concept_rejects_truncated_definition():
                         _concept_decision(["long"]), {})
 
 
+def test_pattern_packet_does_not_exactly_align_a_nonrepresentative_record():
+    data = SimpleNamespace(snapshot_id="snap", evidence={})
+    records = [_record("representative"), _record("same-text-different-code")]
+    bundle = {"records": records,
+              "exact_alignment_record_ids": ["representative"]}
+    with pytest.raises(ValueError, match="representative record allowlist"):
+        compile_concept(data, PROFILE, bundle,
+                        _concept_decision(["same-text-different-code"]), {})
+    concept, alignments = compile_concept(
+        data, PROFILE, bundle,
+        _concept_decision(["representative", "same-text-different-code"],
+                          kinds=["exact", "related"]), {})
+    assert concept["source_refs"][0]["record_id"] == "representative"
+    assert [item["mapping_kind"] for item in alignments] == ["exact", "related"]
+
+
 def test_concept_quote_cannot_be_only_an_identifier():
     data = SimpleNamespace(snapshot_id="snap", evidence={})
     record = _record("metric")
@@ -154,6 +170,33 @@ class _StatusLLM:
         return ConceptBundleDecision(status=self.status, reason="没有足够证据")
 
 
+def test_group_repair_rechecks_one_invalid_model_alignment_without_inventing_it():
+    class RepairLLM:
+        def __init__(self):
+            self.calls = 0
+
+        async def ask(self, task, payload, schema):
+            assert task == "concept_bundle"
+            self.calls += 1
+            if self.calls == 1:
+                return _concept_decision(["other"], kinds=["related"])
+            assert payload["compiler_error"] == (
+                "New concept requires an exact source definition record")
+            return _concept_decision(["seed"])
+
+    llm = RepairLLM()
+    bundle = {"bundle_id": "repair", "task_kind": "concept_induction",
+              "records": [_record("seed"), _record("other")],
+              "exact_alignment_record_ids": ["seed"]}
+    result = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
+        [bundle], llm, review=False, max_repairs_per_bundle=1))
+    assert llm.calls == 2
+    assert result["steps"][0]["status"] == "accepted"
+    assert result["steps"][0]["repair_calls"] == 1
+    assert [item["source_record_id"] for item in result["record_alignments"]] == ["seed"]
+
+
 def test_incremental_reuses_concept_without_losing_second_source():
     data = SimpleNamespace(snapshot_id="snap", evidence={})
     bundles = [
@@ -184,7 +227,9 @@ def test_reviewed_definition_becomes_a_business_type_but_observation_does_not():
                 record_id = payload["bundle"]["records"][0]["record_id"]
                 return _concept_decision([record_id], scope={"region": "华东"}).model_copy(
                     update={"ontology_level": self.level,
-                            "scope_roles": {"region": self.scope_role}})
+                            "scope_roles": {"region": self.scope_role},
+                            "classification_basis": "business_driven_metric",
+                            "classification_quote": "水果收入"})
             if task == "group_review":
                 return BundleReview(accepted=True)
             raise AssertionError(task)
@@ -202,6 +247,15 @@ def test_reviewed_definition_becomes_a_business_type_but_observation_does_not():
     assert derived.applicability_scope == {"region": "华东"}
     assert typed["concepts"][0]["ontology_type_id"] == derived.id
     assert typed["steps"][0]["object_type_id"] == derived.id
+    assert {source.role for source in derived.source_properties} == {
+        "name", "description", "unit"}
+    business_attributes = [item for item in ontology_from_plan(
+        typed["plan"], PROFILE, SimpleNamespace(tables={}), {"tables": []}, [])
+        ["attributes"] if item["domain"] == [derived.id]]
+    assert {item["label"] for item in business_attributes} == {
+        "name", "description", "unit"}
+    assert all(item["mapping_status"] == "definition_record_only"
+               and item["evidence_ids"] for item in business_attributes)
     observed = asyncio.run(construct_from_bundles(
         SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
         [bundle], LevelLLM("instance", "observation")))
@@ -213,6 +267,30 @@ def test_reviewed_definition_becomes_a_business_type_but_observation_does_not():
         [bundle], LevelLLM("type", "observation")))
     assert unsupported["steps"][0]["status"] == "unresolved"
     assert unsupported["plan"].object_types == []
+
+
+def test_metric_measure_type_boundary_uses_definition_not_table_hint():
+    data = SimpleNamespace(snapshot_id="snap", evidence={})
+    record = {**_record("measure-def", name="苹果销量汇总"), "kind": "definition",
+              "root_hint": "Metric"}
+    decision = ConceptBundleDecision(
+        status="proposed", label="苹果销量汇总", definition="苹果销量求和",
+        root_type="Measure", ontology_level="type",
+        classification_basis="aggregation_or_filter_measure",
+        classification_quote="华东苹果销量汇总",
+        scope_roles={"region": "applicability"},
+        alignments=[RecordAlignmentDecision(record_id="measure-def",
+                                            mapping_kind="exact", quote="苹果销量汇总")],
+    )
+    compiled = compile_concept(data, PROFILE, {"records": [record]}, decision, {})
+    assert compiled[0]["type"] == "Measure"
+    assert compiled[0]["ontology_type_id"]
+    with pytest.raises(ValueError, match="classification basis"):
+        compile_concept(data, PROFILE, {"records": [record]},
+                        decision.model_copy(update={"classification_basis": "business_driven_metric"}), {})
+    with pytest.raises(ValueError, match="classification quote"):
+        compile_concept(data, PROFILE, {"records": [record]},
+                        decision.model_copy(update={"classification_quote": "来源里没有这句话"}), {})
 
 
 def test_no_change_is_complete_but_unresolved_remains_partial():
