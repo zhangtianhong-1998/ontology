@@ -27,6 +27,37 @@ _REFERENCE = re.compile(r"(?:^|_)(?:code|id|key|source|target|ref|reference|type
 _CONTENT_REFERENCE = re.compile(r"(?:^|_)(?:code|field|value)(?:_|$)", re.I)
 _PURE_TECHNICAL = re.compile(r"(?:\d+(?:\.\d+)?|[0-9a-f]{16,}|\d{4}-\d\d-\d\d)", re.I)
 _CARD_ROLES = ("name", "alias", "description", "formula", "unit", "scope")
+_PHYSICAL_NAME_DECLARATION = re.compile(
+    r"^(?:物理(?:数据表|表|数据库|文件)(?:名称|名)|"
+    r"physical\s+(?:table|database|file)\s+name)(?:\b|[\s,，;；:：。(.（]|$)", re.I)
+_BUSINESS_NAME_DECLARATION = re.compile(
+    r"业务(?:对象|名称)|经营对象|(?:指标|度量|维度)(?:名称|名)|计算公式|"
+    r"\b(?:business\s+(?:object|name)|metric\s+name|measure\s+name|dimension\s+name|formula)\b", re.I)
+
+
+def _definition_pattern_exclusions(table, roles):
+    """Separate only declared technical physical names from scheduling.
+
+    Generic resource/object names may denote business assets and remain intact.
+    Do not reuse the binding-role exclusion contract: template membership must
+    still compare these complete original name values before assigning a type.
+    """
+    names = set(roles.get("name", ()))
+    result = []
+    for column in table["columns"]:
+        raw = str(column.get("column_comment") or "")
+        declaration = _norm(raw)
+        if (column["column_name"] in names
+                and _PHYSICAL_NAME_DECLARATION.search(declaration)
+                and not _BUSINESS_NAME_DECLARATION.search(declaration)):
+            result.append({"column": column["column_name"], "role": "name",
+                           "reason": "declared_physical_resource_name",
+                           "declaration": raw,
+                           "schema_evidence_id": f"schema:{table['name']}:{column['column_name']}",
+                           "scope": "definition_pattern_scheduling_only",
+                           "entity_identity_claim": False,
+                           "template_membership_still_compares_original_value": True})
+    return result
 
 
 def _context_table(table_name):
@@ -92,6 +123,7 @@ def _columns(table, max_unknown_fields_per_table):
         "reference_columns_considered": reference,
         "reference_columns_not_examined": [],
         "reference_column_selection": "all_eligible_reference_columns",
+        "definition_pattern_exclusions": _definition_pattern_exclusions(table, roles),
         "role_conflicts": conflicts,
         "binding_columns_excluded_from_semantic_pattern": bindings,
         "calculation_fragments": list(fragments.values()),
@@ -103,7 +135,7 @@ def _columns(table, max_unknown_fields_per_table):
 
 
 def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_index_chars,
-              row_purpose="unresolved"):
+              row_purpose="unresolved", pattern_name_exclusions=()):
     if row_purpose == "business_fact":
         return None
     fields = {}
@@ -159,7 +191,9 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
     if reference:
         signature_fields["reference"] = [[column, row.get(column)] for column in reference]
     signature = digest([table_name, kind, signature_fields])
-    semantic_fields = {role: [[column, _norm(raw)] for column, raw in signature_fields[role]]
+    excluded_names = set(pattern_name_exclusions) if kind == "definition" else set()
+    semantic_fields = {role: [[column, _norm(raw)] for column, raw in signature_fields[role]
+                             if not (role == "name" and column in excluded_names)]
                        for role in _CARD_ROLES if role in signature_fields}
     semantic_preview_truncated = any(entry["truncated"] for role in _CARD_ROLES
                                      for entry in fields.get(role, ()))
@@ -313,7 +347,9 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
                             counts["rows_scanned"] += 1
                             card = _row_card(table_name, row, roles, reference, fallback,
                                              max_field_chars, max_index_chars,
-                                             row_purpose["purpose"])
+                                             row_purpose["purpose"],
+                                             pattern_name_exclusions=[item["column"] for item in
+                                                 columns_report["definition_pattern_exclusions"]])
                             if card is None:
                                 counts["rows_without_card"] += 1
                                 if row_purpose["purpose"] == "business_fact":
@@ -438,6 +474,8 @@ class SemanticCardIndex:
         item["index_text_truncated"] = bool(item["index_text_truncated"])
         item["root_hint_basis"] = "table_name_and_comment_weak_hint_not_classification"
         report = self.coverage.get("by_table", {}).get(item["table"], {})
+        if report.get("definition_pattern_exclusions"):
+            item["definition_pattern_exclusions"] = report["definition_pattern_exclusions"]
         if report.get("role_conflicts"):
             item["role_conflicts"] = report["role_conflicts"]
             item["binding_columns_excluded_from_semantic_pattern"] = report[

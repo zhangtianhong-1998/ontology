@@ -74,6 +74,7 @@ instance_bundles:
   max_pattern_seed_pool: 2000
   seed_window_index: 0
   max_relation_bundles: 1000
+  max_exploration_rules: 150
   lexical_top_k: 8
   max_candidates_per_bundle: 3
   max_bundle_bytes: 24000

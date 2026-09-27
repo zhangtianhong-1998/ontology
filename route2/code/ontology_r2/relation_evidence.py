@@ -28,6 +28,9 @@ _DEFINING_TEXT = re.compile(
 _DEFINING_FIELD = re.compile(r"定义|计算公式|计算口径|\b(?:definition|formula)\b", re.I)
 _KEY = re.compile(r"编码|标识|主键|\b(?:code|identifier|key|id)\b", re.I)
 _USE_CONTEXT = re.compile(r"用于|按.+(?:组合|统计|取数|计算)|\b(?:uses?|lookup|retrieve\w*)\b", re.I)
+_EXPLICIT_OUTBOUND = re.compile(
+    r"引用|指向|参照|参考|外键|其他|其它|另一个|另一|外部|第三方|非本|"
+    r"\b(?:references?|refers?\s+to|points?\s+to|foreign\s+key|other|another|external)\b", re.I)
 
 
 def _raw(value):
@@ -79,6 +82,27 @@ def _points_to_self(declaration, target_record, table_declaration):
     context = table_declaration.casefold()
     return any(any(name and name in ref for name in identities)
                or (len(ref) >= 4 and ref in context) for ref in _referents(declaration))
+
+
+def _weak_key_correspondence(declaration):
+    """A catalog's generic correspondence is not a proven foreign owner.
+
+    This exception never covers named tables, qualified identifiers, explicit
+    reference verbs or external owners. The caller must separately prove the
+    target's own declared purpose and complete definition body.
+    """
+    referents = _referents(declaration)
+    return ("对应" in declaration and not _EXPLICIT_OUTBOUND.search(declaration)
+            and bool(referents)
+            and not re.search(r"表|\btable\b|[._]", declaration.split("对应", 1)[1], re.I))
+
+
+def _owns_definition_table(declaration):
+    # A title may append other fields after its declared definition purpose.
+    purpose = re.split(r"[,，、;；:：]", declaration, maxsplit=1)[0].strip()
+    return bool(_DEFINITION_TABLE.search(purpose)
+                and not _REFERENCE.search(declaration)
+                and not _NEGATED_DEFINITION.search(declaration))
 
 
 def assess_definition_reference(data, bundle, decision, source_record, target_record):
@@ -134,10 +158,29 @@ def assess_definition_reference(data, bundle, decision, source_record, target_re
     if _NEGATED_REFERENCE.search(source_decl):
         return unresolved("source_declaration_negates_reference")
     target_outbound = bool(_REFERENCE.search(target_decl))
+    definition_entries = []
+    for role, entry in _entries(target_record):
+        if role not in {"description", "formula"}:
+            continue
+        value = _text(entry["value"])
+        declaration = _text(_schema(data, target_record, entry["column"]))
+        if _NEGATED_DEFINITION.search(value) or _REFERENCE.search(value):
+            continue
+        if ((_DEFINING_FIELD.search(declaration) and not _REFERENCE.search(declaration)
+             and not _NEGATED_DEFINITION.search(declaration)) or _DEFINING_TEXT.search(value)):
+            definition_entries.append(entry)
+    owns_table = _owns_definition_table(target_table_decl)
     if target_outbound and not _points_to_self(target_decl, target_record, target_table_decl):
-        same_destinations = set(_referents(source_decl)) & set(_referents(target_decl))
-        return unresolved("both_endpoints_reference_third_party" if same_destinations
-                          else "target_join_field_references_another_definition")
+        if not (_weak_key_correspondence(target_decl) and owns_table and definition_entries):
+            same_destinations = set(_referents(source_decl)) & set(_referents(target_decl))
+            return unresolved("both_endpoints_reference_third_party" if same_destinations
+                              else "target_join_field_references_another_definition")
+        audit["target_key_interpretation"] = "own_definition_with_weak_correspondence"
+        for entry in definition_entries:
+            declaration = _schema(data, target_record, entry["column"])
+            if declaration:
+                evidence(target_record, entry["column"], declaration)
+            evidence(target_record, entry["column"], _raw(entry["value"]), origin="observed_record")
 
     # A source key's declaration can express reference intent without an FK.
     source_support = bool(_REFERENCE.search(source_decl))
@@ -168,24 +211,16 @@ def assess_definition_reference(data, bundle, decision, source_record, target_re
     # Table/field declarations must describe the target's own definition, not
     # a container that merely references definitions elsewhere.
     target_support = bool(
-        (_DEFINITION_TABLE.search(target_table_decl) and not _REFERENCE.search(target_table_decl)
-         and not _NEGATED_DEFINITION.search(target_table_decl))
+        owns_table
         or (_DEFINITION.search(target_decl) and _KEY.search(target_decl)
             and not target_outbound and not _NEGATED_DEFINITION.search(target_decl)))
     if not target_support:
-        for role, entry in _entries(target_record):
-            if role not in {"description", "formula"}:
-                continue
-            value = _text(entry["value"])
-            declaration = _text(_schema(data, target_record, entry["column"]))
-            if _NEGATED_DEFINITION.search(value) or _REFERENCE.search(value):
-                continue
-            if ((_DEFINING_FIELD.search(declaration) and not _REFERENCE.search(declaration)
-                 and not _NEGATED_DEFINITION.search(declaration)) or _DEFINING_TEXT.search(value)):
-                target_support = True
-                if declaration:
-                    evidence(target_record, entry["column"], _schema(data, target_record, entry["column"]))
-                evidence(target_record, entry["column"], _raw(entry["value"]), origin="observed_record")
+        for entry in definition_entries:
+            target_support = True
+            declaration = _schema(data, target_record, entry["column"])
+            if declaration:
+                evidence(target_record, entry["column"], declaration)
+            evidence(target_record, entry["column"], _raw(entry["value"]), origin="observed_record")
     if not target_support:
         return unresolved("target_definition_ownership_not_established")
     audit.update(status="supported", reason_codes=["source_reference_and_target_definition_supported"])

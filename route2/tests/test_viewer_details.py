@@ -496,7 +496,7 @@ const M={tables:Array.from({length:23},(_,i)=>({id:`s.t${i}`,table_name:`fruit_c
 for(let i=0;i<23;i++)for(let j=1;j<=3;j++)M.links.push({id:`link:${i}:${j}`,source:`s.t${i}`,target:`s.t${(i+j)%23}`,source_field:'ref',target_field:'code',status:'verified_technical'});
 M.links.push({id:'reverse',source:'s.t1',target:'s.t0',source_field:'back_ref',target_field:'other',status:'verified_technical'});
 const TABLE=new Map(M.tables.map(t=>[t.id,t])),expandedTables=new Set();
-let selected=null,tableId=null,drawn=null;
+let selected=null,tableId=null,drawn=null,showNumericMatches=false;
 const $=id=>({}),name=x=>x.table_comment||x.table_name,node=(id,label,kind,x,y,action,active,subtitle)=>({id,label,kind,x,y,action,active,subtitle}),select=()=>{};
 const drawGraph=(nodes,edges)=>{drawn={nodes,edges}};
 """ + helpers + """
@@ -512,6 +512,17 @@ assert.deepEqual([...first],[...again]);
 const coords=[...first.values()];
 for(let i=0;i<coords.length;i++)for(let j=i+1;j<coords.length;j++)assert(Math.hypot(coords[i].x-coords[j].x,coords[i].y-coords[j].y)>100);
 assert(Math.max(...coords.map(p=>p.x))-Math.min(...coords.map(p=>p.x))<1400);
+// Risk filtering changes visibility, never deletes evidence or hides declared FKs.
+const risk={id:'numeric',source:'s.t0',target:'s.t22',numeric_overlap_only:true,status:'verified_technical'};
+const declared={...risk,id:'declared',status:'declared'};
+M.links.push(risk,declared);
+assert.equal(metadataVisibleLinks(M.links,null,false).length,M.links.length-1);
+assert(metadataVisibleLinks(M.links,null,false).includes(declared));
+assert(!metadataVisibleLinks(M.links,null,false).includes(risk));
+assert(metadataVisibleLinks(M.links,'s.t0',true).includes(risk));
+assert(!metadataVisibleLinks(M.links,'s.t1',true).includes(risk));
+assert.equal(M.links.at(-2),risk);
+M.links.splice(-2);
 selected={kind:'table',id:'s.t0'};tableId='s.t0';metadataGraph();
 assert(drawn.nodes.length<23);
 assert(drawn.edges.every(e=>e.from==='s.t0'||e.to==='s.t0'));

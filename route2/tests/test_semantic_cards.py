@@ -7,6 +7,119 @@ from ontology_r2.storage import Dataset, write_yaml
 import pytest
 
 
+def _physical_resource_dataset(tmp_path, declaration="physical table name，合成业务字段"):
+    root = tmp_path / "input"
+    _table(root, "resource_definition", {
+        "id": "记录 ID", "physical_table_name": declaration,
+        "display_name": "业务对象名称", "definition": "定义描述", "reference_code": "引用编码",
+    }, [
+        {"id": "1", "physical_table_name": "ledger_001", "display_name": "经营汇总表",
+         "definition": "按经营对象汇总经营数据", "reference_code": "A"},
+        {"id": "2", "physical_table_name": "ledger_002", "display_name": "经营汇总表",
+         "definition": "按经营对象汇总经营数据", "reference_code": "B"},
+    ])
+    work = tmp_path / "work"
+    work.mkdir()
+    return Dataset(root, work)
+
+
+def test_declared_physical_names_only_share_scheduling_pattern(tmp_path):
+    data = _physical_resource_dataset(tmp_path)
+    try:
+        built = build_semantic_cards(data, tmp_path / "cards.sqlite")
+        report = built["coverage"]["by_table"]["fruit.resource_definition"]
+        assert built["coverage"]["cards_indexed"] == 2
+        assert built["coverage"]["definition_patterns_indexed"] == 1
+        assert report["definition_pattern_exclusions"] == [{
+            "column": "physical_table_name", "role": "name",
+            "reason": "declared_physical_resource_name", "declaration": "physical table name，合成业务字段",
+            "schema_evidence_id": "schema:fruit.resource_definition:physical_table_name",
+            "scope": "definition_pattern_scheduling_only", "entity_identity_claim": False,
+            "template_membership_still_compares_original_value": True}]
+        assert "physical_table_name" not in report["binding_columns_excluded_from_semantic_pattern"]
+        index = SemanticCardIndex(built["index_path"])
+        try:
+            cards = index.all_cards(2)["cards"]
+            assert len({card["record_id"] for card in cards}) == 2
+            assert len({card["card_id"] for card in cards}) == 2
+            assert {entry["value"] for card in cards for entry in card["fields"]["name"]
+                    if entry["column"] == "physical_table_name"} == {"ledger_001", "ledger_002"}
+            assert {entry["value"] for card in cards for entry in card["fields"]["reference"]
+                    if entry["column"] == "reference_code"} == {"A", "B"}
+            assert index.search("ledger_001", limit=2)[0]["row_number"] == 1
+        finally:
+            index.close()
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize("declaration", ["", "名称", "业务对象名称", "不是物理表名", "物理表名或业务对象名称",
+                                         "物理对象名称", "物理资源名称", "physical object name", "physical resource name"])
+def test_column_name_alone_or_ambiguous_declaration_cannot_hide_name_variants(tmp_path, declaration):
+    data = _physical_resource_dataset(tmp_path, declaration)
+    try:
+        built = build_semantic_cards(data, tmp_path / "cards.sqlite")
+        assert built["coverage"]["definition_patterns_indexed"] == 2
+        assert not built["coverage"]["by_table"]["fruit.resource_definition"]["definition_pattern_exclusions"]
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize("changed", ["business_name", "alias", "definition", "formula", "unit", "period"])
+def test_physical_name_exclusion_preserves_other_semantic_differences(changed):
+    from ontology_r2.semantic_cards import _definition_pattern_exclusions, _row_card
+
+    roles = {"name": ["storage_name", "business_name"], "alias": ["alias"],
+             "description": ["definition"], "formula": ["formula"], "unit": ["unit"], "scope": ["period"]}
+    table = {"name": "demo.resources", "columns": [
+        {"column_name": "storage_name", "column_comment": "物理文件名称"}]}
+    excluded = [item["column"] for item in _definition_pattern_exclusions(table, roles)]
+    assert excluded == ["storage_name"]
+    row = {"storage_name": "resource_1", "business_name": "经营汇总", "alias": "汇总数据",
+           "definition": "按经营对象汇总", "formula": "sum(amount)", "unit": "元", "period": "Y"}
+    make = lambda value: _row_card("demo.resources", value, roles, [], [], 512, 2048,
+                                   "definition_data", pattern_name_exclusions=excluded)
+    original = make(row)
+    identity_variant = make({**row, "storage_name": "resource_2"})
+    assert identity_variant["signature"] != original["signature"]
+    assert identity_variant["pattern_signature"] == original["pattern_signature"]
+    semantic_variant = make({**row, "storage_name": "resource_2", changed: row[changed] + " changed"})
+    assert semantic_variant["pattern_signature"] != original["pattern_signature"]
+
+
+def test_shared_physical_name_pattern_does_not_propagate_exact_type_membership(tmp_path):
+    from ontology_r2.definition_memberships import build_definition_memberships
+    from ontology_r2.group_incremental import ConceptBundleDecision, compile_concept
+    from ontology_r2.storage import read_yaml
+    from pathlib import Path
+
+    data = _physical_resource_dataset(tmp_path)
+    index = None
+    try:
+        built = build_semantic_cards(data, tmp_path / "cards.sqlite")
+        index = SemanticCardIndex(built["index_path"])
+        cards = index.all_cards(2)["cards"]
+        card = next(item for item in cards if item["row_number"] == 1)
+        assert len({item["pattern_id"] for item in cards}) == 1
+        profile = read_yaml(Path(__file__).resolve().parents[1] / "ontologies/internal_model.yaml")
+        decision = ConceptBundleDecision(status="proposed", label="经营汇总表", root_type="GeneralObject",
+            ontology_level="type", definition="按经营对象汇总经营数据", alignments=[{
+                "record_id": card["record_id"], "mapping_kind": "exact", "quote": "按经营对象汇总经营数据"}])
+        concept, alignments = compile_concept(data, profile, {"records": [card]}, decision, {})
+        group = {"snapshot_id": data.snapshot_id, "concepts": [concept], "record_alignments": alignments}
+        result = build_definition_memberships(data, index, group)
+        assert {member["row_number"] for member in result["memberships"]} == {1}
+        assert result["rejections"] == [{"record_id": next(c["record_id"] for c in cards if c["row_number"] == 2),
+                                         "row_number": 2, "card_id": next(c["card_id"] for c in cards if c["row_number"] == 2),
+                                         "reason": "full_semantic_values_differ"}]
+        assert [item["source_record_id"] for item in group["record_alignments"]] == [card["record_id"]]
+        assert result["coverage"]["partial"]
+    finally:
+        if index:
+            index.close()
+        data.close()
+
+
 def _table(root, name, columns, rows, *, pk="id"):
     base = {"schema": "fruit", "table_name": name}
     write_yaml(root / "schema/tables" / f"{name}.yaml", {

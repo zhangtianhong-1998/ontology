@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 from math import sqrt
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from .concept_candidates import _field_roles
 from .embedding import top_cosine
@@ -28,6 +29,11 @@ def validate_bundle_options(options):
                 "max_joined_context_records": 3, "max_joined_context_rules": 64,
                 "max_joined_context_value_chars": 2048}
     limits = {key: options.get(key, value) for key, value in defaults.items()}
+    # Risk exploration is bounded against packet capacity, not the potentially
+    # much larger number of technically checked selector variants.
+    limits["max_exploration_rules"] = options.get(
+        "max_exploration_rules", (limits["max_relation_bundles"] + 6) // 7
+        if type(limits["max_relation_bundles"]) is int else 0)
     if any(type(value) is not int or value < 0 for value in limits.values()):
         raise ValueError("Instance bundle limits must be nonnegative integers")
     if not 0 <= limits["max_joint_pairs_per_rule"] <= 2:
@@ -445,38 +451,176 @@ def _relation_bundle(data, rule, limits):
     return bundle, None
 
 
-def _round_robin_rules(rules, limit):
+def _rule_family(rule):
+    """Selector values are variants; field, transform and scope changes are not."""
+    source, target = rule.get("source", {}), rule.get("target", {})
+    return (source.get("table", ""), target.get("table", ""),
+            source.get("field", ""), target.get("field", ""),
+            digest(rule.get("transform") or {"operator": "identity"}),
+            digest(rule.get("scope_bindings") or {}))
+
+
+def _family_ordered_rules(rules, limit):
+    """Cover field families across source/target tables before their variants.
+
+    Numeric overlap remains risky evidence, but is not excluded from the first
+    family pass. Ordering grants a review opportunity, never business validity.
+    """
+    if limit <= 0:
+        return []
+    families = defaultdict(list)
+    for rule in rules:
+        if rule["status"] in ("checked_technical", "observed_subset"):
+            families[_rule_family(rule)].append(rule)
+    def variant_order(rule):
+        return (-_reference_priority(rule),
+                json.dumps(rule.get("selector") or {}, sort_keys=True, ensure_ascii=False),
+                rule["rule_id"])
+    for variants in families.values():
+        variants.sort(key=variant_order)
+    # Within each source, visit each target table before repeating a target.
+    table_pairs = defaultdict(lambda: defaultdict(list))
+    for family, variants in families.items():
+        table_pairs[family[0]][family[1]].append(family)
+    for targets in table_pairs.values():
+        for target, keys in targets.items():
+            targets[target] = deque(sorted(keys, key=lambda key: (variant_order(families[key][0]), key)))
+    target_order = {
+        source: deque(sorted(targets, key=lambda target:
+                             (variant_order(families[targets[target][0]][0]), target)))
+        for source, targets in table_pairs.items()}
+    sources = sorted(table_pairs, key=lambda source:
+                     (variant_order(families[table_pairs[source][target_order[source][0]][0]][0]), source))
+    family_order = []
+    while sources:
+        remaining_sources = []
+        for source in sources:
+            target = target_order[source].popleft()
+            family_order.append(table_pairs[source][target].popleft())
+            if table_pairs[source][target]:
+                target_order[source].append(target)
+            if target_order[source]:
+                remaining_sources.append(source)
+        sources = remaining_sources
+    # A heavily enumerated selector must not take a second slot while another
+    # field family still has no representative. No candidate is discarded.
+    active = deque(deque(families[key]) for key in family_order)
     chosen = []
-    # Common numeric auto IDs collide easily. Keep them in the evidence pool,
-    # but spend the scarce LLM slots on stronger field pairs first.
-    for numeric_only in (False, True):
-        groups = defaultdict(list)
-        for rule in sorted(rules, key=lambda item: (-_reference_priority(item), item["rule_id"])):
-            if (rule["status"] in ("checked_technical", "observed_subset")
-                    and bool(rule.get("numeric_overlap_only", False)) == numeric_only):
-                groups[rule["source"]["table"]].append(rule)
-        while groups and len(chosen) < limit:
-            for table in sorted(groups, key=lambda name: (-_reference_priority(groups[name][0]), name)):
-                if groups[table]:
-                    chosen.append(groups[table].pop(0))
-                    if len(chosen) >= limit:
-                        break
-            groups = {table: remaining for table, remaining in groups.items() if remaining}
-        if len(chosen) >= limit:
-            break
+    while active and len(chosen) < limit:
+        variants = active.popleft()
+        chosen.append(variants.popleft())
+        if variants:
+            active.append(variants)
+    return chosen
+
+
+def _rule_quality_tier(rule, data=None):
+    """Schema hints affect scheduling only; unknown numeric joins stay explorable."""
+    tables = getattr(data, "tables", {})
+    source, target = rule.get("source", {}), rule.get("target", {})
+    source_info = tables.get(source.get("table"), {})
+    target_info = tables.get(target.get("table"), {})
+    field = source.get("field", "")
+    column = next((item for item in source_info.get("columns", ())
+                   if item["column_name"] == field), {})
+    comment = str(column.get("column_comment") or "")
+    ordinal = bool(re.search(
+        r"排序|序号|\b(?:display|sort)[ _]+(?:order|index)\b|"
+        r"\b(?:row|sequence)[ _]+(?:number|index|no)\b", field + " " + comment, re.I))
+    reference = bool(re.search(
+        r"引用|关联|指向|目标表|外键|\b(?:foreign key|references?|refers to)\b", comment, re.I))
+    source_pk = field in source_info.get("pk", ()) or bool(rule.get("source_declared_pk"))
+    target_pk = (target.get("field") in target_info.get("pk", ())
+                 or bool(rule.get("target_declared_pk")))
+    numeric = bool(rule.get("numeric_overlap_only"))
+    if ordinal or (numeric and source_pk and not reference):
+        return "risk_exploration"
+    checks = (rule.get("verification") or {}).get("checks") or {}
+    conditional = bool(rule.get("selector") and checks.get("selector_true", 0) > 0
+                       and checks.get("selector_false", 0) > 0
+                       and checks.get("selector_unknown", 0) == 0)
+    identifier_shape = bool(re.search(r"(?:^|_)(?:id|code|key|uuid|guid|ref)$", field, re.I))
+    if (checks.get("unique_matches", 0) > 0 and checks.get("target_max_multiplicity") == 1
+            and (reference or (not source_pk and target_pk and identifier_shape and conditional))):
+        return "structural_reference"
+    return "risk_exploration" if numeric else "value_match"
+
+
+def _round_robin_rules(rules, limit, *, data=None, max_exploration_rules=None):
+    """Weighted review opportunities: structural/value/risk = 4/2/1.
+
+    Each tier covers its distinct join families before repeating variants.
+    A bounded risk queue prevents surplus budget being filled by ID collisions.
+    """
+    tiers = defaultdict(list)
+    for rule in rules:
+        if rule["status"] in ("checked_technical", "observed_subset"):
+            tiers[_rule_quality_tier(rule, data)].append(rule)
+    queues = {tier: deque(_family_ordered_rules(population, len(population)))
+              for tier, population in tiers.items()}
+    if max_exploration_rules is not None and "risk_exploration" in queues:
+        queues["risk_exploration"] = deque(list(queues["risk_exploration"])[:max_exploration_rules])
+    cycle = ("structural_reference", "value_match", "risk_exploration",
+             "structural_reference", "value_match", "structural_reference", "structural_reference")
+    chosen = []
+    while any(queues.values()) and len(chosen) < limit:
+        for tier in cycle:
+            if queues.get(tier):
+                chosen.append(queues[tier].popleft())
+                if len(chosen) >= limit:
+                    break
     return chosen
 
 
 def _reference_priority(rule):
-    """Spend scarce packet slots on likely reference keys, not name collisions."""
-    source = rule.get("source", {}).get("field", "").casefold()
-    target = rule.get("target", {}).get("field", "").casefold()
-    target_table = rule.get("target", {}).get("table", "").casefold()
-    key_suffix = ("_id", "_code", "_key")
-    score = 2 * source.endswith(key_suffix) + target.endswith(key_suffix)
-    score += 3 * any(token in source and token in target_table
-                     for token in ("measure", "metric", "dimension", "dim"))
+    """Prioritize observed unique witnesses without inferring field semantics."""
+    verification = rule.get("verification") or {}
+    checks = verification.get("checks") or {}
+    eligible = checks.get("eligible_references", 0)
+    unique = checks.get("unique_matches", 0)
+    score = 4 * min(1, unique / eligible) if eligible > 0 else 0
+    score += verification.get("scan_scope") == "full_input"
+    score += (checks.get("target_rows_with_complete_key", 0) > 0
+              and checks.get("target_max_multiplicity") == 1)
+    # Prefer an actually exercised conditional branch, not an untested label.
+    score += bool(rule.get("selector") and eligible > 0
+                  and checks.get("selector_true", 0) > 0
+                  and checks.get("selector_false", 0) > 0
+                  and checks.get("selector_unknown", 0) == 0)
+    score -= 0.25 * bool(rule.get("numeric_overlap_only"))
     return score
+
+
+def _rule_selection_coverage(available, inspected, packaged, limit, exploration_limit, data):
+    families = [{_rule_family(rule) for rule in population}
+                for population in (available, inspected, packaged)]
+    table_pairs = [{family[:2] for family in population} for population in families]
+    return {"method": "weighted_quality_tiers_then_source_target_and_field_family_round_robin",
+            "family_key": ["source.table", "source.field", "target.table", "target.field",
+                           "transform", "scope_bindings"],
+            "source_artifact": "association_rules.yaml", "max_relation_bundles": limit,
+            "max_exploration_rules": exploration_limit,
+            "tier_weights": {"structural_reference": 4, "value_match": 2, "risk_exploration": 1},
+            "by_stratum": {
+                tier: {**{name: sum(_rule_quality_tier(rule, data) == tier for rule in population)
+                          for name, population in (("eligible", available), ("explored", inspected),
+                                                   ("packaged", packaged))},
+                       "deferred": sum(_rule_quality_tier(rule, data) == tier for rule in available)
+                                   - sum(_rule_quality_tier(rule, data) == tier for rule in inspected)}
+                for tier in ("structural_reference", "value_match", "risk_exploration")},
+            "eligible_rules": len(available), "inspected_rules": len(inspected),
+            "packaged_rules": len(packaged), "uninspected_rules": len(available) - len(inspected),
+            "families_available": len(families[0]), "families_inspected": len(families[1]),
+            "families_packaged": len(families[2]),
+            "families_not_inspected": len(families[0] - families[1]),
+            "families_not_packaged": len(families[0] - families[2]),
+            "table_pairs_available": len(table_pairs[0]), "table_pairs_inspected": len(table_pairs[1]),
+            "table_pairs_packaged": len(table_pairs[2]),
+            "numeric_overlap_rules": {
+                name: sum(bool(rule.get("numeric_overlap_only")) for rule in population)
+                for name, population in (("available", available), ("inspected", inspected),
+                                         ("packaged", packaged))},
+            "semantic_acceptance": "not_assessed_by_packet_selection"}
 
 
 def build_instance_bundles(data, index, association, options=None, *, embedding=None, progress=None):
@@ -571,12 +715,15 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
     joined.close()
     if concept_progress:
         concept_progress.close()
-    checked_rules = sum(item["status"] in ("checked_technical", "observed_subset")
-                        for item in association.get("rules", []))
+    eligible_rules = [item for item in association.get("rules", [])
+                      if item["status"] in ("checked_technical", "observed_subset")]
+    checked_rules = len(eligible_rules)
     # Inspect additional checked rules when an earlier one is only a concept
     # alignment lead. A skipped lead must not consume a relation-bundle slot.
-    ordered_rules = _round_robin_rules(association.get("rules", []), checked_rules)
+    ordered_rules = _round_robin_rules(eligible_rules, checked_rules, data=data,
+                                     max_exploration_rules=limits["max_exploration_rules"])
     rules = []
+    packaged_rules = []
     relation_bundles = 0
     relation_signatures = set()
     exact_duplicate_rules = 0
@@ -595,6 +742,7 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
         bundle, reason = _relation_bundle(data, rule, limits)
         if bundle:
             bundles.append(bundle)
+            packaged_rules.append(rule)
             relation_bundles += 1
             relation_signatures.add(relation_signature)
         else:
@@ -693,6 +841,9 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
                 "joint_distinct": {"source": "semantic_cards.coverage.by_table.*.joint_distinct",
                                    "method": "bounded_exact_joint_distinct_no_cartesian_enumeration"},
                 "checked_rules": checked_rules, "rules_selected": len(rules),
+                "rule_selection": _rule_selection_coverage(
+                    eligible_rules, rules, packaged_rules, limits["max_relation_bundles"],
+                    limits["max_exploration_rules"], data),
                 "technical_rule_statuses": {
                     status: sum(rule["status"] == status for rule in association.get("rules", []))
                     for status in ("checked_technical", "observed_subset", "unresolved")},

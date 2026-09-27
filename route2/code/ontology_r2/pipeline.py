@@ -191,7 +191,8 @@ async def build(config, output):
         data = Dataset(config["dataset"], output / "work", config.get("memory_limit", "1GB"),
                        profiling, progress=progress, privacy_config=config.get("privacy"))
         data.semantic_retrieval_contract = retrieval_contract(config)
-        resumed = restore_state(config.get("resume_from"), data, profile)
+        resumed = restore_state(config.get("resume_from"), data, profile,
+                                implementation_code_hash=code_hash)
         sink = Sink(output, config.get("shard_size", 5000))
         llm = StructuredLLM(config["llm"], output)
         manifest.update(snapshot_id=data.snapshot_id, input_files=data.files, input_tables=len(data.tables), input_records=sum(t["rows"] for t in data.tables.values()), model_profile_hash=digest(profile))
@@ -372,7 +373,8 @@ async def build(config, output):
                 concept_batch_size=options.get("concept_batch_size", 1),
                 relation_batch_size=options.get("relation_batch_size", 1),
                 on_checkpoint=lambda result: save_state(
-                    output / "semantic_state.json", data, profile, result))
+                    output / "semantic_state.json", data, profile, result,
+                    implementation_code_hash=code_hash))
             plan = group_result["plan"]
             construction = read_yaml(output / "construction.yaml")
             construction["group_steps"] = group_result["steps"]
@@ -677,7 +679,8 @@ async def build(config, output):
                                               "config_decisions": config_decisions,
                                               "equivalence": equivalence,
                                               "fact_schema": fact_schema,
-                                              "fact_binding": fact_binding}.items()}})
+                                              "fact_binding": fact_binding}.items()}},
+                       implementation_code_hash=code_hash)
         write_yaml(output / "business_concepts.yaml", group_result["concepts"])
         write_yaml(output / "record_alignments.yaml", group_result["record_alignments"])
         write_yaml(output / "concept_relations.yaml", group_result["concept_relations"])

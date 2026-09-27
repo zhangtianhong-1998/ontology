@@ -12,11 +12,17 @@ from .storage import digest
 from .validation import validate_plan
 
 
-def state_contract(data, profile):
+def state_contract(data, profile, *, implementation_code_hash):
+    # Use the exact package hash recorded by pipeline.build, not a second hash.
+    if (not isinstance(implementation_code_hash, str)
+            or len(implementation_code_hash) != 64
+            or any(char not in "0123456789abcdef" for char in implementation_code_hash)):
+        raise ValueError("implementation_code_hash must be the pipeline SHA-256 hash")
     from .llm import SYSTEM, TASK_PROMPTS
     # Definition parameters now participate in type identity and relation
     # compatibility; pre-contract checkpoints must not bypass these checks.
     return {"version": 4, "snapshot_id": data.snapshot_id,
+            "implementation_code_hash": implementation_code_hash,
             "retrieval_contract": getattr(data, "semantic_retrieval_contract", {}),
             "profile_hash": digest(profile), "prompts_hash": digest([SYSTEM, TASK_PROMPTS]),
             # Source files alone do not capture a changed exclusion policy.
@@ -27,14 +33,22 @@ def state_contract(data, profile):
             "model": os.getenv("ONTOLOGY_LLM_MODEL", "mock")}
 
 
-def restore_state(path, data, profile):
+def restore_state(path, data, profile, *, implementation_code_hash):
+    expected_contract = state_contract(
+        data, profile, implementation_code_hash=implementation_code_hash)
     if not path:
         return None
     path = Path(path)
     if path.is_dir():
         path /= "semantic_state.json"
     state = json.loads(path.read_text(encoding="utf-8"))
-    if state.get("contract") != state_contract(data, profile):
+    contract = state.get("contract")
+    # Reject legacy or differently compiled acceptances before mutating data.
+    if not isinstance(contract, dict) or not contract.get("implementation_code_hash"):
+        raise ValueError("Semantic state lacks implementation_code_hash; legacy checkpoints cannot be resumed")
+    if contract["implementation_code_hash"] != implementation_code_hash:
+        raise ValueError("Semantic state implementation_code_hash differs from the current implementation")
+    if contract != expected_contract:
         raise ValueError("Semantic state differs from the input snapshot, model or semantic contract")
     role_report = state.get("column_role_report")
     if role_report is not None and (not isinstance(role_report, dict)
@@ -55,10 +69,11 @@ def restore_state(path, data, profile):
     return state
 
 
-def save_state(path, data, profile, result):
+def save_state(path, data, profile, result, *, implementation_code_hash):
+    contract = state_contract(data, profile, implementation_code_hash=implementation_code_hash)
     path = Path(path)
     state = {key: value for key, value in result.items() if key != "plan"}
-    state.update(contract=state_contract(data, profile),
+    state.update(contract=contract,
                  plan=result["plan"].model_dump(), evidence=data.evidence,
                  column_roles={name: table.get("inferred_semantic_roles", [])
                                for name, table in data.tables.items()})

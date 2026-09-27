@@ -15,7 +15,7 @@ main{max-width:1800px;margin:auto;padding:15px}.notice{padding:10px 13px;border-
 </head><body>
 <header><div><h1>本体结构浏览</h1><p id="run-info"></p></div><div class="switch" aria-label="图谱选择"><button type="button" data-mode="ontology" class="active" aria-pressed="true">本体结构</button><button type="button" data-mode="metadata" aria-pressed="false">元数据图</button></div><span id="status" class="status"></span></header>
 <main><p id="notice" class="notice"></p><div class="layout">
-<section class="graph-pane" aria-label="结构图"><div class="graph-head"><div><h2 id="graph-title"></h2><p id="graph-subtitle"></p></div><div class="graph-actions"><button id="zoom-out" class="view-control" type="button" aria-label="缩小画布" title="缩小">−</button><span id="zoom-level" class="zoom-level" aria-live="polite">100%</span><button id="zoom-in" class="view-control" type="button" aria-label="放大画布" title="放大">+</button><button id="zoom-fit" class="view-control" type="button" aria-label="适配整个图" title="适配整个图">适配</button><button id="search-toggle" class="search-toggle" type="button" aria-expanded="false" aria-controls="search-panel">搜索节点</button></div></div><div id="search-panel" class="search-panel" hidden><input id="search" aria-label="搜索节点" placeholder="搜索名称或编号…"><div id="index-list"></div></div><div id="graph-viewport" class="graph-viewport"><svg id="graph" viewBox="0 0 1100 680" role="img" aria-label="整体本体类型与关系图"></svg></div><div id="graph-foot" class="graph-foot"></div></section>
+<section class="graph-pane" aria-label="结构图"><div class="graph-head"><div><h2 id="graph-title"></h2><p id="graph-subtitle"></p></div><div class="graph-actions"><button id="zoom-out" class="view-control" type="button" aria-label="缩小画布" title="缩小">−</button><span id="zoom-level" class="zoom-level" aria-live="polite">100%</span><button id="zoom-in" class="view-control" type="button" aria-label="放大画布" title="放大">+</button><button id="zoom-fit" class="view-control" type="button" aria-label="适配整个图" title="适配整个图">适配</button><button id="numeric-toggle" class="view-control" type="button" aria-pressed="false" hidden>显示数字重合候选</button><button id="search-toggle" class="search-toggle" type="button" aria-expanded="false" aria-controls="search-panel">搜索节点</button></div></div><div id="search-panel" class="search-panel" hidden><input id="search" aria-label="搜索节点" placeholder="搜索名称或编号…"><div id="index-list"></div></div><div id="graph-viewport" class="graph-viewport"><svg id="graph" viewBox="0 0 1100 680" role="img" aria-label="整体本体类型与关系图"></svg></div><div id="graph-foot" class="graph-foot"></div></section>
 <aside id="details" class="details" aria-label="节点详情"></aside></div><footer>本地文件浏览。本体对象关系与物理元数据分开呈现；结构校验不代表业务语义正确。</footer></main>
 <script id="result-data" type="application/json">__RESULT_DATA__</script>
 <script>
@@ -27,6 +27,7 @@ const rootNames={GeneralObject:'一般对象',Measure:'度量',Metric:'指标',D
 const rootOf=x=>{let current=x,seen=new Set();while(current&&current.parent&&!seen.has(current.id)){seen.add(current.id);current=T.get(current.parent)}return current?.id||x?.parent||x?.id};
 const typeKind=x=>x?.category==='source_record_type'?'源记录结构':rootNames[rootOf(x)]||'对象类型';
 const name=x=>rootNames[x?.id]||x?.label||x?.table_comment||x?.column_name||x?.table_name||x?.constraint_name||x?.id||'未命名';
+let showNumericMatches=false;
 let mode='ontology',selected=null,tableId=(M.tables||[])[0]?.id||null;
 const expandedTables=new Set();
 const text=x=>x==null?'—':typeof x==='object'?JSON.stringify(x,null,2):String(x);
@@ -260,12 +261,19 @@ function metadataPositions(tables,links,focus=null,focusRadius=225){
   }
   return new Map(points.map(p=>[p.id,{x:p.x,y:p.y}]))
 }
+// Numeric coincidences remain inspectable without dominating the default map.
+function metadataVisibleLinks(links,focus,showNumeric){
+  return links.filter(x=>(!focus||x.source===focus||x.target===focus)&&
+    (showNumeric||x.status==='declared'||!x.numeric_overlap_only))
+}
+$('numeric-toggle').onclick=()=>{showNumericMatches=!showNumericMatches;$('numeric-toggle').setAttribute('aria-pressed',String(showNumericMatches));$('numeric-toggle').textContent=showNumericMatches?'收起数字重合候选':'显示数字重合候选';selected=null;render()};
 let metadataLinkGroups=new Map();
 function metadataGraph(){
   const allTables=M.tables||[],nodes=[],edges=[];
   const focus=selected&&['table','column','technical_link','table_link_group','metadata_record_type'].includes(selected.kind)?tableId:null;
   const allLinks=(M.links||[]).filter(x=>TABLE.has(x.source)&&TABLE.has(x.target));
-  const visibleLinks=allLinks.filter(x=>!focus||x.source===focus||x.target===focus);
+  const visibleLinks=metadataVisibleLinks(allLinks,focus,showNumericMatches);
+  const hiddenNumeric=metadataVisibleLinks(allLinks,focus,true).length-visibleLinks.length;
   const neighborIds=new Set([focus,...visibleLinks.flatMap(x=>[x.source,x.target])]);
   const tables=focus?allTables.filter(t=>neighborIds.has(t.id)):allTables;
   const focusColumns=expandedTables.has(focus)?(M.details?.[focus]?.columns?.length||0):0;
@@ -291,11 +299,11 @@ function metadataGraph(){
     edges.push({id:group.id,from:group.source,to:group.target,kind:declared?'declared':'technical_link',status:declared?'declared':subset?'observed_subset':'verified_technical',bidirectional:group.bidirectional,label:`${group.links.length} ${declared?'声明外键':'字段关联'}`,showLabel:prominent,quiet:!prominent,action:()=>{tableId=group.source;select('table_link_group',group.id)}});
   }
   $('graph-title').textContent=focus?'元数据图 · 关联邻域':'元数据图';
-  $('graph-subtitle').textContent=`${tables.length} / ${allTables.length} 张表 · ${visibleLinks.length} 条字段关联，合并为 ${metadataLinkGroups.size} 组表间连接。点击表聚焦，悬停节点或连线查看关系。`;
+  $('graph-subtitle').textContent=`${tables.length} / ${allTables.length} 张表 · ${visibleLinks.length} 条字段关联${hiddenNumeric?`，另 ${hiddenNumeric} 条数字重合候选已收起`:''}，合并为 ${metadataLinkGroups.size} 组表间连接。点击表聚焦，悬停节点或连线查看关系。`;
   $('graph-foot').textContent=`绿色为声明外键，蓝色为技术匹配，棕色为部分命中。双箭头表示两个方向均有字段关联，具体条件见右侧。${focus?`当前聚焦 ${name(TABLE.get(focus))}，右侧可恢复全图。`:'默认仅显示主要连线标签，所有细线仍可点击。'}${M.total_tables>allTables.length?'页面仅显示部分表。':''}`;
   drawGraph(nodes,edges)
 }
-function renderGraph(){if(mode==='ontology')ontologyGraph();else metadataGraph()}
+function renderGraph(){$('numeric-toggle').hidden=mode!=='metadata';if(mode==='ontology')ontologyGraph();else metadataGraph()}
 function render(){if(mode==='ontology'){const derived=(OV.nodes||[]).filter(x=>!(O.object_roots||[]).some(root=>root.id===x.id));const counts=Object.fromEntries(Object.keys(rootNames).map(root=>[root,derived.filter(x=>rootOf(x)===root).length]));$('notice').textContent=`已接受派生对象：指标 ${counts.Metric||0}、度量 ${counts.Measure||0}、维度 ${counts.Dimension||0}、术语 ${counts.Term||0}、一般对象 ${counts.GeneralObject||0}。图中只画继承和明确端点的对象关系；属性、实例与证据请选中对象查看。${D.preview?.notice||''}`}
 else $('notice').textContent=`本地快照：${M.total_tables||0} 张表、${M.node_kinds?.Column||0} 列。字段默认收起，条件和转换规则保留在关联详情中。技术匹配不代表业务依赖或数据血缘。${D.preview?.notice||''}`;
 renderIndex();renderGraph();renderDetails()}render();

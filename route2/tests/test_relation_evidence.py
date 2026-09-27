@@ -74,6 +74,83 @@ def test_outgoing_target_reference_cannot_be_overridden_by_name_or_definition_cl
         "target_join_field_references_another_definition"]
 
 
+def _declared_definition_body(args, value="华南蓝莓的水果销售总额；单位元，按会计期统计。"):
+    args[4]["fields"]["description"] = [{"column": "detail", "value": value}]
+    args[0].tables[args[4]["table"]]["columns"].append(
+        {"column_name": "detail", "column_comment": "指标完整业务定义"})
+
+
+def test_generic_key_correspondence_does_not_override_own_complete_definition():
+    # Original rejected packet 83a649...: the target owns its metric definition;
+    # its catalog-level key comment is not an explicit foreign owner.
+    args = _case("被引用的编码、名称或参数字段，解释取决于 source_type",
+                 "指标编码，对应指标详情和公共属性", "指标业务定义、来源与计算公式")
+    _declared_definition_body(args)
+    result = assess_definition_reference(*args)
+    assert result["status"] == "supported"
+    assert result["target_key_interpretation"] == "own_definition_with_weak_correspondence"
+    assert any(item.get("column") == "detail" and item["origin"] == "observed_record"
+               for item in result["evidence"])
+    assert any(item.get("evidence_id") == "schema:demo.dictionary:detail"
+               for item in result["evidence"])
+
+
+@pytest.mark.parametrize("target_comment", [
+    "编码，对应其他指标定义", "编码，对应风险定义表的 code",
+    "Code references demo.external_definitions", "编码，对应 external_registry.code",
+    "本表使用的外键，对应指标详情和公共属性",
+])
+def test_explicit_other_owner_wins_even_when_target_has_a_definition_body(target_comment):
+    args = _case(target_comment=target_comment, table_comment="指标业务定义、计算公式")
+    _declared_definition_body(args)
+    assert assess_definition_reference(*args)["reason_codes"] == [
+        "target_join_field_references_another_definition"]
+
+
+@pytest.mark.parametrize("mutation", ["missing_body", "truncated_body", "anchor_purpose",
+                                       "referenced_body", "only_names"])
+def test_weak_correspondence_exception_requires_independent_ownership(mutation):
+    shared = "指标编码，对应指标详情和公共属性"
+    args = _case(shared, shared, "指标业务定义、来源与计算公式")
+    _declared_definition_body(args)
+    if mutation == "missing_body":
+        args[4]["fields"].pop("description")
+    elif mutation == "truncated_body":
+        args[4]["fields"]["description"][0]["truncated"] = True
+    elif mutation == "anchor_purpose":
+        args[0].tables[args[4]["table"]]["table_comment"] = "指标业务锚点"
+    elif mutation == "referenced_body":
+        args[4]["fields"]["description"][0]["value"] = "引用指标详情中的定义。"
+    else:
+        args[4]["fields"].pop("description")
+        args[0].tables[args[4]["table"]]["columns"][-1]["column_comment"] = "名称"
+    assert assess_definition_reference(*args)["reason_codes"] == [
+        "both_endpoints_reference_third_party"]
+
+
+def test_owned_definition_does_not_replace_missing_source_reference_intent():
+    args = _case("", "指标编码，对应指标详情和公共属性", "指标业务定义、计算公式")
+    _declared_definition_body(args)
+    assert assess_definition_reference(*args)["reason_codes"] == [
+        "source_reference_intent_not_established"]
+
+
+def test_observed_subset_keeps_the_same_witness_definition_reference():
+    # The same DIM0002 record pair occurs in accepted a8b0f0... and rejected
+    # 2d0098.... A different source_type failing the join is a coverage limit.
+    args = _case("引用类别：维度编码、measure、metric、fixedValue、period 或 currency",
+                 "维度头编码，对应维度定义表的 dim_code", "水果经营分析维度定义")
+    args[3]["fields"]["description"] = [{
+        "column": "purpose", "value": "API 参数引用 DIM0002 定义；按业务类型解释。"}]
+    args[4]["fields"]["description"] = [{"column": "detail", "value": "产区用于水果经营分析。"}]
+    args[2].update(source_quote=args[3]["fields"]["description"][0]["value"],
+                   target_quote=args[4]["fields"]["description"][0]["value"])
+    assert assess_definition_reference(*args)["status"] == "supported"
+    args[1]["rule"]["status"] = "observed_subset"
+    args[1]["examples"]["counterexamples"] = [{"record_id": "metric-reference", "reason": "missing_in_input"}]
+    assert assess_definition_reference(*args)["status"] == "supported"
+
+
 def test_declared_definition_target_and_reference_source_need_no_foreign_key():
     args = _case()
     assert all("foreign_keys" not in table for table in args[0].tables.values())
@@ -170,22 +247,27 @@ def test_audit_preserves_original_schema_and_record_text_while_matching_nfkc():
     assert [item["raw_fragment"] for item in result["evidence"][:2]] == [shared, shared]
 
 
-def _compiled_case(tmp_path, *, shared_reference=False):
+def _compiled_case(tmp_path, *, shared_reference=False, weak_correspondence=False):
     from ontology_r2.group_incremental import RelationBundleDecision
     from ontology_r2.incremental import direct_mapping
-    from ontology_r2.storage import Dataset, read_yaml
+    from ontology_r2.storage import Dataset, read_yaml, write_yaml
     from test_semantic_cards import _table
 
     root = tmp_path / "input"
     shared = "　指标编码，对应指标详情和公共属性；Ｋ１　\n"
     source_decl = shared if shared_reference else "　Ｍｅｔｒｉｃ　ｒｅｆｅｒｅｎｃｅ　ｃｏｄｅ　\n"
-    target_decl = shared if shared_reference else "指标编码"
+    target_decl = shared if shared_reference or weak_correspondence else "指标编码"
     formula = "　ＲＥＶＥＮＵＥ　－　ＣＯＳＴ　\n"
     _table(root, "consumer", {"id": "记录 ID", "metric_ref": source_decl, "name": "卡片名称"},
            [{"id": "s1", "metric_ref": "K1", "name": "经营利润卡片"}])
     _table(root, "target", {"id": "记录 ID", "metric_code": target_decl,
                             "name": "指标名称", "formula": "　计算公式：Ｆ１　\n"},
            [{"id": "t1", "metric_code": "K1", "name": "经营利润", "formula": formula}])
+    if weak_correspondence:
+        path = root / "schema/tables/target.yaml"
+        metadata = read_yaml(path)
+        metadata["table_comment"] = "指标业务定义、来源与计算公式"
+        write_yaml(path, metadata)
     work = tmp_path / "work"
     work.mkdir()
     data = Dataset(root, work)
@@ -234,10 +316,12 @@ def test_compile_relation_rejects_shared_third_party_without_mutating_plan_or_ev
         data.close()
 
 
-def test_compile_relation_registers_definition_evidence_and_audit_with_original_text(tmp_path):
+@pytest.mark.parametrize("weak_correspondence", [False, True])
+def test_compile_relation_registers_definition_evidence_and_audit_with_original_text(tmp_path, weak_correspondence):
     from ontology_r2.group_incremental import compile_relation
 
-    data, profile, core, bundle, decision, formula = _compiled_case(tmp_path)
+    data, profile, core, bundle, decision, formula = _compiled_case(
+        tmp_path, weak_correspondence=weak_correspondence)
     try:
         compiled, plan = compile_relation(data, profile, core, bundle, decision)
         assert len(compiled.relations) == 1
