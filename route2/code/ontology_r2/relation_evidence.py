@@ -28,6 +28,9 @@ _DEFINING_TEXT = re.compile(
 _DEFINING_FIELD = re.compile(r"定义|计算公式|计算口径|\b(?:definition|formula)\b", re.I)
 _KEY = re.compile(r"编码|标识|主键|\b(?:code|identifier|key|id)\b", re.I)
 _USE_CONTEXT = re.compile(r"用于|按.+(?:组合|统计|取数|计算)|\b(?:uses?|lookup|retrieve\w*)\b", re.I)
+_NEGATED_USE = re.compile(
+    r"(?:不|未|非|无需|无须|禁止)(?:再|直接)?(?:用于|使用|采用|按)|"
+    r"\b(?:not|never|no)\b.{0,16}\b(?:us\w*|lookup|retriev\w*)\b", re.I)
 _EXPLICIT_OUTBOUND = re.compile(
     r"引用|指向|参照|参考|外键|其他|其它|另一个|另一|外部|第三方|非本|"
     r"\b(?:references?|refers?\s+to|points?\s+to|foreign\s+key|other|another|external)\b", re.I)
@@ -195,14 +198,13 @@ def assess_definition_reference(data, bundle, decision, source_record, target_re
                 source_support = True
                 evidence(source_record, entry["column"], _raw(entry["value"]), origin="observed_record")
     if not source_support and _KEY.search(source_decl):
-        # An implicit reference can combine a declared identifier with quoted
-        # usage context and an independently established definition target. It
-        # does not need the word "reference" or an explicit foreign key.
-        quote = _text(_get(decision, "source_quote"))
+        # The selected witness record's full usage is evidence even when the
+        # model quotes its name. Never borrow purpose from a different record;
+        # quote validity remains the caller's separate compilation check.
         for role, entry in _entries(source_record):
             value = _text(entry["value"])
-            if (role in {"description", "context"} and value == quote
-                    and _USE_CONTEXT.search(value) and not _NEGATED_REFERENCE.search(value)):
+            if (role in {"description", "context"} and _USE_CONTEXT.search(value)
+                    and not _NEGATED_REFERENCE.search(value) and not _NEGATED_USE.search(value)):
                 source_support = True
                 evidence(source_record, entry["column"], _raw(entry["value"]), origin="observed_record")
     if not source_support:

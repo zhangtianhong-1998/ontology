@@ -14,6 +14,7 @@ from .models import BuildPlan, Condition, DerivedType, RelationPlan, Strict, jso
 from .definition_subject import quantity_subject_assessment
 from .relation_evidence import validate_definition_reference
 from .relation_contract import (canonical_relation_id, canonical_relation_label,
+                                canonical_relation_definition, merge_relation_type_evidence,
                                 relation_semantic_parameters,
                                 validate_calculation_parameter_evidence,
                                 validate_proposed_relation_label)
@@ -723,6 +724,28 @@ def _quoted_positive_pair(bundle, decision, source, target, source_field, target
     raise ValueError("No validated positive pair supports both cited quotes")
 
 
+def _merge_relation_plan_evidence(existing, proposed, data):
+    """Accumulate reviewed pairs only within one identical executable rule."""
+    excluded = {"evidence_ids", "witnessed_pairs"}
+    if existing.model_dump(exclude=excluded) != proposed.model_dump(exclude=excluded):
+        raise ValueError("Conflicting relation plan ID")
+    def rule_contracts(plan):
+        return {digest(data.evidence[evidence_id]["rule_binding"])
+                for evidence_id in plan.evidence_ids
+                if data.evidence.get(evidence_id, {}).get("inference_kind") == "relation_interpretation"}
+    previous, current = rule_contracts(existing), rule_contracts(proposed)
+    if len(current) != 1 or previous != current:
+        raise ValueError("Conflicting relation plan rule contract")
+    pairs = {(pair.source_record_id, pair.target_record_id): pair
+             for pair in [*existing.witnessed_pairs, *proposed.witnessed_pairs]}
+    if len({source for source, target in pairs}) != len(pairs):
+        raise ValueError("Conflicting reviewed targets for the same source witness")
+    return existing.model_copy(update={
+        "evidence_ids": sorted(set(existing.evidence_ids) | set(proposed.evidence_ids)),
+        "witnessed_pairs": [pairs[key] for key in sorted(pairs)],
+    })
+
+
 def compile_relation(data, profile, core, bundle, decision):
     """Turn a technically checked rule and quoted meaning into a validated plan."""
     if decision.status != "proposed":
@@ -838,13 +861,40 @@ def compile_relation(data, profile, core, bundle, decision):
         *dependency_evidence,
         *reference_evidence,
     ]))
+    # Model prose explains this witnessed decision; it cannot redefine a
+    # globally shared predicate or disappear when another witness is accepted.
+    interpretation = {
+        "definition": decision.definition.strip(), "reason": decision.reason,
+        "parent_relation": decision.parent_relation, "predicate_name": predicate_name,
+        "semantic_parameters": semantic_parameters,
+        "source_quote": decision.source_quote, "target_quote": decision.target_quote,
+        "rule_binding": {**{key: copy.deepcopy(rule.get(key)) for key in (
+            "rule_id", "snapshot_id", "source", "target", "selector", "scope_bindings",
+            "transform", "status")}, "verification_hash": digest(rule.get("verification", {}))},
+        "witness_pair": {"source_record_id": source_record["record_id"],
+                         "target_record_id": target_record["record_id"]},
+        "basis_evidence_ids": sorted(evidence_ids),
+    }
+    inference_id = "relation_inference:" + digest(interpretation)[:24]
+    data.evidence[inference_id] = {
+        "id": inference_id, "origin": "model_inference",
+        "inference_kind": "relation_interpretation",
+        "raw_fragment": decision.definition.strip(), "raw_fragment_truncated": False,
+        **interpretation,
+        "source_ref": {"snapshot_id": data.snapshot_id, "rule_id": rule["rule_id"],
+                       "bundle_id": bundle.get("bundle_id"),
+                       "rule_artifact": "association_rules.yaml"},
+    }
+    evidence_ids.append(inference_id)
     relation_id = canonical_relation_id(
         decision.parent_relation, domain, range_type, namespace="relation",
         qualifier=[source["table"], source_field, target["table"], target_field],
         predicate_name=decision.predicate_name, semantic_parameters=semantic_parameters)
     relation_type = DerivedType(id=relation_id, parent=decision.parent_relation,
-                                definition=decision.definition.strip(), evidence_ids=evidence_ids,
-                                label=predicate_name, predicate_name=decision.predicate_name,
+                                definition=canonical_relation_definition(
+                                    decision.parent_relation, predicate_name, semantic_parameters),
+                                evidence_ids=evidence_ids, label=predicate_name,
+                                predicate_name=(predicate_name if predicate_name != decision.parent_relation else None),
                                 semantic_parameters=semantic_parameters,
                                 domain=[domain], range=[range_type],
                                 endpoint_basis="table_binding",
@@ -868,13 +918,17 @@ def compile_relation(data, profile, core, bundle, decision):
     candidate = core.model_copy(deep=True)
     existing_types = {item.id: item for item in candidate.relation_types}
     existing_plans = {item.id: item for item in candidate.relations}
-    if relation_id in existing_types and existing_types[relation_id] != relation_type:
-        raise ValueError("Conflicting relation type ID")
-    if plan.id in existing_plans and existing_plans[plan.id] != plan:
-        raise ValueError("Conflicting relation plan ID")
-    if relation_id not in existing_types:
+    if relation_id in existing_types:
+        existing = existing_types[relation_id]
+        candidate.relation_types[candidate.relation_types.index(existing)] = merge_relation_type_evidence(
+            existing, relation_type)
+    else:
         candidate.relation_types.append(relation_type)
-    if plan.id not in existing_plans:
+    if plan.id in existing_plans:
+        existing = existing_plans[plan.id]
+        plan = _merge_relation_plan_evidence(existing, plan, data)
+        candidate.relations[candidate.relations.index(existing)] = plan
+    else:
         candidate.relations.append(plan)
     errors = validate_plan(candidate, data, profile)
     if errors:
@@ -942,16 +996,9 @@ def compile_business_relation(data, profile, core, bundle, decision, plan,
                      if item.id == relation_id), None)
     if existing is None:
         candidate.relation_types.append(relation_type)
-    elif (existing.parent != relation_type.parent
-          or existing.definition != relation_type.definition
-          or existing.domain != relation_type.domain
-          or existing.range != relation_type.range
-          or existing.category != relation_type.category):
-        raise ValueError("Conflicting business relation type ID")
     else:
-        merged = existing.model_copy(update={
-            "evidence_ids": sorted(set(existing.evidence_ids) | set(evidence_ids))})
-        candidate.relation_types[candidate.relation_types.index(existing)] = merged
+        candidate.relation_types[candidate.relation_types.index(existing)] = merge_relation_type_evidence(
+            existing, relation_type)
     errors = validate_plan(candidate, data, profile)
     if errors:
         raise ValueError("Business relation type invalid: " + "; ".join(errors))

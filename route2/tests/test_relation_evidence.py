@@ -169,10 +169,38 @@ def test_implicit_declared_code_and_full_usage_quote_support_definition_target()
     args[3]["fields"]["description"] = [{"column": "detail", "value": "按地区和客户类型组合取数"}]
     args[2]["source_quote"] = "按地区和客户类型组合取数"
     assert assess_definition_reference(*args)["status"] == "supported"
-    args[2]["source_quote"] = "按地区"
-    assert assess_definition_reference(*args)["status"] == "unresolved"
     args[2]["source_quote"] = "销售收入看板"
-    assert assess_definition_reference(*args)["status"] == "unresolved"
+    result = assess_definition_reference(*args)
+    assert result["status"] == "supported"
+    assert any(item["origin"] == "observed_record" and item.get("record_id") == "s1"
+               and item["raw_fragment"] == "按地区和客户类型组合取数"
+               for item in result["evidence"])
+
+
+@pytest.mark.parametrize("mutation", ["missing", "truncated", "other_record", "no_key",
+                                       "negated", "negated_english"])
+def test_name_quote_cannot_borrow_missing_incomplete_or_foreign_usage(mutation):
+    args = _case("region code，业务字段", "维度编码", "经营分析维度定义")
+    entry = {"column": "detail", "value": "按地区和客户类型组合取数"}
+    args[3]["fields"]["description"] = [entry]
+    if mutation == "missing":
+        entry["value"] = ""
+    elif mutation == "truncated":
+        entry["truncated"] = True
+    elif mutation == "other_record":
+        other = deepcopy(args[3])
+        other["record_id"] = "s2"
+        args[1]["records"] = [args[3], args[4], other]
+        args[3]["fields"].pop("description")
+    elif mutation == "no_key":
+        args[0].tables[args[3]["table"]]["columns"][0]["column_comment"] = ""
+    elif mutation == "negated":
+        entry["value"] = "不按地区和客户类型组合取数"
+    else:
+        entry["value"] = "Does not use the region definition for lookup."
+    result = assess_definition_reference(*args)
+    assert result["reason_codes"] == ["source_reference_intent_not_established"]
+    assert not any(item["origin"] == "observed_record" for item in result["evidence"])
 
 
 def test_definition_text_supports_unannotated_target_and_reference_prose_supports_source():
@@ -247,7 +275,7 @@ def test_audit_preserves_original_schema_and_record_text_while_matching_nfkc():
     assert [item["raw_fragment"] for item in result["evidence"][:2]] == [shared, shared]
 
 
-def _compiled_case(tmp_path, *, shared_reference=False, weak_correspondence=False):
+def _compiled_case(tmp_path, *, shared_reference=False, weak_correspondence=False, implicit_use=False):
     from ontology_r2.group_incremental import RelationBundleDecision
     from ontology_r2.incremental import direct_mapping
     from ontology_r2.storage import Dataset, read_yaml, write_yaml
@@ -256,10 +284,17 @@ def _compiled_case(tmp_path, *, shared_reference=False, weak_correspondence=Fals
     root = tmp_path / "input"
     shared = "　指标编码，对应指标详情和公共属性；Ｋ１　\n"
     source_decl = shared if shared_reference else "　Ｍｅｔｒｉｃ　ｒｅｆｅｒｅｎｃｅ　ｃｏｄｅ　\n"
+    if implicit_use:
+        source_decl = "指标编码"
     target_decl = shared if shared_reference or weak_correspondence else "指标编码"
     formula = "　ＲＥＶＥＮＵＥ　－　ＣＯＳＴ　\n"
-    _table(root, "consumer", {"id": "记录 ID", "metric_ref": source_decl, "name": "卡片名称"},
-           [{"id": "s1", "metric_ref": "K1", "name": "经营利润卡片"}])
+    usage = "按地区和客户类型组合取数"
+    source_columns = {"id": "记录 ID", "metric_ref": source_decl, "name": "卡片名称"}
+    source_row = {"id": "s1", "metric_ref": "K1", "name": "经营利润卡片"}
+    if implicit_use:
+        source_columns["purpose"] = "用途说明"
+        source_row["purpose"] = usage
+    _table(root, "consumer", source_columns, [source_row])
     _table(root, "target", {"id": "记录 ID", "metric_code": target_decl,
                             "name": "指标名称", "formula": "　计算公式：Ｆ１　\n"},
            [{"id": "t1", "metric_code": "K1", "name": "经营利润", "formula": formula}])
@@ -279,6 +314,8 @@ def _compiled_case(tmp_path, *, shared_reference=False, weak_correspondence=Fals
                              "name": [{"column": "name", "value": row["name"]}]}}
         if "formula" in row:
             record["fields"]["formula"] = [{"column": "formula", "value": row["formula"]}]
+        if "purpose" in row:
+            record["fields"]["description"] = [{"column": "purpose", "value": row["purpose"]}]
         records.append(record)
     source, target = records
     bundle = {"snapshot_id": data.snapshot_id, "records": records, "rule": {
@@ -317,11 +354,12 @@ def test_compile_relation_rejects_shared_third_party_without_mutating_plan_or_ev
 
 
 @pytest.mark.parametrize("weak_correspondence", [False, True])
-def test_compile_relation_registers_definition_evidence_and_audit_with_original_text(tmp_path, weak_correspondence):
+@pytest.mark.parametrize("implicit_use", [False, True])
+def test_compile_relation_registers_definition_evidence_and_audit_with_original_text(tmp_path, weak_correspondence, implicit_use):
     from ontology_r2.group_incremental import compile_relation
 
     data, profile, core, bundle, decision, formula = _compiled_case(
-        tmp_path, weak_correspondence=weak_correspondence)
+        tmp_path, weak_correspondence=weak_correspondence, implicit_use=implicit_use)
     try:
         compiled, plan = compile_relation(data, profile, core, bundle, decision)
         assert len(compiled.relations) == 1
@@ -340,5 +378,10 @@ def test_compile_relation_registers_definition_evidence_and_audit_with_original_
         assert len(formula_evidence) == 1
         assert formula_evidence[0]["raw_fragment"] == formula
         assert not formula_evidence[0]["raw_fragment_truncated"]
+        if implicit_use:
+            assert decision.source_quote == "经营利润卡片"
+            assert any(data.evidence[eid].get("source_ref", {}).get("column") == "purpose"
+                       and data.evidence[eid]["raw_fragment"] == "按地区和客户类型组合取数"
+                       for eid in audit["basis_evidence_ids"])
     finally:
         data.close()

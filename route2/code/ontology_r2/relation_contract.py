@@ -36,6 +36,16 @@ _DERIVED_CUES = {
 }
 _OPERAND_ROLES = frozenset(("minuend", "subtrahend", "numerator", "denominator",
                            "addend", "factor"))
+_PREDICATE_DEFINITIONS = {
+    "contains": "源对象包含目标对象。",
+    "depends_on": "源对象依赖目标对象。",
+    "related_to": "源对象与目标对象有关联。",
+    "points_to": "源对象指向目标对象。",
+    "calculation_dependency": "源对象的计算依赖目标操作数。",
+    "scope_constraint": "源对象与目标对象之间存在范围约束。",
+    "definition_reference": "源对象引用目标对象的定义。",
+    "has_member": "目标对象是源对象的成员。",
+}
 
 _CUES = {
     "contains": ("包含", "含有", "contains"),
@@ -75,6 +85,24 @@ def relation_semantic_parameters(parent, predicate_name=None, parameters=None):
                        or parameters["operand_role"] not in _OPERAND_ROLES):
         raise ValueError("Unsupported predicate semantic parameters")
     return dict(sorted(parameters.items()))
+
+
+def canonical_relation_definition(parent, predicate_name=None, parameters=None):
+    """Keep type semantics stable; individual model explanations are evidence."""
+    name = canonical_relation_label(parent, predicate_name)
+    parameters = relation_semantic_parameters(parent, predicate_name, parameters)
+    definition = _PREDICATE_DEFINITIONS[name]
+    if parameters:
+        definition += " 运算角色：" + parameters["operand_role"] + "。"
+    return definition
+
+
+def merge_relation_type_evidence(existing, proposed):
+    """Only evidence may accumulate; every declared semantic field must agree."""
+    if existing.model_dump(exclude={"evidence_ids"}) != proposed.model_dump(exclude={"evidence_ids"}):
+        raise ValueError("Conflicting relation type ID")
+    return existing.model_copy(update={
+        "evidence_ids": sorted(set(existing.evidence_ids) | set(proposed.evidence_ids))})
 
 
 def validate_calculation_parameter_evidence(parameters, formulas, target_names):
