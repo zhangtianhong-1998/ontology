@@ -202,7 +202,8 @@ class MetadataGraph:
                          and (ids is None or edge["source"] in ids or edge["target"] in ids)
                          and (statuses is None or edge.get("status") in statuses)])
 
-    def field_link_context(self, tables, fields, *, statuses=None):
+    def field_link_context(self, tables, fields, *, statuses=None, rule_id=None,
+                           with_coverage=False):
         """Project selected links before copying; keep audit references and counts.
 
         Table adjacency is indexed once. A prompt never copies unrelated links
@@ -210,7 +211,7 @@ class MetadataGraph:
         Link/rule IDs and snapshot IDs locate those complete reports on disk.
         """
         positions = {position for table in tables for position in self._field_edge_positions.get(table, ())}
-        selected = []
+        selected, available = [], 0
         keys = ("id", "rule_id", "candidate_id", "snapshot_id", "source", "target", "type", "status",
                 "selector", "scope_bindings", "transform", "evidence_ids", "source_ref",
                 "numeric_overlap_only", "risk_flags", "semantic_relation", "meaning", "lineage_inferred")
@@ -218,6 +219,11 @@ class MetadataGraph:
             edge = self._field_edges[position]
             if (edge["source"] not in fields or edge["target"] not in fields
                     or (statuses is not None and edge.get("status") not in statuses)):
+                continue
+            available += 1
+            # A relation packet judges one rule, not every conditional branch
+            # sharing its fields. Filter before copying validation evidence.
+            if rule_id is not None and edge.get("rule_id") != rule_id:
                 continue
             item = {key: deepcopy(edge[key]) for key in keys if key in edge}
             verification = edge.get("verification") or {}
@@ -229,6 +235,9 @@ class MetadataGraph:
                                         for eid in item.get("evidence_ids", [])
                                         if (evidence := self.graph.get("evidence", {}).get(eid)) is not None}
             selected.append(item)
+        if with_coverage:
+            return selected, {"available_links": available, "included_links": len(selected),
+                              "omitted_links": available - len(selected)}
         return selected
 
     def neighbors(self, table, *, edge_types=None, max_hops=1, statuses=None):

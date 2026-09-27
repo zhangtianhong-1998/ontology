@@ -1,6 +1,7 @@
 """A transformed match must survive evidence packaging, compilation and execution."""
 import asyncio
 import json
+from copy import deepcopy
 from pathlib import Path
 import pytest
 
@@ -8,6 +9,8 @@ from ontology_r2.association_rules import build_association_rules
 from ontology_r2.group_incremental import RelationBundleDecision, compile_relation
 from ontology_r2.incremental import direct_mapping
 from ontology_r2.instance_bundles import validate_bundle_options as _limits, _relation_bundle
+from ontology_r2.instance_bundles import _metadata_context, _size
+from ontology_r2.metadata_graph import MetadataGraph, build_metadata_graph
 from ontology_r2.relations import Extractor
 from ontology_r2.storage import Dataset, Sink, read_yaml
 from ontology_r2.value_aliases import propose_value_alias_candidates
@@ -19,6 +22,63 @@ PROFILE = read_yaml(Path(__file__).resolve().parents[1] / 'ontologies/internal_m
 class NoLLM:
     async def ask(self, *args, **kwargs):
         raise AssertionError('No per-record model call is allowed')
+
+
+def test_relation_packet_focuses_active_rule_without_dropping_witness_evidence(tmp_path):
+    root = tmp_path / 'input'
+    branches = {f'branch_{i}': '' for i in range(30)}
+    _table(root, 'endpoint', {'id': '主键', 'name': '名称', 'ref_value': '引用编码',
+                            'definition': '定义', 'area': '地区范围', **branches}, [
+        {'id': 's1', 'name': '收入输出', 'ref_value': '1', 'definition': '收入输出引用标准收入定义',
+         'area': 'CN', **dict.fromkeys(branches, 'active')},
+        {'id': 's2', 'name': '缺失输出', 'ref_value': 'missing', 'definition': '引用目标尚未存在',
+         'area': 'CN', **dict.fromkeys(branches, 'active')},
+    ])
+    _table(root, 'dictionary', {'id': '主键', 'name': '名称', 'code': '编码',
+                              'definition': '定义', 'market': '地区范围'}, [
+        {'id': 't1', 'name': '收入', 'code': '1', 'definition': '收入为已确认的销售总金额', 'market': 'CN'},
+    ])
+    work = tmp_path / 'work'; work.mkdir()
+    data = Dataset(root, work)
+    try:
+        proposals = [{'source': {'table': 'fruit.endpoint', 'field': 'ref_value'},
+                      'target': {'table': 'fruit.dictionary', 'field': 'code'},
+                      'selector': {field: 'active'}, 'scope_bindings': {'area': 'market'},
+                      'transform': 'identity'} for field in branches]
+        found = asyncio.run(build_association_rules(data, {'candidates': [], 'checks': []},
+                                                    {'proposals': proposals, 'max_explicit_validations': 40}))
+        rule = next(item for item in found['rules'] if item['selector'] == {'branch_0': 'active'})
+        assert len(found['rules']) == 31 and rule['status'] == 'observed_subset'
+        before_rule = deepcopy(rule)
+        baseline, reason = _relation_bundle(data, rule, _limits({'max_bundle_bytes': 24000}))
+        assert reason is None and baseline['examples']['counterexamples']
+        raw_graph = build_metadata_graph(data, found)
+        graph = MetadataGraph(raw_graph)
+        before_graph = deepcopy(graph.graph)
+        data.metadata_graph = graph
+        focused, reason = _relation_bundle(data, rule, _limits({'max_bundle_bytes': 24000}))
+        assert reason is None and _size(focused) < 24000
+        for key in ('rule', 'records', 'examples', 'technical_coverage'):
+            assert focused[key] == baseline[key]
+        old_context = _metadata_context(data, focused['records'])
+        unfiltered = {**focused, 'metadata_context': old_context}
+        assert _size(unfiltered) > 24000
+        context = focused['metadata_context']
+        assert context['tables'] == old_context['tables']
+        assert context['link_projection'] == {
+            'scope': 'active_rule_only', 'rule_id': rule['rule_id'],
+            'available_links': 30, 'included_links': 1, 'omitted_links': 29,
+            'complete_graph_artifact': 'meta_graph.yaml',
+            'omitted_scope': 'other_links_between_selected_record_fields'}
+        edge = context['field_links'][0]
+        assert edge['rule_id'] == rule['rule_id']
+        for key in ('selector', 'scope_bindings', 'transform', 'numeric_overlap_only', 'risk_flags'):
+            assert edge[key] == rule[key]
+        assert edge['verification']['checks'] == rule['verification']['checks']
+        assert focused['rule']['verification'] == before_rule['verification']
+        assert graph.graph == before_graph and rule == before_rule
+    finally:
+        data.close()
 
 
 def test_alias_to_checked_rule_to_witness_bundle_to_actual_assertion(tmp_path):

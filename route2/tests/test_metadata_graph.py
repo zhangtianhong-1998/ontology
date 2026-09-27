@@ -191,3 +191,30 @@ def test_packet_field_projection_uses_local_index_and_keeps_provenance():
     assert graph._field_edges[0]['selector']['kind'] == 'API'
     only_source = _metadata_context(SimpleNamespace(metadata_graph=graph), records[:1])
     assert only_source['field_links'] == []
+
+
+def test_active_rule_filters_sibling_evidence_before_deepcopy():
+    from types import SimpleNamespace
+    from ontology_r2.instance_bundles import _metadata_context
+
+    class NeverCopy:
+        def __deepcopy__(self, memo):
+            raise AssertionError('Unselected sibling rule evidence must not be copied')
+
+    edges = [
+        {'type': 'table_has_column', 'source': name, 'target': name + '.id'}
+        for name in ('s.left', 's.right')]
+    for rule_id in ('active', 'sibling'):
+        edges.append({'type': 'technical_link', 'source': 's.left.id', 'target': 's.right.id',
+                      'rule_id': rule_id, 'status': 'observed_subset',
+                      'verification': {'checks': {'unique_matches': 1}},
+                      'risk_flags': []})
+    graph = MetadataGraph({'nodes': [{'id': name, 'kind': 'Table'} for name in ('s.left', 's.right')],
+                           'edges': edges})
+    graph._field_edges[1]['risk_flags'] = [NeverCopy()]
+    records = [{'table': name, 'fields': {'reference': [{'column': 'id'}]}}
+               for name in ('s.left', 's.right')]
+    packet = _metadata_context(SimpleNamespace(metadata_graph=graph), records, active_rule_id='active')
+    assert [edge['rule_id'] for edge in packet['field_links']] == ['active']
+    assert packet['link_projection']['available_links'] == 2
+    assert packet['link_projection']['omitted_links'] == 1

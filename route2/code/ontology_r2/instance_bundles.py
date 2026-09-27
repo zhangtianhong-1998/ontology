@@ -247,20 +247,29 @@ def _select_seeds(pool, limit, *, population_by_root=None, population_by_table=N
     return selected
 
 
-def _metadata_context(data, records):
+def _metadata_context(data, records, *, active_rule_id=None):
     graph = getattr(data, "metadata_graph", None)
     if graph is None:
         return {"available": False}
     fields = {record["table"] + "." + entry["column"] for record in records
               for entries in record.get("fields", {}).values() for entry in entries}
     tables = sorted({record["table"] for record in records})
-    links = graph.field_link_context(tables, fields,
-                                     statuses={"declared", "checked_technical", "observed_subset"})
+    options = {"statuses": {"declared", "checked_technical", "observed_subset"}}
+    projection = {}
+    if active_rule_id is None:
+        links = graph.field_link_context(tables, fields, **options)
+    else:
+        links, coverage = graph.field_link_context(
+            tables, fields, rule_id=active_rule_id, with_coverage=True, **options)
+        projection["link_projection"] = {
+            "scope": "active_rule_only", "rule_id": active_rule_id,
+            **coverage, "complete_graph_artifact": "meta_graph.yaml",
+            "omitted_scope": "other_links_between_selected_record_fields"}
     table_nodes = [(name, graph.table(name) or {}) for name in tables]
     return {"tables": [{"id": name, "description": node.get("table_comment"),
                         "datahub_urn": node.get("datahub_urn")}
                        for name, node in table_nodes],
-            "field_links": links,
+            "field_links": links, **projection,
             "scope": "selected_record_fields_only; declarations_and_technical_links_are_not_business_predicates"}
 
 
@@ -416,7 +425,8 @@ def _relation_bundle(data, rule, limits):
                   "missing_in_input": check["checks"].get("missing_in_input", 0),
                   "missing_scope": check["checks"].get("missing_scope", 0),
                   "all_unique_matches_semantically_accepted": False}}
-    bundle["metadata_context"] = _metadata_context(data, bundle["records"])
+    bundle["metadata_context"] = _metadata_context(data, bundle["records"],
+                                                    active_rule_id=rule["rule_id"])
     # Prefer preserving a positive pair and its counterexample over a second pair.
     while _size(bundle) > limits["max_bundle_bytes"] and len(positives) > 1:
         removed = positives.pop()
