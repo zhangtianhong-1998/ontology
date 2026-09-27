@@ -16,7 +16,7 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from .column_roles import classify_columns
-from .concept_candidates import _field_roles
+from .concept_candidates import _field_roles, field_role_conflicts
 from .row_semantics import classify_row_purpose, profile_joint_distinct
 from .storage import digest, qi
 
@@ -25,7 +25,6 @@ _HAN = re.compile(r"[\u3400-\u9fff]+")
 _WORDS = re.compile(r"[a-z0-9]+")
 _REFERENCE = re.compile(r"(?:^|_)(?:code|id|key|source|target|ref|reference|type|field|value)(?:_|$)", re.I)
 _CONTENT_REFERENCE = re.compile(r"(?:^|_)(?:code|field|value)(?:_|$)", re.I)
-_IDENTIFIER_REFERENCE = re.compile(r"(?:^|_)(?:id|code|key|uuid|guid|no|number)(?:_|$)", re.I)
 _PURE_TECHNICAL = re.compile(r"(?:\d+(?:\.\d+)?|[0-9a-f]{16,}|\d{4}-\d\d-\d\d)", re.I)
 _CARD_ROLES = ("name", "alias", "description", "formula", "unit", "scope")
 
@@ -71,27 +70,10 @@ def _columns(table, max_unknown_fields_per_table):
         # are insufficient to construct a complete arithmetic expression.
         if name not in roles.setdefault("scope", []):
             roles["scope"].append(name)
-    proposed_names = {(item.get("column"), item.get("role"))
-                      for item in table.get("inferred_semantic_roles", ())
-                      if item.get("status") == "source_verified_role_candidate"
-                      and item.get("role") in ("name", "alias")}
-    metadata = {item["column_name"]: item for item in table["columns"]}
-    conflicting_roles = [(name, role) for role in ("name", "alias") for name in roles.get(role, ())
-                         if (name, role) in proposed_names and (
-                             name in table["pk"] or _IDENTIFIER_REFERENCE.search(name)
-                             or re.search(r"编号|编码|标识符|引用键|主键|外键",
-                                          str(metadata[name].get("column_comment") or "")))]
-    bindings = list(dict.fromkeys(name for name, _ in conflicting_roles))
-    # An observed code supports record lookup, not name equivalence. Keep its
-    # literal value in the card's references and full signature; only exclude
-    # the unproven name/alias role from definition-pattern scheduling. Other
-    # supported roles on the same source column remain unchanged.
-    for name, role in conflicting_roles:
-        roles[role].remove(name)
-    conflicts = [{"column": name, "proposed_role": role, "effective_role": "reference",
-                  "reason": "identifier_or_reference_value_does_not_prove_name_equivalence",
-                  "binding_only": True, "semantic_identity_claim": False}
-                 for name, role in conflicting_roles]
+    # Metadata heuristics and model proposals share the same key/content
+    # boundary. Forced references include PKs and bypass the preview cap.
+    conflicts = field_role_conflicts(table)
+    bindings = list(dict.fromkeys(item["column"] for item in conflicts if item["binding_only"]))
     selected = {column for columns in roles.values() for column in columns}
     reference = [item["column"] for item in classified
                  if item["role"] in ("semantic", "unknown") and item["column"] not in selected

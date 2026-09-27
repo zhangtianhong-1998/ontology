@@ -39,8 +39,20 @@ class FactFieldBindingDecision(Strict):
 
 
 _UNIT_MARKER = re.compile(
-    r"(?:单位\s*[：:]\s*([^，。；;、\s]+)|[（(]\s*([^（）()]+?)\s*[）)])"
+    r"(?:单位\s*(?:[：:]|为|是)\s*([^，。；;、\s（）()]+)|[（(]\s*([^（）()]+?)\s*[）)])"
 )
+# Without punctuation/copula, match a complete measurement token. Treating
+# every word after 单位 as a unit would misread 单位成本 or 单位名称.
+_COMPACT_UNIT_ATOM = (
+    r"(?:[百千万亿]?(?:元|美元|欧元|吨|千克|公斤|克|千米|公里|米|厘米|毫米|"
+    r"平方米|立方米|升|毫升|件|个|台|套|次|人|笔|单|箱|包|袋|辆|年|月|日|天|"
+    r"小时|分钟|秒)|[A-Za-zμµ°℃%‰][A-Za-z0-9μµ°℃%‰²³]*)"
+)
+_COMPACT_UNIT_MARKER = re.compile(
+    r"单位\s*(" + _COMPACT_UNIT_ATOM + r"(?:\s*[/·*]\s*" + _COMPACT_UNIT_ATOM
+    + r")*)(?=$|[，。；;、\s（）()])"
+)
+_MISSING_UNIT = {"无", "未知", "不详", "未注明", "待定", "null", "none", "n/a"}
 _WORD = re.compile(r"[a-z0-9]+|[\u3400-\u9fff]{2,}", re.I)
 _HAN = re.compile(r"[\u3400-\u9fff]")
 
@@ -50,10 +62,12 @@ def _norm(value):
 
 
 def _unit_from_comment(comment):
-    """Only an explicit parenthesized or `单位:` annotation counts as a unit."""
+    """Read literal declared units; retain conflicting declarations separately."""
+    text = str(comment or "")
     units = {_norm(match.group(1) or match.group(2))
-             for match in _UNIT_MARKER.finditer(str(comment or ""))}
-    return units
+             for match in _UNIT_MARKER.finditer(text)}
+    units.update(_norm(match.group(1)) for match in _COMPACT_UNIT_MARKER.finditer(text))
+    return units - _MISSING_UNIT
 
 
 def _root_of(item: DerivedType, by_id):

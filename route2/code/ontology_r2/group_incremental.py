@@ -82,6 +82,21 @@ def _named_business_object(records, label, quote):
     )
 
 
+def _explicitly_unrestricted(value):
+    """Accept a literal no-restriction declaration, never infer it from a place."""
+    text = str(value).strip()
+    if re.fullmatch(r"(?:all|unrestricted)[.!。]?", text, re.I):
+        return True
+    # Reject exceptions, conditions, negation and numeric bounds even when a
+    # sentence also says 不限. Unknown phrasing stays an unresolved role.
+    if re.search(r"排除|除|仅|只|但|然而|限于|不限于|非|不是|并非|必须|需要|若|如果|"
+                 r"按照|根据|且|不适用|禁止|[0-9]|\b(?:except|only|unless|but|not)\b", text, re.I):
+        return False
+    return bool(re.fullmatch(
+        r"(?:(?:不限|不限制|不限定)(?:[\u3400-\u9fff]+(?:[、，,和或及与][\u3400-\u9fff]+)*)?|无限制)[。.]?",
+        text))
+
+
 class RecordAlignmentDecision(Strict):
     record_id: str
     mapping_kind: Literal["exact", "narrower", "related", "unresolved"]
@@ -105,7 +120,7 @@ class ConceptBundleDecision(Strict):
     # Existing responses without this field remain instance-level candidates.
     ontology_level: Literal["type", "instance", "unresolved"] = "unresolved"
     scope: dict[str, str] = Field(default_factory=dict)
-    scope_roles: dict[str, Literal["applicability", "observation"]] = Field(default_factory=dict)
+    scope_roles: dict[str, Literal["applicability", "observation", "unrestricted"]] = Field(default_factory=dict)
     alignments: list[RecordAlignmentDecision] = Field(default_factory=list)
     reason: str = ""
 
@@ -370,6 +385,15 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
     effective_scope = {**exact_scope, **decision.scope}
     if not set(decision.scope_roles) <= set(effective_scope):
         raise ValueError("Scope role names a field absent from exact source definitions")
+    for key, role in decision.scope_roles.items():
+        if role != "unrestricted":
+            continue
+        value = effective_scope[key]
+        if not _explicitly_unrestricted(value) or not all(any(
+                source_role == "scope" and entry.get("column") == key
+                and not entry.get("truncated") and str(entry.get("value")) == value
+                for source_role, entry in _entries(record)) for record in exact_records):
+            raise ValueError("Unrestricted scope requires a complete explicit source declaration without exceptions")
     if decision.ontology_level == "type":
         if not all(record.get("kind") == "definition" for record in exact_records):
             raise ValueError("Type induction requires exact definition cards")
@@ -446,6 +470,9 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                "ontology_level": decision.ontology_level,
                "ontology_type_id": type_id,
                "scope": effective_scope, "applicability_scope": applicability,
+               "scope_roles": dict(decision.scope_roles),
+               "unrestricted_scope": {key: value for key, value in effective_scope.items()
+                                      if decision.scope_roles.get(key) == "unrestricted"},
                "observation_coordinates": coordinates,
                "unclassified_scope": {key: value for key, value in effective_scope.items()
                                       if key not in decision.scope_roles},
@@ -967,6 +994,9 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                 and concept["ontology_level"] in ("type", "instance")
                                 and old["ontology_level"] != concept["ontology_level"]):
                             raise ValueError("Conflicting ontology levels for one concept ID")
+                        if (old and old.get("ontology_type_id") and concept.get("ontology_type_id")
+                                and old["ontology_type_id"] != concept["ontology_type_id"]):
+                            raise ValueError("Conflicting scope roles for one concept ID")
                         if review:
                             cached_review = batch_reviews.get(bundle["bundle_id"])
                             if cached_review and cached_review["decision_digest"] == digest(decision.model_dump()):
@@ -1030,6 +1060,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                 old["ontology_level"] = concept["ontology_level"]
                                 old["ontology_type_id"] = concept["ontology_type_id"]
                                 old["applicability_scope"] = concept["applicability_scope"]
+                                old["scope_roles"] = concept["scope_roles"]
+                                old["unrestricted_scope"] = concept["unrestricted_scope"]
                                 old["observation_coordinates"] = concept["observation_coordinates"]
                                 old["unclassified_scope"] = concept["unclassified_scope"]
                         else:

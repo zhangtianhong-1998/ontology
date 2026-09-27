@@ -2,9 +2,11 @@ import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
 
+import pytest
+
 from ontology_r2.fact_observations import build_fact_observation_candidates
 from ontology_r2.fact_type_binding import (
-    _source_definition_evidence, bind_fact_observations,
+    _source_definition_evidence, _unit_from_comment, bind_fact_observations,
 )
 from ontology_r2.models import BuildPlan, DerivedType, SourceProperty
 from ontology_r2.pipeline import (add_fact_value_attributes, check_output,
@@ -114,6 +116,37 @@ class _LLM:
 def _bind(data, core, llm, **options):
     observed = build_fact_observation_candidates(data, **options.pop("observation_options", {}))
     return asyncio.run(bind_fact_observations(data, observed, core, llm, **options))
+
+
+@pytest.mark.parametrize("annotation", ["单位元", "单位：元", "单位为元", "单位是元", "（元）"])
+def test_literal_unit_annotations_bind_existing_metric(tmp_path, annotation):
+    data, core = _fixture(tmp_path, comment="经营利润金额，" + annotation)
+    try:
+        result = _bind(data, core, _LLM())
+        assert result["coverage"]["accepted_fields"] == 1
+        assert result["coverage"]["instances_created"] == 2
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize("comment", [
+    "单位成本", "单位价格", "计量单位名称", "组织单位", "单位不明", "收入金额", "单位元增长率",
+    "单位：未知", "单位为None", "单位是待定",
+])
+def test_non_unit_words_and_placeholders_do_not_declare_units(comment):
+    assert _unit_from_comment(comment) == set()
+
+
+def test_conflicting_literal_units_are_not_collapsed_or_converted(tmp_path):
+    assert _unit_from_comment("单位元，单位万元") == {"元", "万元"}
+    assert _unit_from_comment("均价，单位元/吨") == {"元/吨"}
+    data, core = _fixture(tmp_path, comment="经营利润金额，单位元，单位万元")
+    try:
+        result = _bind(data, core, _LLM())
+        assert result["instances"] == []
+        assert result["coverage"]["skipped_reasons"]["unit_missing_or_conflicting"] == 2
+    finally:
+        data.close()
 
 
 def test_one_field_call_instantiates_only_exact_observed_tuples_with_full_source_rows(tmp_path):

@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .column_roles import classify_columns
-from .concept_candidates import _field_roles
+from .concept_candidates import _field_roles, field_role_conflicts
 from .storage import qi
 
 
@@ -151,6 +151,10 @@ def _safe_columns(table):
                "technical_identifier"}
     profiles = {item["column"]: item for item in table.get("profiles", ())}
     already_named = {name for fields in _field_roles(table).values() for name in fields}
+    # Strong identifier/content conflicts are already resolved to bindings;
+    # do not spend another model call trying to rename a known source key.
+    already_named.update(item["column"] for item in field_role_conflicts(table)
+                         if item["binding_only"])
     selected = []
     for item in classify_columns(table):
         name = item["column"]
@@ -286,9 +290,11 @@ async def infer_column_role_candidates(data, llm, config=None):
         # Existing names do not settle other columns: opaque formulas, aliases
         # and scope fields still need bounded inspection.
         eligible = _safe_columns(table)
+        resolved_conflicts = field_role_conflicts(table)
         if not eligible:
             tables.append({"table": table_name, "status": "no_unclassified_columns",
-                           "reason": "no_safe_nonempty_unclassified_column", "candidates": []})
+                           "reason": "no_safe_nonempty_unclassified_column", "candidates": [],
+                           "role_conflicts": resolved_conflicts})
             continue
         if attempted >= limits["max_tables"]:
             tables.append({"table": table_name, "status": "unresolved",
@@ -307,7 +313,7 @@ async def infer_column_role_candidates(data, llm, config=None):
                 "sample_selection": "fixed_evenly_spaced_source_row_numbers",
                 "sample_fragment_omissions": omissions,
                 "input_rows": table["rows"], "candidates": [], "rejected": [],
-                "known_roles": _field_roles(table)}
+                "known_roles": _field_roles(table), "role_conflicts": resolved_conflicts}
         if not observed:
             tables.append({**base, "reason": "no_safe_observed_value_in_bounded_rows"})
             continue
@@ -345,9 +351,15 @@ async def infer_column_role_candidates(data, llm, config=None):
         table["inferred_semantic_roles"] = [item for item in prior
             if item.get("column") not in {new["column"] for new in accepted}] + accepted
         consumed_roles = _field_roles(table)
+        effective_conflicts = {(item["column"], item["proposed_role"]): item
+                               for item in field_role_conflicts(table)}
         for item in accepted:
+            conflict = effective_conflicts.get((item["column"], item["role"]))
+            if conflict:
+                item["effective_role"] = conflict["effective_role"]
+                item["role_conflict"] = conflict
             item["used_in_candidate_recall"] = item["column"] in consumed_roles.get(
-                item["role"], ()) or item["role"] in {
+                item["role"], ()) or conflict is not None or item["role"] in {
                     "business_time", "dimension_coordinate", "numeric_business_value",
                     "calculation_operator", "operand_reference"}
             item["consumer"] = ("row_semantics" if item["role"] in {

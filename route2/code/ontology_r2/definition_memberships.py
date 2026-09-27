@@ -31,8 +31,8 @@ def _read_rows(data, table_name, row_numbers, columns):
 def _semantic_columns(data, card):
     """Respect compiled card roles and retain known empty semantic fields."""
     # Start from the card compiler's effective fields. Supplementing known
-    # empty fields must never restore a model name/alias rejected by that
-    # compiler as an identifier binding.
+    # empty fields must never restore a metadata/model role rejected by that
+    # compiler as an identifier binding or a rule parameter.
     pairs = {(role, entry["column"]) for role, entries in card["fields"].items()
              if role in _SEMANTIC_ROLES for entry in entries}
     roles = _field_roles(data.tables[card["table"]])
@@ -41,7 +41,10 @@ def _semantic_columns(data, card):
     conflicts = {(item.get("proposed_role"), item.get("column"))
                  for item in card.get("role_conflicts", [])
                  if item.get("binding_only") and item.get("effective_role") == "reference"
-                 and item.get("proposed_role") in ("name", "alias")}
+                 and item.get("proposed_role") in ("name", "alias", "formula")}
+    conflicts.update(("formula", item.get("column")) for item in card.get("role_conflicts", [])
+                     if item.get("proposed_role") == "formula" and item.get("effective_role") == "scope"
+                     and item.get("formula_status") == "fragment")
     # Older cards named only alias exclusions. Do not infer a name conflict
     # from a column-wide list; a valid name or scope on that column survives.
     if not card.get("role_conflicts"):

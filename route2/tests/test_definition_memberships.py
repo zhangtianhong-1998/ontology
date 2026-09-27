@@ -228,7 +228,7 @@ def test_demoted_code_alias_keeps_independent_memberships_and_pending_references
         data.close()
 
 
-def test_binding_exclusion_removes_only_alias_role_not_name_or_scope(tmp_path):
+def test_identifier_conflict_removes_name_and_alias_but_not_scope(tmp_path):
     data, index, group = _fixture(tmp_path)
     try:
         table = data.tables['fruit.measure_definition']
@@ -239,7 +239,9 @@ def test_binding_exclusion_removes_only_alias_role_not_name_or_scope(tmp_path):
         card['binding_columns_excluded_from_semantic_pattern'] = ['reference_code']
         pairs = _semantic_columns(data, card)
         assert ('alias', 'reference_code') not in pairs
-        assert ('name', 'reference_code') in pairs
+        # The source identifier declaration now resolves both conflicting
+        # roles before card-specific legacy exclusions are considered.
+        assert ('name', 'reference_code') not in pairs
         assert ('scope', 'reference_code') in pairs
         card['role_conflicts'] = [{'column': 'reference_code', 'proposed_role': role,
                                    'effective_role': 'reference', 'binding_only': True}

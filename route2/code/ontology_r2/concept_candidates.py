@@ -21,15 +21,16 @@ ROLE_CUES = {
     "unit": (r"(?:^|_)(?:unit|uom)(?:_|$)", r"单位|量纲"),
     "scope": (r"(?:^|_)(?:scope|domain|region|area|range|applicable|period)(?:_|$)", r"范围|适用|业务域|地区|区域|周期"),
 }
+_IDENTIFIER_SUFFIX = re.compile(r"(?:^|_)(?:id|code|key|uuid|guid|no|number)$", re.I)
+_IDENTIFIER_DECLARATION = re.compile(
+    r"(?:编号|编码|标识符|引用键|主键|外键)(?:[，,;；。.\s]|$)|"
+    r"\b(?:identifier|primary key|foreign key|reference key)\b", re.I)
+_RULE_PARAMETER = re.compile(
+    r"(?:^|_)(?:rule|formula|expression|calculation)_(?:type|kind|mode|operator)$", re.I)
 
 
-def _field_roles(table):
-    """Retain source-backed role candidates before bounded packet selection.
-
-    A per-role slot cap can discard the only business name or a distinguishing
-    condition. Card identity therefore uses all eligible metadata and checked
-    model candidates; the later packet byte limit bounds model input.
-    """
+def _raw_field_roles(table):
+    """Collect metadata and source-checked candidates before conflict resolution."""
     profiles = {item["column"]: item for item in table.get("profiles", [])}
     excluded = set(table.get("semantic_excluded_columns") or ())
     selected = defaultdict(list)
@@ -64,6 +65,55 @@ def _field_roles(table):
             continue
         selected[role].append(name)
     return dict(selected)
+
+
+def field_role_conflicts(table, roles=None):
+    """Resolve strong declaration conflicts without discarding source fields.
+
+    A key's semantic-looking prefix does not make its value a name or formula.
+    Only identifier declarations/suffixes trigger this boundary; a primary key
+    alone and a numeric-looking value do not. Rule contents remain candidates.
+    """
+    roles = _raw_field_roles(table) if roles is None else roles
+    columns = {item["column_name"]: item for item in table["columns"]}
+    table_name = table.get("name") or ".".join(filter(None, (
+        table.get("schema"), table.get("table_name"))))
+    conflicts = []
+    for role in ("name", "alias", "formula"):
+        for field in roles.get(role, ()):
+            column = columns[field]
+            normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", field).casefold()
+            identifier_name = bool(_IDENTIFIER_SUFFIX.search(normalized))
+            identifier_declared = bool(_IDENTIFIER_DECLARATION.search(str(column.get("column_comment") or "")))
+            base = {"column": field, "proposed_role": role,
+                    "schema_evidence_id": f"schema:{table_name}:{field}",
+                    "resolution_origin": "source_declaration_conflict",
+                    "semantic_identity_claim": False}
+            if identifier_name or identifier_declared:
+                conflicts.append({**base, "effective_role": "reference", "binding_only": True,
+                    "reason": "identifier_declaration_does_not_support_name_alias_or_formula",
+                    "identifier_name": identifier_name, "identifier_declared": identifier_declared,
+                    "declared_primary_key": field in table.get("pk", ())})
+            elif role == "formula" and _RULE_PARAMETER.search(normalized):
+                conflicts.append({**base, "effective_role": "scope", "binding_only": False,
+                    "formula_status": "fragment", "parameter_role": "rule_parameter",
+                    "reason": "rule_type_or_mode_is_a_parameter_not_complete_rule_content"})
+    return conflicts
+
+
+def _field_roles(table):
+    """Retain all supported roles, resolving strong key/content conflicts first.
+
+    No per-role slots discard business fields. Resolved bindings remain in
+    card references; rule parameters remain in scope and pattern identity.
+    """
+    selected = _raw_field_roles(table)
+    for conflict in field_role_conflicts(table, selected):
+        field, role = conflict["column"], conflict["proposed_role"]
+        selected[role].remove(field)
+        if conflict["effective_role"] == "scope" and field not in selected.setdefault("scope", []):
+            selected["scope"].append(field)
+    return {role: fields for role, fields in selected.items() if fields}
 
 
 def _name_cues(value):

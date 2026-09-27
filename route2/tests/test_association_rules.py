@@ -1,12 +1,133 @@
 """Association DSL and full-input verification stay separate from semantics."""
 
 import asyncio
+import copy
+import json
 
 import duckdb
 
 from ontology_r2.association_rules import _select_agent_candidates, build_association_rules
 from ontology_r2.discovery import discover_and_check, validate_candidate
 from ontology_r2.storage import qi
+
+
+class ReplayLLM:
+    """Exercise the real AgentScope messages/formatter without a provider call."""
+
+    mode = "mock"
+
+    def __init__(self, rounds, input_limit=100000):
+        self.config = {"max_input_bytes": input_limit, "max_output_tokens": 4096}
+        self.responses = {"association_react_script": [{"calls": calls} for calls in rounds]}
+        self.requests, self.events = [], []
+
+    def admit(self, request):
+        from ontology_r2.llm import BudgetExceeded
+        if len(json.dumps(request, ensure_ascii=False, default=str).encode()) > self.config["max_input_bytes"]:
+            raise BudgetExceeded("test input admission exceeded")
+        self.requests.append(request)
+
+    def trace(self, event):
+        self.events.append(event)
+
+
+def submit_empty():
+    return {"name": "GenerateStructuredOutput", "input": {"proposals": [], "remaining_gaps": []}}
+
+
+def describe(cid="lead-1"):
+    return {"name": "describe_candidate", "input": {"candidate_id": cid}}
+
+
+def test_eight_describes_fit_real_agentscope_context_without_dropping_full_checks():
+    # The old tool repeated both 40-column schemas eight times, exceeding 100 KB.
+    source = ["ref", *[f"source_col_{i}" for i in range(39)]]
+    target = ["code", *[f"target_col_{i}" for i in range(39)]]
+    data = Rows({"demo.source": (source, [("A", *["x"] * 39)]),
+                 "demo.target": (target, [("A", *["x"] * 39)])})
+    try:
+        for table in data.tables.values():
+            for col in table["columns"]:
+                col.update(column_comment="字段定义及说明。" * 4, data_type="character varying(255)")
+        leads = [{**candidate(), "candidate_id": f"lead-{i}"} for i in range(8)]
+        checks = [validate_candidate(data, lead) for lead in leads]
+        original_checks = copy.deepcopy(checks)
+        llm = ReplayLLM([[describe(lead["candidate_id"]) for lead in leads], [submit_empty()]])
+        result = asyncio.run(build_association_rules(data, {"candidates": leads, "checks": checks}, {
+            "agent_enabled": True, "max_agent_candidates": 8,
+            "max_agent_model_calls": 2, "max_agent_tool_calls": 8,
+            "max_agent_tools_per_round": 8, "max_agent_tool_response_bytes": 16000}, llm))
+        assert result["agent"]["status"] == "completed"
+        assert result["agent"]["tool_calls"] == 8
+        assert len(llm.requests) == 2
+        assert max(result["agent"]["context_bytes"]) < 70000
+        assert all(item["result_bytes"] <= 4096 for item in result["agent"]["tool_results"])
+        request_text = json.dumps(llm.requests[-1], ensure_ascii=False, default=str)
+        assert 'omitted_column_descriptions' in request_text
+        assert 'association_checks.yaml' in request_text
+        assert checks == original_checks
+        assert all(rule["verification"]["checks"] == checks[i]["checks"]
+                   for i, rule in enumerate(result["rules"]))
+        assert [tool["function"]["name"] for tool in llm.requests[-1]["tools"]] == ["GenerateStructuredOutput"]
+        assert 'auto' in llm.requests[-1]["tool_choice"]
+    finally:
+        data.close()
+
+
+def test_three_round_budget_preserves_submit_and_persists_unproposed_full_check():
+    data = Rows({"demo.source": (["ref"], [("A",), ("unknown",)]),
+                 "demo.target": (["code"], [("A",)])})
+    try:
+        llm = ReplayLLM([[describe()], [{"name": "test_match", "input": {"candidate_id": "lead-1"}}, describe()],
+                         [submit_empty()]])
+        result = asyncio.run(build_association_rules(data, {"candidates": [candidate()], "checks": []}, {
+            "agent_enabled": True, "max_agent_model_calls": 3, "max_agent_tool_calls": 2,
+            "max_agent_full_scans": 1}, llm))
+        assert result["agent"]["status"] == "completed"
+        assert result["agent"]["model_calls"] == 3
+        assert result["agent"]["tool_calls"] == 2
+        assert result["agent"]["full_scans"] == 1
+        assert result["agent"]["pending_tool_requests"][0]["reason"] == "tool_call_budget"
+        assert result["coverage"]["partial"]
+        check = next(iter(result["agent_checks"].values()))
+        assert check["checks"]["eligible_references"] == 2
+        assert check["checks"]["missing_in_input"] == 1
+        assert check["checks"]["counterexample_rows"][0]["reason"] == "missing_in_input"
+        assert [tool["function"]["name"] for tool in llm.requests[-1]["tools"]] == ["GenerateStructuredOutput"]
+        assert 'auto' in llm.requests[-1]["tool_choice"]
+        assert 'submission_required' in json.dumps(llm.requests[-1], ensure_ascii=False, default=str)
+    finally:
+        data.close()
+
+
+def test_round_tool_limit_reports_pending_and_does_not_abort_submission():
+    data = Rows({"demo.source": (["ref"], [("A",)]), "demo.target": (["code"], [("A",)])})
+    try:
+        llm = ReplayLLM([[describe()] * 8, [submit_empty()]])
+        result = asyncio.run(build_association_rules(data, {"candidates": [candidate()], "checks": []}, {
+            "agent_enabled": True, "max_agent_model_calls": 3, "max_agent_tool_calls": 12}, llm))
+        assert result["agent"]["status"] == "completed"
+        assert result["agent"]["tool_calls"] == 4
+        assert result["agent"]["tool_requests"] == 8
+        assert result["agent"]["pending_tool_requests"][0]["reason"] == "round_tool_call_budget"
+        assert len([r for r in result["agent"]["tool_results"] if r["summary_status"] == 'deferred_by_budget']) == 4
+    finally:
+        data.close()
+
+
+def test_budget_failure_reports_reason_and_measured_bytes():
+    data = Rows({"demo.source": (["ref"], [("A",)]), "demo.target": (["code"], [("A",)])})
+    try:
+        llm = ReplayLLM([[submit_empty()]], input_limit=100)
+        result = asyncio.run(build_association_rules(data, {"candidates": [candidate()], "checks": []}, {
+            "agent_enabled": True}, llm))
+        assert result["agent"]["status"] == "budget_exhausted"
+        error = next(event for event in llm.events if event['stage'] == 'association_react_error')
+        assert 'bytes' in error['reason']
+        assert error['context_bytes'][0] > error['max_input_bytes'] == 100
+        assert result["agent"]["model_calls"] == 0
+    finally:
+        data.close()
 
 
 class Rows:
