@@ -1,4 +1,5 @@
 import csv
+import sqlite3
 
 from ontology_r2.semantic_cards import SemanticCardIndex, build_semantic_cards
 from ontology_r2.column_roles import classify_columns
@@ -47,6 +48,48 @@ def _dataset(tmp_path):
     work = tmp_path / "work"
     work.mkdir()
     return Dataset(root, work)
+
+
+@pytest.mark.parametrize("legacy_cache", [False, True])
+def test_record_lookup_index_preserves_rows_and_legacy_first_card(tmp_path, legacy_cache):
+    data = _dataset(tmp_path)
+    path = tmp_path / "cards.sqlite"
+    try:
+        build_semantic_cards(data, path)
+        with sqlite3.connect(path) as db:
+            assert "card_sources_record" in {row[1] for row in db.execute("PRAGMA index_list(card_sources)")}
+            if legacy_cache:
+                db.execute("DROP INDEX card_sources_record")
+            card_ids = [row[0] for row in db.execute("SELECT card_id FROM cards ORDER BY card_id")]
+            record_id, row_number = db.execute("SELECT record_id,row_number FROM card_sources LIMIT 1").fetchone()
+            # A record may have several card bindings. Retain the former
+            # card-first covering index's first result after adding the index.
+            db.executemany("INSERT OR IGNORE INTO card_sources VALUES (?,?,?)",
+                           [(card_id, record_id, row_number) for card_id in reversed(card_ids)])
+            expected = db.execute("SELECT card_id FROM card_sources "
+                                  "INDEXED BY sqlite_autoindex_card_sources_1 WHERE record_id=?",
+                                  (record_id,)).fetchone()[0]
+            tables = ("cards", "aliases", "card_sources", "card_fts", "metadata")
+            before = {table: db.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall()
+                      for table in tables}
+        sources = {p: p.read_bytes() for p in (tmp_path / "input").rglob("*") if p.is_file()}
+        index = SemanticCardIndex(path)
+        try:
+            query = "SELECT card_id FROM card_sources WHERE record_id=? ORDER BY card_id LIMIT 1"
+            assert index.db.execute(query, (record_id,)).fetchone()[0] == expected == min(card_ids)
+            plan = " ".join(row[3] for row in index.db.execute("EXPLAIN QUERY PLAN " + query, (record_id,)))
+            assert "SEARCH card_sources USING COVERING INDEX card_sources_record (record_id=?)" in plan
+            assert "SCAN" not in plan and "TEMP B-TREE" not in plan
+            assert {table: [tuple(row) for row in index.db.execute(f"SELECT * FROM {table} ORDER BY rowid")]
+                    for table in tables} == before
+            assert index.coverage["rows_scanned"] == 6
+        finally:
+            index.close()
+        with sqlite3.connect(path) as db:
+            assert "card_sources_record" in {row[1] for row in db.execute("PRAGMA index_list(card_sources)")}
+        assert all(p.read_bytes() == value for p, value in sources.items())
+    finally:
+        data.close()
 
 
 def test_full_scan_dedup_scope_short_chinese_and_unknown_fallback(tmp_path):

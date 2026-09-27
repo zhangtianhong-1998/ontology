@@ -18,7 +18,8 @@ def _size(value):
     return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
 
 
-def _limits(options):
+def validate_bundle_options(options):
+    """Validate one shared budget contract before import or model work."""
     defaults = {"max_concept_bundles": 12, "max_relation_bundles": 12,
                 "max_seeds_per_table": 8, "lexical_top_k": 8,
                 "max_candidates_per_bundle": 3, "max_bundle_bytes": 16000,
@@ -35,6 +36,11 @@ def _limits(options):
         raise ValueError("Bundle bytes and candidate count are too small")
     if not 1 <= limits["max_pattern_seed_pool"] <= 10000:
         raise ValueError("max_pattern_seed_pool must be 1..10000")
+    if limits["max_concept_bundles"] > 10000:
+        raise ValueError("max_concept_bundles must be 0..10000")
+    seed_window_index = options.get("seed_window_index", 0)
+    if type(seed_window_index) is not int or not 0 <= seed_window_index <= 1000000:
+        raise ValueError("seed_window_index must be an integer in 0..1000000")
     return limits
 
 
@@ -463,18 +469,14 @@ def _reference_priority(rule):
     return score
 
 
-def build_instance_bundles(data, index, association, options=None, *, embedding=None):
+def build_instance_bundles(data, index, association, options=None, *, embedding=None, progress=None):
     """Build auditable packets without per-row LLM calls or similarity-as-fact."""
     options = options or {}
-    limits = _limits(options)
+    limits = validate_bundle_options(options)
     vector_pool, vector_report = _vector_pool(
         index, limits, embedding, options.get("vector_enabled", False))
     bundles, skipped = [], []
-    if limits["max_concept_bundles"] > 1000:
-        raise ValueError("max_concept_bundles exceeds the bounded seed selector")
     seed_window_index = options.get("seed_window_index", 0)
-    if type(seed_window_index) is not int or not 0 <= seed_window_index <= 1000000:
-        raise ValueError("seed_window_index must be an integer in 0..1000000")
     total_definition = index.db.execute("SELECT count(*) FROM cards WHERE kind='definition'").fetchone()[0]
     definition_by_table = ({row[0]: row[1] for row in index.db.execute(
         "SELECT table_name, count(*) FROM cards WHERE kind='definition' GROUP BY table_name ORDER BY table_name")}
@@ -514,14 +516,17 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
     concept_bundles = 0
     exact_duplicate_seeds = 0
     singleton_bundles = 0
+    concept_progress = progress.task("组装概念证据包", len(seeds)) if progress else None
     joined = JoinedDefinitionContext(data, index, association, seeds,
         max_records_per_seed=limits["max_joined_context_records"],
         max_rules=limits["max_joined_context_rules"],
-        max_value_chars=limits["max_joined_context_value_chars"])
+        max_value_chars=limits["max_joined_context_value_chars"], progress=progress)
     for seed in seeds:
         if concept_bundles >= limits["max_concept_bundles"]:
             break
         concept_seeds_inspected += 1
+        if concept_progress:
+            concept_progress.advance(detail=seed["table"])
         signature = _exact_evidence_signature(seed)
         if signature in concept_signatures:
             exact_duplicate_seeds += 1
@@ -554,6 +559,8 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
             skipped.append({"seed_id": seed["card_id"], "reason": reason})
     joined_coverage = joined.coverage()
     joined.close()
+    if concept_progress:
+        concept_progress.close()
     checked_rules = sum(item["status"] in ("checked_technical", "observed_subset")
                         for item in association.get("rules", []))
     # Inspect additional checked rules when an earlier one is only a concept
@@ -563,10 +570,13 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
     relation_bundles = 0
     relation_signatures = set()
     exact_duplicate_rules = 0
+    relation_progress = progress.task("组装关系证据包", len(ordered_rules)) if progress else None
     for rule in ordered_rules:
         if relation_bundles >= limits["max_relation_bundles"]:
             break
         rules.append(rule)
+        if relation_progress:
+            relation_progress.advance(detail=rule["rule_id"])
         relation_signature = _exact_relation_signature(rule)
         if relation_signature in relation_signatures:
             exact_duplicate_rules += 1
@@ -579,6 +589,8 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
             relation_signatures.add(relation_signature)
         else:
             skipped.append({"seed_id": rule["rule_id"], "reason": reason})
+    if relation_progress:
+        relation_progress.close()
     seeded_by_table = defaultdict(int)
     for seed in seeds[:concept_seeds_inspected]:
         seeded_by_table[seed["table"]] += 1

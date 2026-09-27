@@ -24,7 +24,7 @@ from .fact_type_binding import bind_fact_observations
 from .fact_schema_induction import induce_fact_schema
 from .group_incremental import construct_from_bundles
 from .incremental import construct, ontology_from_plan
-from .instance_bundles import build_instance_bundles
+from .instance_bundles import build_instance_bundles, validate_bundle_options
 from .llm import BudgetExceeded, StructuredLLM
 from .progress import ProgressReporter
 from .record_types import source_record_type
@@ -183,6 +183,8 @@ async def build(config, output):
     manifest.update(input_root=config["dataset"], experiment_profile=config.get("experiment_profile"), source_channels={"mcp": config.get("mcp", {}).get("enabled", False), "external": config.get("external", {}).get("enabled", False)}, runtime_limits={"llm": {k: v for k, v in config["llm"].items() if k.startswith("max_") or k in ("mode", "timeout_seconds")}, "processing": config.get("processing", {}), "memory_limit": config.get("memory_limit", "1GB")})
     try:
         progress = ProgressReporter(config.get("progress"))
+        if config.get("instance_bundles", {}).get("enabled", False):
+            validate_bundle_options(config["instance_bundles"])
         load_dotenv(config.get("env_file"), override=False)
         profile = read_yaml(config["model_profile"])
         profiling = {**config.get("profiling", {}), "input_scope": config.get("data_scope", "unknown")}
@@ -352,7 +354,7 @@ async def build(config, output):
                     if vector_settings["enabled"]:
                         vector_model = LocalEmbedder(vector_settings)
                 packet_result = build_instance_bundles(data, index, association, options,
-                                                       embedding=vector_model)
+                                                       embedding=vector_model, progress=progress)
             finally:
                 index.close()
             bundle_report = packet_result["coverage"]

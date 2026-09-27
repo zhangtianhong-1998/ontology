@@ -31,6 +31,19 @@ def items(output, kind):
     return [item for file in sorted((output / kind).glob("part-*.yaml")) for item in read_yaml(file)]
 
 
+def test_invalid_packet_budget_fails_before_import_or_llm(tmp_path, monkeypatch):
+    config = setup(tmp_path, 'unrelated', mcp=False)
+    config['instance_bundles'] = {'enabled': True, 'max_concept_bundles': 10001}
+    def forbidden(*args, **kwargs):
+        pytest.fail('Invalid configuration must not import data or initialize a model')
+    monkeypatch.setattr('ontology_r2.pipeline.Dataset', forbidden)
+    monkeypatch.setattr('ontology_r2.pipeline.StructuredLLM', forbidden)
+    manifest = asyncio.run(build(config, tmp_path / 'run'))
+    assert manifest['status'] == 'failed'
+    assert manifest['error']['type'] == 'ValueError'
+    assert 'max_concept_bundles' in manifest['error']['message']
+
+
 def link_rows(output):
     objects = {x["id"]: x for x in items(output, "objects")}
     return {(objects[a["subject"]]["source_ref"]["row"], objects[a["object"]]["source_ref"]["row"]) for a in items(output, "assertions") if "object" in a}

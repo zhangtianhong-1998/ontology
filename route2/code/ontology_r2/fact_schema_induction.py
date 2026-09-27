@@ -7,6 +7,7 @@ anchors. Missing calculation rules and units remain explicitly unknown.
 
 import json
 import re
+from copy import deepcopy
 from typing import Literal
 
 from pydantic import Field
@@ -85,8 +86,15 @@ def _checked_links(data, table_name, association_context):
         a, b = owners.get(edge.get("source")), owners.get(edge.get("target"))
         if table_name in (a, b):
             neighbors.update(name for name in (a, b) if name and name != table_name)
-            links.append({key: edge.get(key) for key in ("source", "target", "status", "selector",
-                                                         "scope_bindings", "transform", "semantic_relation")})
+            # These are recall leads, not type identity evidence. Keep their
+            # risks and full verification in both the prompt and reusable
+            # contract fingerprint; a changed risk must invalidate reuse.
+            links.append({key: deepcopy(edge[key]) for key in (
+                "source", "target", "status",
+                "selector", "scope_bindings", "transform", "semantic_relation",
+                "numeric_overlap_only", "risk_flags", "verification", "meaning",
+                "lineage_inferred",
+            ) if key in edge})
     return sorted(links, key=digest), neighbors
 
 

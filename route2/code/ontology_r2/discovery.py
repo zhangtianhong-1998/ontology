@@ -634,6 +634,13 @@ def _ratio(numerator, denominator):
 TRANSFORMS = {"identity", "nfkc_whitespace_casefold", "source_alias_items",
               "target_alias_items", "both_alias_items"}
 
+# Python str.strip() also removes control and Unicode whitespace which DuckDB's
+# one-argument trim does not. This controlled literal only tests emptiness: the
+# identity key itself remains the complete, unmodified source string.
+_PYTHON_STRIP_CHARACTERS = ("\t\n\v\f\r\x1c\x1d\x1e\x1f \x85\xa0\u1680"
+                            "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+                            "\u2028\u2029\u202f\u205f\u3000")
+
 
 def _match_keys(value, operator):
     """The executable meaning of the allowlisted transform DSL."""
@@ -667,13 +674,22 @@ def _matching_ctes(data, candidate, selector=None, scope_bindings=None, transfor
     for target_col, source_col in pairs:
         _checked_field(data, source["table"], source_col)
         _checked_field(data, target["table"], target_col)
-    if not data.db.execute("SELECT count(*) FROM duckdb_functions() WHERE function_name='__r2_match_keys'").fetchone()[0]:
+    if transform != "identity" and not data.db.execute(
+            "SELECT count(*) FROM duckdb_functions() WHERE function_name='__r2_match_keys'").fetchone()[0]:
         data.db.create_function("__r2_match_keys", _match_keys,
                                 ["VARCHAR", "VARCHAR"], "VARCHAR[]")
     source_op = "alias_items" if transform in {"source_alias_items", "both_alias_items"} else (
         "identity" if transform == "identity" else "normalized")
     target_op = "alias_items" if transform in {"target_alias_items", "both_alias_items"} else (
         "identity" if transform == "identity" else "normalized")
+    if transform == "identity":
+        # Avoid Python list conversion for the common equality-only path.
+        tokens = {side: f"SELECT *, ref AS key FROM {side}_values "
+                        f"WHERE trim(ref, '{_PYTHON_STRIP_CHARACTERS}') <> ''"
+                  for side in ("source", "target")}
+    else:
+        tokens = {side: f"SELECT *, unnest(__r2_match_keys(ref, '{operator}')) AS key FROM {side}_values"
+                  for side, operator in (("source", source_op), ("target", target_op))}
     source_scope = ''.join(f', s.{qi(sc)} AS scope_{i}' for i, (_, sc) in enumerate(pairs))
     target_scope = ''.join(f', t.{qi(tc)} AS scope_{i}' for i, (tc, _) in enumerate(pairs))
     source_usable = ' AND '.join(f"s.{qi(sc)} IS NOT NULL AND trim(s.{qi(sc)}) <> ''"
@@ -701,9 +717,9 @@ def _matching_ctes(data, candidate, selector=None, scope_bindings=None, transfor
         FROM target_rows WHERE scope_usable AND ref IS NOT NULL AND trim(ref) <> ''
         GROUP BY ref {scope_group}
     ), source_tokens AS (
-        SELECT *, unnest(__r2_match_keys(ref, '{source_op}')) AS key FROM source_values
+        {tokens['source']}
     ), target_tokens AS (
-        SELECT *, unnest(__r2_match_keys(ref, '{target_op}')) AS key FROM target_values
+        {tokens['target']}
     ), target_keys AS (
         SELECT key {scope_group}, sum(multiplicity) AS multiplicity,
                min(row_number) AS target_row_number

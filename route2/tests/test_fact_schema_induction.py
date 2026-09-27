@@ -1,9 +1,11 @@
 import asyncio
+from copy import deepcopy
 
 import pytest
 
 from ontology_r2.fact_observations import build_fact_observation_candidates
-from ontology_r2.fact_schema_induction import induce_fact_schema
+from ontology_r2.fact_schema_induction import (_packet, compile_fact_schema,
+                                               induce_fact_schema)
 from ontology_r2.fact_type_binding import bind_fact_observations
 from ontology_r2.models import BuildPlan
 from ontology_r2.storage import Dataset, read_yaml, write_yaml
@@ -238,6 +240,71 @@ def test_changed_checked_association_condition_invalidates_template(tmp_path):
                              association_context=graph("SOUTH"))
         assert len(llm.calls) == 1 and changed["coverage"]["reused_templates"] == 0
         assert llm.calls[0]["checked_association_conditions"][0]["selector"] == {"source": {"region_code": "SOUTH"}}
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize("change", [
+    {"numeric_overlap_only": True},
+    {"risk_flags": ["numeric_value_coincidence"]},
+    {"verification": {"scan_scope": "full_input", "checks": {"unique_matches": 1}}},
+    {"meaning": "changed_technical_match_scope"},
+    {"lineage_inferred": True},
+])
+def test_association_risk_and_verification_are_preserved_and_invalidate_reuse(tmp_path, change):
+    data = _dataset(tmp_path)
+    try:
+        edge = {"type": "technical_link", "status": "checked_technical", "snapshot_id": data.snapshot_id,
+                "source": "fruit.sales_fact.id", "target": "fruit.definitions.id",
+                "selector": {}, "scope_bindings": {}, "transform": {"operator": "identity"},
+                "semantic_relation": "unresolved", "numeric_overlap_only": False, "risk_flags": [],
+                "verification": {"scan_scope": "full_input", "checks": {"unique_matches": 2}},
+                "meaning": "checked_field_association_only", "lineage_inferred": False}
+        graph = {"edges": [
+            {"type": "table_has_column", "source": "fruit.sales_fact", "target": "fruit.sales_fact.id"},
+            {"type": "table_has_column", "source": "fruit.definitions", "target": "fruit.definitions.id"}, edge]}
+        _, initial = _induce(data, _LLM(), association_context=graph)
+        changed_graph = deepcopy(graph)
+        changed_graph["edges"][-1].update(change)
+        llm = _LLM()
+        _, changed = _induce(data, llm, association_context=changed_graph,
+                             reusable_templates=initial["field_templates"])
+        assert len(llm.calls) == 1 and changed["coverage"]["reused_templates"] == 0
+        packet = llm.calls[0]
+        link = packet["checked_association_conditions"][0]
+        for key in ("numeric_overlap_only", "risk_flags", "verification", "meaning", "lineage_inferred"):
+            assert link[key] == changed_graph["edges"][-1][key]
+        assert packet["contract_fingerprint"] != initial["field_templates"][0]["contract_fingerprint"]
+        # Prompt consumers cannot mutate the source graph's risk evidence.
+        link["risk_flags"].append("prompt_only_mutation")
+        assert "prompt_only_mutation" not in changed_graph["edges"][-1]["risk_flags"]
+        assert changed["plan"].object_types[0].semantic_parameters["identity_basis"] == "source_field_declaration"
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize("borrow_identity_id", [False, True])
+def test_numeric_neighbor_definition_cannot_supply_fact_type_identity(tmp_path, borrow_identity_id):
+    data = _dataset(tmp_path, field="value", comment="观测数值")
+    try:
+        observed = build_fact_observation_candidates(data)
+        report = observed["tables"][0]
+        packet = _packet(data, report, report["value_fields"][0], BuildPlan(), {}, 5)
+        packet["checked_association_conditions"] = [{
+            "source": "fruit.sales_fact.id", "target": "fruit.definitions.id",
+            "status": "checked_technical", "numeric_overlap_only": True,
+            "risk_flags": ["numeric_value_coincidence"], "semantic_relation": "unresolved"}]
+        packet["associated_definitions"] = [{
+            "type_id": "neighbor:revenue", "label": "水果销售收入",
+            "definition": "水果销售收入", "source_definitions": [{
+                "evidence_id": "neighbor:description", "role": "description", "value": "水果销售收入"}]}]
+        source = packet["source_declaration"]
+        decision = {"status": "proposed", "label": "水果销售收入",
+                    "identity_evidence_id": "neighbor:description" if borrow_identity_id else source["evidence_id"],
+                    "identity_quote": "水果销售收入" if borrow_identity_id else source["value"],
+                    "business_object_quote": "水果", "quantity_quote": "销售收入"}
+        with pytest.raises(ValueError, match="Metric identity requires"):
+            compile_fact_schema(data, BuildPlan(), report, packet, decision)
     finally:
         data.close()
 

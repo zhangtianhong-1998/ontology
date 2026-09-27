@@ -268,6 +268,7 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
         card_id TEXT NOT NULL, record_id TEXT NOT NULL, row_number INTEGER NOT NULL,
         PRIMARY KEY (card_id, record_id)
       );
+      CREATE INDEX card_sources_record ON card_sources(record_id, card_id);
       CREATE VIRTUAL TABLE card_fts USING fts5(card_id UNINDEXED, grams, tokenize='unicode61');
     """)
     total = Counter()
@@ -418,6 +419,11 @@ class SemanticCardIndex:
         if row is None:
             raise ValueError("Incomplete semantic card index")
         self.coverage = json.loads(row["value"])
+        # Upgrade derived caches in place; source CSV/schema and card identity
+        # are unchanged. Reverse lookup otherwise scans the card-first PK.
+        self.db.execute("CREATE INDEX IF NOT EXISTS card_sources_record "
+                        "ON card_sources(record_id, card_id)")
+        self.db.commit()
 
     def close(self):
         self.db.close()
@@ -619,10 +625,15 @@ class SemanticCardIndex:
         if not query_norm:
             return []
         results = {}
-        # Exact matches are an independent channel and are not limited by FTS tokenization.
+        # Resolve names/aliases through their inverted indexes first. The
+        # CROSS JOIN keeps this small ID set outermost; otherwise SQLite may
+        # choose a full kind scan before testing the alias correlation.
         exact = self.db.execute(
-            "SELECT c.*, 0.0 AS bm25 FROM cards c WHERE "
-            "(c.name_norm=? OR EXISTS (SELECT 1 FROM aliases a WHERE a.card_id=c.card_id AND a.name_norm=?))"
+            "WITH exact_ids AS MATERIALIZED ("
+            "SELECT card_id FROM cards INDEXED BY cards_name WHERE name_norm=? "
+            "UNION SELECT card_id FROM aliases INDEXED BY aliases_name WHERE name_norm=?) "
+            "SELECT c.*, 0.0 AS bm25 FROM exact_ids e CROSS JOIN cards c "
+            "ON c.card_id=e.card_id WHERE 1=1"
             + where + " ORDER BY c.card_id LIMIT ?", [query_norm, query_norm, *params, limit]).fetchall()
         for row in exact:
             card = self._card(row)

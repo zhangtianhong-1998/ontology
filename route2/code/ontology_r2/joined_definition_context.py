@@ -14,7 +14,7 @@ from .storage import digest, qi
 
 class JoinedDefinitionContext:
     def __init__(self, data, index, association, seeds, *, max_records_per_seed=3,
-                 max_rules=64, max_value_chars=2048):
+                 max_rules=64, max_value_chars=2048, progress=None):
         self.data, self.index = data, index
         self.limit, self.max_chars = max_records_per_seed, max_value_chars
         if any(type(value) is not int or value < 0 for value in
@@ -34,7 +34,10 @@ class JoinedDefinitionContext:
         if not self.limit:
             self.stats['rules_not_materialized_due_to_limit'] = len(rules)
             return
+        task = progress.task('物化定义关联邻域', min(len(rules), max_rules)) if progress else None
         for rule in rules[:max_rules]:
+            if task:
+                task.advance(detail=rule['source']['table'] + ' → ' + rule['target']['table'])
             counts = rule.get('verification', {}).get('checks', {})
             if (rule.get('snapshot_id') != data.snapshot_id
                     or rule.get('verification', {}).get('scan_scope') != 'full_input'
@@ -53,6 +56,8 @@ class JoinedDefinitionContext:
                 continue
             self.tables.append((table_name, rule))
         self.stats['rules_materialized'] = len(self.tables)
+        if task:
+            task.close()
 
     def _materialize(self, rule, by_table, table_name):
         source, target = rule['source'], rule['target']
@@ -116,7 +121,9 @@ class JoinedDefinitionContext:
                 'column': column, 'value': raw, 'truncated': False,
                 'schema_evidence_id': f'schema:{table}:{column}'})
         rid = self.data.record_id(table, row)
-        source_card = self.index.db.execute('SELECT card_id FROM card_sources WHERE record_id=?', (rid,)).fetchone()
+        source_card = self.index.db.execute(
+            'SELECT card_id FROM card_sources WHERE record_id=? ORDER BY card_id LIMIT 1',
+            (rid,)).fetchone()
         return {'card_id': source_card['card_id'] if source_card else 'context:' + digest([self.data.snapshot_id, rid])[:24],
                 'record_id': rid, 'table': table, 'row_number': row_number,
                 'kind': 'related_context', 'context_role': 'related_context',

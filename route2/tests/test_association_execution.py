@@ -7,7 +7,7 @@ import pytest
 from ontology_r2.association_rules import build_association_rules
 from ontology_r2.group_incremental import RelationBundleDecision, compile_relation
 from ontology_r2.incremental import direct_mapping
-from ontology_r2.instance_bundles import _limits, _relation_bundle
+from ontology_r2.instance_bundles import validate_bundle_options as _limits, _relation_bundle
 from ontology_r2.relations import Extractor
 from ontology_r2.storage import Dataset, Sink, read_yaml
 from ontology_r2.value_aliases import propose_value_alias_candidates

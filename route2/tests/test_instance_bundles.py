@@ -20,6 +20,32 @@ from ontology_r2.storage import Dataset
 from test_semantic_cards import _dataset, _table
 
 
+def test_full_config_packages_more_than_one_thousand_distinct_patterns(tmp_path):
+    from pathlib import Path
+    from ontology_r2.storage import read_yaml
+    config = read_yaml(Path(__file__).parents[1] / 'config/runtime.fruit-full.yaml')
+    options = {**config['instance_bundles'], 'vector_enabled': False,
+               'lexical_top_k': 0, 'max_joined_context_records': 0}
+    root = tmp_path / 'input'
+    _table(root, 'metric_definition', {'id': '记录 ID', 'name': '指标名称', 'definition': '指标定义'},
+           [{'id': str(i), 'name': f'经营收入{i}', 'definition': f'经营对象{i}的完整收入定义'}
+            for i in range(1001)])
+    work = tmp_path / 'work'; work.mkdir()
+    data = Dataset(root, work)
+    index = None
+    try:
+        built = build_semantic_cards(data, tmp_path / 'cards.sqlite')
+        index = SemanticCardIndex(built['index_path'])
+        result = build_instance_bundles(data, index, {'rules': []}, options)
+        assert result['coverage']['definition_patterns_inspected'] == 1001
+        assert result['coverage']['bundles_by_task']['concept_induction'] == 1001
+        assert result['coverage']['definition_patterns_unprocessed'] == 0
+    finally:
+        if index:
+            index.close()
+        data.close()
+
+
 def test_semantic_pattern_pages_reference_variants_without_merging_identity(tmp_path):
     root = tmp_path / "input"
     _table(root, "fruit_metric_definition", {
