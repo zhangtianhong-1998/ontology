@@ -113,6 +113,32 @@ def test_metadata_graph_fallback_preserves_subset_without_duplicate_candidate():
     assert fallback["links"][0]["status"] == "observed_subset"
 
 
+def test_metadata_view_preserves_numeric_collision_risk_from_rule_or_graph():
+    graph = {"nodes": [
+        {"id": "s.a", "kind": "Table"}, {"id": "s.b", "kind": "Table"},
+        {"id": "s.a.code", "kind": "Column", "column_name": "code"},
+        {"id": "s.b.number", "kind": "Column", "column_name": "number"}],
+        "edges": [
+            {"source": "s.a", "target": "s.a.code", "type": "table_has_column"},
+            {"source": "s.b", "target": "s.b.number", "type": "table_has_column"},
+            {"id": "technical:test", "source": "s.a.code", "target": "s.b.number",
+             "type": "technical_link", "status": "observed_subset", "rule_id": "r1",
+             "numeric_overlap_only": True, "risk_flags": ["numeric_value_coincidence"]}]}
+    rule = {"rule_id": "r1", "source": {"table": "s.a", "field": "code"},
+            "target": {"table": "s.b", "field": "number"}, "status": "observed_subset",
+            "numeric_overlap_only": True, "risk_flags": ["numeric_value_coincidence"]}
+    for rules in ({"rules": [rule]}, {"rules": []}):
+        preview = _metadata_preview(graph, [], rules, 10)
+        assert preview['links']
+        assert all(link['numeric_overlap_only'] is True for link in preview['links'])
+        assert all(link['risk_flags'] == ['numeric_value_coincidence'] for link in preview['links'])
+        assert all(link['status'] == 'observed_subset' for link in preview['links'])
+    html = (Path(__file__).resolve().parents[1] / 'code/ontology_r2/viewer.html').read_text()
+    assert "if(x.numeric_overlap_only)" in html
+    assert "数值重合风险" in html and "风险标记" in html
+    assert '.risk-warning{' in html
+
+
 def test_metadata_graph_exposes_table_to_source_record_type_mapping():
     graph = {"nodes": [
         {"id": "demo.metric", "kind": "Table", "table_name": "metric"},

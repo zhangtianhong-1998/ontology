@@ -223,6 +223,8 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                           "target_column_id": target["table"] + "." + str(target.get("field")),
                           "evidence_ids": item.get("evidence_ids", []),
                           "verification": item.get("verification", {}),
+                          "numeric_overlap_only": item.get("numeric_overlap_only", False),
+                          "risk_flags": item.get("risk_flags", []),
                           "semantic_relation": item.get("semantic_relation", "unresolved")})
     # A saved meta_graph.yaml may be opened without its separate rule file.
     # Preserve inferred links from that graph but never label them as FKs.
@@ -246,6 +248,8 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                       "scope_bindings": edge.get("scope_bindings", {}),
                       "transform": edge.get("transform", {}),
                       "verification": edge.get("verification", {}),
+                      "numeric_overlap_only": edge.get("numeric_overlap_only", False),
+                      "risk_flags": edge.get("risk_flags", []),
                       "source_column_id": source, "target_column_id": target,
                       "evidence_ids": edge.get("evidence_ids", []),
                       "semantic_relation": edge.get("semantic_relation", "unresolved"),
@@ -261,6 +265,8 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                           "source": source["table"], "target": target["table"],
                           "source_field": source.get("field"), "target_field": target.get("field"),
                           "status": "candidate", "retrieval_channels": item.get("retrieval_channels", []),
+                          "numeric_overlap_only": item.get("numeric_overlap_only", False),
+                          "risk_flags": item.get("risk_flags", []),
                           "decision": item.get("decision", {}),
                           "shared_sample_value_count": item.get("shared_sample_value_count")})
     counts = {status: sum(item["status"] == status for item in links)

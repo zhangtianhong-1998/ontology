@@ -71,7 +71,7 @@ def _columns(table, max_unknown_fields_per_table):
         if name not in roles.setdefault("scope", []):
             roles["scope"].append(name)
     # Metadata heuristics and model proposals share the same key/content
-    # boundary. Forced references include PKs and bypass the preview cap.
+    # boundary. Forced references include PKs.
     conflicts = field_role_conflicts(table)
     bindings = list(dict.fromkeys(item["column"] for item in conflicts if item["binding_only"]))
     selected = {column for columns in roles.values() for column in columns}
@@ -80,8 +80,9 @@ def _columns(table, max_unknown_fields_per_table):
                  and item["column"] not in table["pk"]
                  and _REFERENCE.search(item["column"])]
     unknown = [item["column"] for item in classified if item["role"] == "unknown"]
-    # Forced bindings are never dropped by the ordinary reference preview cap.
-    reference = list(dict.fromkeys([*bindings, *reference[:8]]))
+    # Every eligible reference participates in the complete card fingerprint.
+    # Packet admission bounds bytes later; it must not silently drop columns.
+    reference = list(dict.fromkeys([*bindings, *reference]))
     selected.update(reference)
     unknown_available = [name for name in unknown if name not in selected]
     fallback = unknown_available[:max_unknown_fields_per_table]
@@ -89,6 +90,8 @@ def _columns(table, max_unknown_fields_per_table):
         "unknown_columns_considered": fallback,
         "unknown_columns_not_examined": unknown_available[max_unknown_fields_per_table:],
         "reference_columns_considered": reference,
+        "reference_columns_not_examined": [],
+        "reference_column_selection": "all_eligible_reference_columns",
         "role_conflicts": conflicts,
         "binding_columns_excluded_from_semantic_pattern": bindings,
         "calculation_fragments": list(fragments.values()),
@@ -151,6 +154,10 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
     search_text = " ".join(part for part in (search_text, reference_text) if part)
     index_text_truncated = len(search_text) > max_index_chars
     search_text = search_text[:max_index_chars]
+    # Preview fields omit empty values, but reference identity also preserves
+    # NULL/empty differences and full values beyond the visible preview.
+    if reference:
+        signature_fields["reference"] = [[column, row.get(column)] for column in reference]
     signature = digest([table_name, kind, signature_fields])
     semantic_fields = {role: [[column, _norm(raw)] for column, raw in signature_fields[role]]
                        for role in _CARD_ROLES if role in signature_fields}

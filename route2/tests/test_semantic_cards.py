@@ -209,6 +209,57 @@ def test_model_code_aliases_remain_bindings_without_multiplying_definition_patte
         data.close()
 
 
+def _wide_reference_dataset(tmp_path, *, first_reference=None):
+    root = tmp_path / "input"
+    references = [f"ref{i}_code" for i in range(10)]
+    rows = []
+    for number in (1, 2):
+        rows.append({"id": str(number), "measure_name": "收入", "definition": "可复用的收入总额",
+                     **{field: "reference_value_" + "A" * 80 for field in references},
+                     "ref9_code": first_reference if number == 1 else "reference_value_" + "B" * 80})
+    _table(root, "measure_definition", {
+        "id": "记录主键", "measure_name": "度量名称", "definition": "度量定义",
+        **{field: "引用编码" for field in references}}, rows)
+    work = tmp_path / "work"
+    work.mkdir()
+    return Dataset(root, work), references
+
+
+def test_all_ordinary_reference_columns_keep_full_signatures_and_explicit_packet_limits(tmp_path):
+    from ontology_r2.instance_bundles import _card_text, build_instance_bundles
+
+    data, references = _wide_reference_dataset(tmp_path, first_reference="reference_value_" + "A" * 80)
+    try:
+        built = build_semantic_cards(data, tmp_path / "cards.sqlite", max_field_chars=16)
+        report = built["coverage"]["by_table"]["fruit.measure_definition"]
+        assert report["binding_columns_excluded_from_semantic_pattern"] == []
+        assert report["reference_columns_considered"] == references
+        assert report["reference_columns_not_examined"] == []
+        assert report["reference_column_selection"] == "all_eligible_reference_columns"
+        assert built["coverage"]["cards_indexed"] == 2
+        assert built["coverage"]["definition_patterns_indexed"] == 1
+        index = SemanticCardIndex(built["index_path"])
+        try:
+            cards = index.all_cards(2)["cards"]
+            assert all(len(card["fields"]["reference"]) == 10 for card in cards)
+            assert all("reference_value" not in _card_text(card) for card in cards)
+            # Complete values differ beyond both the old column cap and the
+            # character preview; identical previews never erase that variant.
+            assert cards[0]["fields"]["reference"] == cards[1]["fields"]["reference"]
+            assert index.db.execute("SELECT count(DISTINCT signature) FROM cards").fetchone()[0] == 2
+            assert index.db.execute("SELECT count(DISTINCT reference_signature) FROM cards").fetchone()[0] == 2
+            assert index.pattern_window(1)["patterns"][0]["reference_variant_count"] == 2
+            packets = build_instance_bundles(data, index, {"rules": []}, {
+                "max_concept_bundles": 1, "max_relation_bundles": 0, "max_bundle_bytes": 1000})
+            assert packets["bundles"] == []
+            assert packets["coverage"]["partial"]
+            assert [item["reason"] for item in packets["coverage"]["skipped"]] == ["seed_over_budget"]
+        finally:
+            index.close()
+    finally:
+        data.close()
+
+
 def test_model_code_names_do_not_become_business_names_but_scope_stays_semantic(tmp_path):
     root = tmp_path / "input"
     _table(root, "metric_definition", {"id": "ID", "metric_code": "指标编码",

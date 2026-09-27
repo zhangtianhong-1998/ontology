@@ -108,6 +108,7 @@ def build_metadata_graph(data, association=None, *, platform="postgres", environ
             edges.append({"id": "declared_fk:" + digest([source, target, fk])[:24],
                           "source": source, "type": "declared_fk", "target": target,
                           "raw": deepcopy(fk), "status": "declared",
+                          "meaning": "declared_foreign_key_only", "lineage_inferred": False,
                           "source_ref": {"file": metadata_file.replace("schema/tables/", "schema/foreign_keys/", 1)}})
 
     rules = association.get("rules", []) if isinstance(association, dict) else association or []
@@ -139,6 +140,8 @@ def build_metadata_graph(data, association=None, *, platform="postgres", environ
                       **{key: deepcopy(rule.get(key) or {}) for key in
                          ("selector", "scope_bindings", "transform", "verification")},
                       "evidence_ids": evidence_ids,
+                      "numeric_overlap_only": bool(rule.get("numeric_overlap_only", False)),
+                      "risk_flags": deepcopy(rule.get("risk_flags") or []),
                       "semantic_relation": rule.get("semantic_relation", "unresolved"),
                       "meaning": "checked_field_association_only", "lineage_inferred": False})
     for edge in edges:
@@ -209,7 +212,8 @@ class MetadataGraph:
         positions = {position for table in tables for position in self._field_edge_positions.get(table, ())}
         selected = []
         keys = ("id", "rule_id", "candidate_id", "snapshot_id", "source", "target", "type", "status",
-                "selector", "scope_bindings", "transform", "evidence_ids", "source_ref")
+                "selector", "scope_bindings", "transform", "evidence_ids", "source_ref",
+                "numeric_overlap_only", "risk_flags", "semantic_relation", "meaning", "lineage_inferred")
         for position in sorted(positions):
             edge = self._field_edges[position]
             if (edge["source"] not in fields or edge["target"] not in fields

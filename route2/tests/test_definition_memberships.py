@@ -8,7 +8,7 @@ from ontology_r2.definition_memberships import _semantic_columns, build_definiti
 from ontology_r2.group_incremental import ConceptBundleDecision, compile_concept
 from ontology_r2.semantic_cards import SemanticCardIndex, build_semantic_cards
 from ontology_r2.storage import Dataset, read_yaml
-from test_semantic_cards import _table
+from test_semantic_cards import _table, _wide_reference_dataset
 
 PROFILE = read_yaml(Path(__file__).resolve().parents[1] / "ontologies/internal_model.yaml")
 
@@ -65,6 +65,37 @@ def test_full_value_template_reuses_type_without_entity_merge_or_relation_propag
         # Formula/scope differences form separate patterns and have no accepted template.
         assert result['coverage']['records_without_accepted_template'] == 2
         assert result['coverage']['partial']
+    finally:
+        index.close()
+        data.close()
+
+
+@pytest.mark.parametrize('first_reference', [None, 'reference_value_' + 'A' * 80])
+def test_all_reference_columns_and_empty_representative_values_are_inspected(tmp_path, first_reference):
+    data, references = _wide_reference_dataset(tmp_path, first_reference=first_reference)
+    built = build_semantic_cards(data, tmp_path / 'cards.sqlite', max_field_chars=16)
+    index = SemanticCardIndex(built['index_path'])
+    try:
+        card = next(c for c in index.all_cards(2)['cards'] if c['row_number'] == 1)
+        decision = ConceptBundleDecision(status='proposed', label='收入', definition='可复用的收入总额',
+            root_type='Measure', ontology_level='type', classification_basis='reusable_measure',
+            classification_quote='可复用的收入总额',
+            alignments=[{'record_id': card['record_id'], 'mapping_kind': 'exact', 'quote': '可复用的收入总额'}])
+        concept, alignments = compile_concept(data, PROFILE, {'records': [card]}, decision, {})
+        result = build_definition_memberships(data, index, {
+            'snapshot_id': data.snapshot_id, 'concepts': [concept], 'record_alignments': alignments})
+        assert len(result['memberships']) == 2
+        assert set(result['templates'][0]['reference_values']) == set(references)
+        source_row = next(row for row in data.rows('fruit.measure_definition') if row['__r2_row'] == 1)
+        assert result['templates'][0]['reference_values']['ref9_code'] == source_row['ref9_code']
+        pending = result['reference_variants_pending']
+        assert len(pending) == 1 and pending[0]['row_number'] == 2
+        assert set(pending[0]['reference_values']) == set(references)
+        assert pending[0]['reference_values']['ref9_code'] == 'reference_value_' + 'B' * 80
+        assert result['coverage']['reference_inspection_complete']
+        assert result['coverage']['reference_linkage_complete'] is False
+        assert result['coverage']['partial']
+        assert result['coverage']['llm_calls'] == 0
     finally:
         index.close()
         data.close()

@@ -248,13 +248,14 @@ def _metadata_context(data, records):
     fields = {record["table"] + "." + entry["column"] for record in records
               for entries in record.get("fields", {}).values() for entry in entries}
     tables = sorted({record["table"] for record in records})
-    links = graph.field_link_context(tables, fields, statuses={"checked_technical"})
+    links = graph.field_link_context(tables, fields,
+                                     statuses={"declared", "checked_technical", "observed_subset"})
     table_nodes = [(name, graph.table(name) or {}) for name in tables]
     return {"tables": [{"id": name, "description": node.get("table_comment"),
                         "datahub_urn": node.get("datahub_urn")}
                        for name, node in table_nodes],
             "field_links": links,
-            "scope": "selected_record_fields_only; checked_links_are_not_business_predicates"}
+            "scope": "selected_record_fields_only; declarations_and_technical_links_are_not_business_predicates"}
 
 
 def _concept_bundle(data, seed, candidates, byte_limit, related_context=(), context_coverage=None):

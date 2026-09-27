@@ -85,6 +85,42 @@ def test_only_current_checked_rules_enter_query_neighborhood(data):
         index.packet("missing")
 
 
+def test_packet_keeps_declared_partial_and_numeric_risk_as_distinct_evidence(data):
+    from ontology_r2.instance_bundles import _metadata_context
+
+    data.tables['fruit.records']['foreign_keys'] = [{
+        'column_name': 'ref', 'referenced_schema': 'fruit',
+        'referenced_table': 'definitions', 'referenced_column': 'code'}]
+    partial_counts = {'eligible_references': 10, 'unique_matches': 8,
+                      'ambiguous_matches': 1, 'missing_in_input': 1}
+    rules = [checked_rule(data, numeric_overlap_only=True,
+                          risk_flags=['numeric_value_coincidence']),
+             checked_rule(data, rule_id='partial-rule', status='observed_subset',
+                          verification={'scan_scope': 'full_input', 'checks': partial_counts})]
+    graph = build_metadata_graph(data, rules)
+    data.metadata_graph = MetadataGraph(graph)
+    records = [{'table': 'fruit.records', 'fields': {'reference': [{'column': 'ref', 'value': 'A'}]}},
+               {'table': 'fruit.definitions', 'fields': {'reference': [{'column': 'code', 'value': 'A'}]}}]
+    packet = _metadata_context(data, records)
+    links = packet['field_links']
+    assert len(links) == 3
+    assert {link['status'] for link in links} == {'declared', 'observed_subset', 'checked_technical'}
+    assert all(link['lineage_inferred'] is False for link in links)
+    declared = next(link for link in links if link['type'] == 'declared_fk')
+    assert declared['meaning'] == 'declared_foreign_key_only'
+    assert 'schema/foreign_keys/' in declared['source_ref']['file']
+    numeric = next(link for link in links if link.get('numeric_overlap_only'))
+    assert numeric['risk_flags'] == ['numeric_value_coincidence']
+    assert numeric['semantic_relation'] == 'unresolved'
+    assert numeric['meaning'] == 'checked_field_association_only'
+    partial = next(link for link in links if link['status'] == 'observed_subset')
+    assert partial['verification']['checks'] == partial_counts
+    assert partial['numeric_overlap_only'] is False
+    numeric['risk_flags'].clear()
+    assert next(link for link in data.metadata_graph.field_links()
+                if link.get('numeric_overlap_only'))['risk_flags'] == ['numeric_value_coincidence']
+
+
 def test_write_exports_datahub_automatically_and_deterministically(data, tmp_path):
     output = tmp_path / "graph"
     graph, report = write_metadata_graph(data, output, [checked_rule(data)])

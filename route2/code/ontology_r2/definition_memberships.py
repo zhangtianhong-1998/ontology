@@ -79,7 +79,13 @@ def _template(data, index, concept, alignment):
         raise ValueError("semantic_columns_unexamined")
     pairs = sorted(set(_semantic_columns(data, card)) | {
         ("unknown", field) for field in index.coverage.get("by_table", {}).get(card["table"], {}).get("unknown_columns_considered", [])})
-    references = [entry["column"] for entry in card["fields"].get("reference", [])]
+    # A representative can have an empty reference that later members fill.
+    # Use the complete table-level selection, not just its nonempty previews.
+    references = sorted(set(index.coverage.get("by_table", {}).get(card["table"], {}).get(
+        "reference_columns_considered", [])) | {
+            entry["column"] for entry in card["fields"].get("reference", [])})
+    if index.coverage.get("by_table", {}).get(card["table"], {}).get("reference_columns_not_examined"):
+        raise ValueError("reference_columns_unexamined")
     rows = _read_rows(data, card["table"], [source["row_number"]],
                       [field for _, field in pairs] + references)
     row = rows.get(source["row_number"])
@@ -179,7 +185,9 @@ def build_definition_memberships(data, index, group_result, *, max_records=10000
             for source in batch:
                 if source["card_id"] not in card_cache:
                     card_cache[source["card_id"]] = index.get(source["card_id"])
-            reference_columns = sorted({entry["column"] for card in card_cache.values()
+            reference_columns = sorted({column for template in pattern_templates
+                                        for column in template["reference_values"]} | {
+                                        entry["column"] for card in card_cache.values()
                                         for entry in card["fields"].get("reference", [])})
             rows = _read_rows(data, table, [source["row_number"] for source in batch],
                               [field for _, field in pairs] + reference_columns)
