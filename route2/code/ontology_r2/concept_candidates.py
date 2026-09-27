@@ -21,10 +21,15 @@ ROLE_CUES = {
     "unit": (r"(?:^|_)(?:unit|uom)(?:_|$)", r"单位|量纲"),
     "scope": (r"(?:^|_)(?:scope|domain|region|area|range|applicable|period)(?:_|$)", r"范围|适用|业务域|地区|区域|周期"),
 }
-ROLE_LIMITS = {"name": 2, "alias": 2, "description": 2, "formula": 2, "unit": 1, "scope": 2}
 
 
 def _field_roles(table):
+    """Retain source-backed role candidates before bounded packet selection.
+
+    A per-role slot cap can discard the only business name or a distinguishing
+    condition. Card identity therefore uses all eligible metadata and checked
+    model candidates; the later packet byte limit bounds model input.
+    """
     profiles = {item["column"]: item for item in table.get("profiles", [])}
     excluded = set(table.get("semantic_excluded_columns") or ())
     selected = defaultdict(list)
@@ -42,23 +47,22 @@ def _field_roles(table):
         if role is None and not re.search(r"(?:^|_)(?:id|code|key|uuid|time|date|no|number)(?:_|$)", name.casefold()):
             role = next((key for key, (_, pattern) in ROLE_CUES.items()
                          if re.search(pattern, comment)), None)
-        if role and len(selected[role]) < ROLE_LIMITS[role]:
+        if role:
             selected[role].append(name)
-    # Source-checked model proposals only widen candidate recall. They do not
-    # override a heuristic role or assert that the field truly has that role.
+    # Competing source-backed role candidates coexist for recall. Neither a
+    # metadata cue nor a model proposal establishes the final business role.
     for item in table.get("inferred_semantic_roles", ()):
         name, role = item.get("column"), item.get("role")
         if (item.get("status") != "source_verified_role_candidate"
-                or role not in ROLE_LIMITS or name not in profiles
-                or name in excluded or name in {c for fields in selected.values() for c in fields}):
+                or role not in ROLE_CUES or name not in profiles
+                or name in excluded or name in selected.get(role, ())):
             continue
         column = next((c for c in table["columns"] if c["column_name"] == name), None)
         if (column is None or is_sensitive_column(column)
                 or profiles[name].get("scan_scope") != "full_input"
                 or profiles[name].get("usable_count", 0) == 0):
             continue
-        if len(selected[role]) < ROLE_LIMITS[role]:
-            selected[role].append(name)
+        selected[role].append(name)
     return dict(selected)
 
 

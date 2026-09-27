@@ -845,16 +845,22 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
         cache = batch_decisions if is_concept else relation_batch_decisions
         review_cache = batch_reviews if is_concept else relation_batch_reviews
         chosen, packets = [], []
-        # Leave room for the system prompt, structured schema and tool wrapper.
         max_bytes = getattr(llm, "config", {}).get("max_input_bytes", 100000)
-        payload_limit = max(1024, int(max_bytes * .65))
+        task = "concept_batch" if is_concept else "relation_batch"
+        schema = ConceptBatchDecision if is_concept else RelationBatchDecision
+
+        def fits(task, items, schema):
+            if hasattr(llm, "request_bytes"):
+                # Includes the real prompt/schema; leave room for the bounded
+                # JSON-format correction, not an arbitrary 35% of every call.
+                return llm.request_bytes(task, {"packets": items}, schema) <= max_bytes - 1200
+            return len(json.dumps({"packets": items}, ensure_ascii=False,
+                                  default=str).encode()) <= max(1024, int(max_bytes * .65))
         for possible in selected[position:]:
             if (possible.get("task_kind") != kind or possible["bundle_id"] in cache):
                 continue
             packet = packet_payload(possible)
-            byte_count = len(json.dumps({"packets": [*packets, packet]},
-                                        ensure_ascii=False, default=str).encode("utf-8"))
-            if byte_count > payload_limit and chosen:
+            if not fits(task, [*packets, packet], schema) and chosen:
                 break
             chosen.append(possible)
             packets.append(packet)
@@ -862,9 +868,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 break
         if len(chosen) < 2:
             return
-        response = await llm.ask("concept_batch" if is_concept else "relation_batch",
-                                 {"packets": packets},
-                                 ConceptBatchDecision if is_concept else RelationBatchDecision)
+        response = await llm.ask(task, {"packets": packets}, schema)
         expected = {item["bundle_id"] for item in chosen}
         returned = [item.bundle_id for item in response.decisions]
         if len(returned) != len(set(returned)) or set(returned) != expected:
@@ -888,9 +892,17 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
             review_packets.append({**packet, "candidate": decision.model_dump()})
         # Persist paid-for proposals before the optional reviewer can fail.
         await checkpoint()
-        if review_packets:
-            checked = await llm.ask("group_review_batch", {"packets": review_packets}, BundleBatchReview)
-            review_ids = {item["bundle"]["bundle_id"] for item in review_packets}
+        # Reviews contain the proposed decisions as well as source evidence.
+        # Rebatch their complete inputs independently instead of truncating or
+        # failing an otherwise valid proposal batch at its larger review step.
+        review_batches = []
+        for packet in review_packets:
+            if not review_batches or not fits("group_review_batch", [*review_batches[-1], packet], BundleBatchReview):
+                review_batches.append([])
+            review_batches[-1].append(packet)
+        for review_batch in review_batches:
+            checked = await llm.ask("group_review_batch", {"packets": review_batch}, BundleBatchReview)
+            review_ids = {item["bundle"]["bundle_id"] for item in review_batch}
             checked_ids = [item.bundle_id for item in checked.reviews]
             if len(checked_ids) != len(set(checked_ids)) or set(checked_ids) != review_ids:
                 raise ValueError("Batch review must return each requested bundle_id exactly once")
@@ -898,7 +910,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 review_cache[item.bundle_id] = {
                     "review": item.review.model_dump(),
                     "decision_digest": digest(by_id[item.bundle_id].model_dump()),
-                    "batch_size": len(review_packets)}
+                    "batch_size": len(review_batch)}
             await checkpoint()
     stage = progress.task("语义组增量抽取", len(selected)) if progress else None
     if stage:

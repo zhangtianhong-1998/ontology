@@ -29,12 +29,30 @@ def _read_rows(data, table_name, row_numbers, columns):
 
 
 def _semantic_columns(data, card):
-    """Include known empty semantic fields too; absence cannot hide a later value."""
+    """Respect compiled card roles and retain known empty semantic fields."""
+    # Start from the card compiler's effective fields. Supplementing known
+    # empty fields must never restore a model name/alias rejected by that
+    # compiler as an identifier binding.
+    pairs = {(role, entry["column"]) for role, entries in card["fields"].items()
+             if role in _SEMANTIC_ROLES for entry in entries}
     roles = _field_roles(data.tables[card["table"]])
-    pairs = {(role, field) for role, fields in roles.items() for field in fields
-             if role in _SEMANTIC_ROLES}
-    pairs.update((role, entry["column"]) for role, entries in card["fields"].items()
-                 if role in _SEMANTIC_ROLES for entry in entries)
+    pairs.update((role, field) for role, fields in roles.items() for field in fields
+                 if role in _SEMANTIC_ROLES)
+    conflicts = {(item.get("proposed_role"), item.get("column"))
+                 for item in card.get("role_conflicts", [])
+                 if item.get("binding_only") and item.get("effective_role") == "reference"
+                 and item.get("proposed_role") in ("name", "alias")}
+    # Older cards named only alias exclusions. Do not infer a name conflict
+    # from a column-wide list; a valid name or scope on that column survives.
+    if not card.get("role_conflicts"):
+        conflicts.update(("alias", field) for field in card.get(
+            "binding_columns_excluded_from_semantic_pattern", []))
+    # Only the card's checked fragment contract can demote a formula role.
+    # An ordinary scope annotation alone never removes a genuine formula.
+    conflicts.update(("formula", item["column"]) for item in card.get("calculation_fragments", [])
+                     if item.get("column") and item.get("formula_status") == "fragment"
+                     and item.get("effective_role") in ("calculation_operator", "operand_reference"))
+    pairs.difference_update(conflicts)
     return sorted(pairs)
 
 
@@ -85,6 +103,10 @@ def _template(data, index, concept, alignment):
             "semantic_fields": [{"role": role, "column": field, "value": value}
                                 for role, field, value in semantics],
             "semantic_fingerprint": digest(semantics),
+            "binding_columns_excluded_from_semantic_pattern": list(card.get(
+                "binding_columns_excluded_from_semantic_pattern", [])),
+            "role_conflicts": list(card.get("role_conflicts", [])),
+            "calculation_fragments": list(card.get("calculation_fragments", [])),
             "reference_values": {field: row.get(field) for field in references},
             "scope": card["scope"], "unit": card["unit"],
             "evidence_ids": evidence_ids,

@@ -28,7 +28,7 @@ TASK_PROMPTS = {
     "plan": "生成当前 unit 的语义增量。直接映射已经存在，不重建全库。tables 只含当前表，relations 只含当前表发出的关系。复用 current_core 中的类型和关系；不得删除映射、改写其他表或重复发明同义类型。只添加有当前源证据支持的定义和关系，无新增信息可返回空增量。concept_candidate_evidence 是定义记录的有界候选，核对名称、定义、单位和范围后才可提出概念类型，不能仅凭共词合并。field_association_evidence 中的联合记录只证明候选字段匹配；结合双方定义、作用域、反例判断关系含义，不因匹配就认定业务关系。source_path 只用于已有 JSON 键路径；context_columns 保存业务范围。样本成员用 observed_member，只有显式范围规则才能用 allowed_member。",
     "final_plan": "修复当前单元的 previous_delta；逐条处理 errors。只返回本单元完整修正增量，不能返回整份 core。保留原始条件、否定和来源；知识不足可返回空增量。",
     "review": "独立复核 delta 与 candidate_core。逐项检查源字段、关系用途、范围、可用资料中的反证、与 current_core 的冲突及重复类型。不要因为结构校验通过就默认业务语义正确。无错误时只返回 accepted=true、errors=[]、corrected_delta=null，不复述整份 core；有可修复错误时才返回 corrected_delta，否则拒绝并列出具体错误。禁止扩展到本单元外。",
-    "column_role_inference": "只判断当前表中候选列可能存放什么内容，不生成指标、度量、维度、关系或外键。列名和注释只是线索，必须结合给出的多行原值与统计；看不出用途就放入 unresolved_columns。每项 proposal 只允许真实输入列，role 只能是 name、alias、description、formula、unit、scope、business_time、dimension_coordinate、numeric_business_value；不得提出 reference，因为单表样本无法验证引用目标。observations 至少引用一条输入中逐字相同的 row_number/value，不能改写、拼接或引用没有显示的行。名称是业务对象称谓，description 是定义或口径，formula 是计算表达式，unit 是值单位，scope 是明确适用范围；business_time 为观测发生或统计期间，dimension_coordinate 为观测的地区、对象或其他坐标，numeric_business_value 为每条记录的业务数值；它们不是名称、定义或公式。数字编码不能仅因数字形状被当作业务数值，低基数不能单独证明维度。known_column_roles 是既有候选，不意味着未判定列没有业务含义；即使已有名称列仍须检查其余字段缺口。含业务数字的事实值不得冒充定义。不要根据字段名里的 metric/measure 推断本体根类，不能把这些列角色假设写成已证实业务语义。",
+    "column_role_inference": "只判断当前表中候选列可能存放什么内容，不生成指标、度量、维度、关系或外键。列名和注释只是线索，必须结合给出的多行原值与统计；看不出用途就放入 unresolved_columns。每项 proposal 只允许真实输入列，role 只能是 name、alias、description、formula、unit、scope、calculation_operator、operand_reference、business_time、dimension_coordinate、numeric_business_value；不得提出 reference，因为单表样本无法验证引用目标。observations 至少引用一条输入中逐字相同的 row_number/value，不能改写、拼接或引用没有显示的行。名称是业务对象称谓，description 是定义或口径，formula 是完整计算表达式，unit 是值单位，scope 是明确适用范围。calculation_operator 是单独存放的计算或聚合类型，如 SUM、RATIO；operand_reference 是单独存放的操作数或来源字段标识，只说明当前值作为计算参数，不能证明引用目标或外键。操作类型和字段标识都是公式片段，不能各自充当完整 formula，也不能把多列拼接的表达式当作来源原文。显式声明为公式的列可存放直接映射，如原文为收入；不能只因它是单个标识符就否定公式。business_time 为观测发生或统计期间，dimension_coordinate 为观测的地区、对象或其他坐标，numeric_business_value 为每条记录的业务数值；它们不是名称、定义或公式。数字编码不能仅因数字形状被当作业务数值，低基数不能单独证明维度。known_column_roles 是既有候选，不意味着未判定列没有业务含义；即使已有名称列仍须检查其余字段缺口。含业务数字的事实值不得冒充定义。不要根据字段名里的 metric/measure 推断本体根类，不能把这些列角色假设写成已证实业务语义。",
     "concept_bundle": "这是定义记录的有界证据包。请判断包内记录是否支持同一可复用业务概念，或应保持不同/未决；物理表类型不是业务概念。同一 pattern 只是调度分组，不证明引用编码相同或对象同一；exact 对齐仅能指向 exact_alignment_record_ids 中的代表记录，其他记录至多 related/narrower，也可不对齐。一个证据完整的代表记录足以提出一个类型，无须将包内其余候选合并。related_context 只提供经技术匹配取得的关联上下文，不证明对象同一，也不能作为 exact 定义。seed 的定义、公式、单位和适用范围只能由 seed 自己的完整来源字段支持；不得把 related_context 中的公式复制归属到 seed。若名称、公式或引用归属存在冲突，返回 unresolved 并说明冲突。root_hint 仅由表名推测，不是分类事实。Metric 必须绑定来源原文中的具体经营对象、业务含义及计算方法，例如“水果销售收入”；Measure 是不绑定具体经营对象的可复用量或计算口径，例如“收入”“10月年预算”“当年预算排名”。SUM、AVG、过滤是可能使用的运算方式，不是度量类型。不能因为记录来自 metric/measure 命名的表就确定根类型。若提出 Metric/Measure 类级类型，分别填写 classification_basis=business_driven_metric/reusable_measure；classification_quote 必须完整复制 exact 定义记录的一段说明或公式，不得只截取共词。Metric 还须以 business_object_quote 逐字摘录名称或完整定义中的经营对象；经营对象不必出现在候选名称内；Measure 不得填写 business_object_quote。aggregation_operator 仅是 Measure 可选的计算属性，填写时须能在完整来源说明或公式中找到该运算方式；名称不得只是 SUM、AVG、过滤等运算符；只有名称不能证明分类，无法凭来源辨别则选 unresolved。非 Metric/Measure 类型可填 classification_basis=other，并由 exact 对齐原文证明其含义。明确 ontology_level：只有可复用类级定义才选 type，具体观测选 instance；地区和期间作为观测坐标时不可成为类型身份。scope 只能使用 records[*].scope 中实际出现的键和值；记录没有 scope 就返回 {}，不要拼合多个值。scope_roles 对每个 scope 键标明 applicability 或 observation；不能判定时不要升格为类型。同名度量先核对完整定义、单位、口径和适用范围；不同口径不得因同名合并；完整来源定义、公式或适用范围明确不同的同名度量，可以分别形成类型。definition 应使用完整来源原文，模型概括仅保留为 proposed_definition，程序不会把概括当成已核实定义。指标可以引用度量，但不能只凭名称共词推断依赖关系。每条对齐 quote 只能逐字摘录相应记录 fields[*].value；名称共词、BM25、向量分数只用于召回，不证明 exact。核对单位、口径、版本和范围；证据不足返回 no_change/unresolved。",
     "relation_bundle": "这是已完成技术匹配检查的跨表行包，但匹配不等于业务关系。请比较源/目标字段说明、正反例及适用条件；仅在业务用途明确时提出关系。parent_relation 只能是 contains/depends_on/related_to/points_to；predicate_name 可为空（使用根谓词），或选择注册的 calculation_dependency→depends_on、scope_constraint→related_to、definition_reference→points_to、has_member→contains；label 使用所选英文谓词，不得另写散文名称。semantic_parameters 默认为 {}；只有 calculation_dependency 可填写 operand_role=minuend/subtrahend/numerator/denominator/addend/factor，且必须在可解析来源公式中证明目标的操作数角色；端点的物理类型由程序绑定，你不要输出类型。depends_on 必须有来源公式实际点名目标的证据；共享编码或名称不能证明计算依赖。source_quote 与 target_quote 必须分别逐字来自同一条 examples.positive 所指源/目标记录的非关联键 fields[*].value；不能仅引用编码原值、字段注释或拼接文本。字段注释只帮助理解用途，不独立证明业务关系。related_context 仅提供技术关联线索；公式必须属于给出的 source 记录，不能从上下文移植，归属冲突须 unresolved。definition 须解释记录所代表对象之间的业务含义，不能只描述物理表或编码的连接；规范谓词名须符合 parent_relation 与 predicate_name 的继承关系。保留关系适用条件；不能将有条件或否定的说明改成无条件肯定关系。单例语义支持仍不是整表业务真值；无法辨别时返回 unresolved。",
     "group_review": "复核候选语义增量与证据包：逐字引用是否成立、单位/口径/作用域冲突是否被处理、是否把技术匹配冒充业务关系、是否把物理表冒充概念类型。检查 related_context 是否被误作 seed 的定义或公式来源：技术关联不证明身份与公式归属，不得借其证据补齐 seed；归属冲突须拒绝并保留 unresolved。只审查候选实际提出的对齐与关系，不要求包内其余召回记录也必须合并；exact_alignment_record_ids 之外的记录绝不可要求改成 exact。参考 root_hint 是表名弱线索，不可仅凭它推翻有完整定义支持的 Metric/Measure 分类。非 Metric/Measure 的 classification_basis=other 可由 exact 对齐原文支持，不必强行要求不存在的分类字段。引用编码不必成为业务类型的定义属性；经营对象仅在定义中出现也可支持 Metric，不要求它同时出现在名称里。逐条核对来源公式，禁止同名、同模型定义掩盖计算口径冲突。允许有完整证据的同名不同口径度量分别成类。注册派生谓词及其操作数角色仍须符合原始公式。若含义或范围确有冲突仍须拒绝。证据不足则 accepted=false 并列出具体 errors。复核不是独立业务真值证明。",
@@ -114,6 +114,17 @@ class StructuredLLM:
         self.calls += 1
         self.reserved_tokens += reserved
 
+    def structured_request(self, task, payload, schema):
+        """One representation for admission, caching, and exact batch sizing."""
+        prompt = SYSTEM + "\n" + TASK_PROMPTS.get(task, "")
+        if task in ("plan", "final_plan", "review"):
+            prompt += "\n" + knowledge_prompt(payload.get("knowledge_state", "disabled"))
+        return {"task": task, "input": payload, "schema": schema.model_json_schema(), "prompt": prompt}
+
+    def request_bytes(self, task, payload, schema):
+        return len(json.dumps(self.structured_request(task, payload, schema),
+                              ensure_ascii=False, default=str).encode())
+
     def get_model(self):
         if self.model is None:
             from agentscope.credential import OpenAICredential
@@ -174,11 +185,8 @@ class StructuredLLM:
 
     async def ask(self, task, payload, schema):
         body = json.dumps(payload, ensure_ascii=False, default=str)
-        schema_dict = schema.model_json_schema()
-        prompt = SYSTEM + "\n" + TASK_PROMPTS.get(task, "")
-        if task in ("plan", "final_plan", "review"):
-            prompt += "\n" + knowledge_prompt(payload.get("knowledge_state", "disabled"))
-        request = {"task": task, "input": payload, "schema": schema_dict, "prompt": prompt}
+        request = self.structured_request(task, payload, schema)
+        schema_dict, prompt = request["schema"], request["prompt"]
         model_id = os.getenv("ONTOLOGY_LLM_MODEL", "") if self.mode != "mock" else digest(self.responses)
         endpoint_hash = digest(os.getenv("ONTOLOGY_LLM_BASE_URL", "")) if self.mode != "mock" else None
         # Cache location changes where responses are stored, not what the
@@ -221,12 +229,33 @@ class StructuredLLM:
             from agentscope.tool import ToolChoice
             messages = [Msg(name="system", role="system", content=[TextBlock(text=prompt)]), Msg(name="user", role="user", content=[TextBlock(text=task + "\n" + body)])]
             tool = {"type": "function", "function": {"name": "submit_result", "description": "Call exactly once to return the requested structured result; do not answer in plain text", "parameters": schema_dict}}
-            response = await self.complete(messages, task=task, budget_request=request,
-                                           tools=[tool], tool_choice=ToolChoice(mode="auto"))
-            calls = [b for b in response.content if isinstance(b, ToolCallBlock)]
-            if len(calls) != 1 or calls[0].name != "submit_result":
-                raise ValueError("Expected exactly one submit_result call")
-            result = schema.model_validate(json.loads(calls[0].input) if isinstance(calls[0].input, str) else calls[0].input)
+            repairs = self.config.get("max_response_repairs", 0)
+            if type(repairs) is not int or not 0 <= repairs <= 2:
+                raise ValueError("llm.max_response_repairs must be 0..2")
+            for repair in range(repairs + 1):
+                response = await self.complete(messages, task=task, budget_request=request,
+                                               tools=[tool], tool_choice=ToolChoice(mode="auto"))
+                try:
+                    calls = [b for b in response.content if isinstance(b, ToolCallBlock)]
+                    if len(calls) != 1 or calls[0].name != "submit_result":
+                        raise ValueError("Expected exactly one submit_result call")
+                    result = schema.model_validate(json.loads(calls[0].input) if isinstance(calls[0].input, str) else calls[0].input)
+                    break
+                except ValueError as exc:
+                    self.trace({"stage": "llm_invalid_structured_response", "task": task,
+                                "error_type": type(exc).__name__, "repair": repair})
+                    if repair == repairs:
+                        raise
+                    # Retry the complete evidence with a format correction only.
+                    # Never repair meaning, silently coerce values, or log hidden reasoning.
+                    correction = ("The preceding tool arguments were invalid JSON or did not match the schema. "
+                                  "Return exactly one submit_result with valid JSON matching the provided schema. "
+                                  "Escape quotes and newlines inside string values; use JSON null for nullable fields.")
+                    messages.append(Msg(name="user", role="user", content=[TextBlock(text=correction)]))
+                    request = {**request, "format_corrections": [
+                        *request.get("format_corrections", []), correction], "repair": repair + 1}
+                    self.admit(request)
+                    self.trace({"stage": "llm_response_repair", "task": task, "repair": repair + 1})
         file.write_text(result.model_dump_json(indent=2))
         self.trace({"stage": "llm_response", "task": task, "result": result.model_dump()})
         return result

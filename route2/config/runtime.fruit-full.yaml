@@ -70,8 +70,8 @@ instance_bundles:
   max_cards: 1200000
   max_field_chars: 1024
   max_unknown_fields_per_table: 16
-  max_concept_bundles: 1000
-  max_pattern_seed_pool: 1000
+  max_concept_bundles: 2000
+  max_pattern_seed_pool: 2000
   seed_window_index: 0
   max_relation_bundles: 1000
   lexical_top_k: 8
@@ -84,9 +84,9 @@ instance_bundles:
   max_joined_context_records: 3
   max_joined_context_rules: 256
   max_joined_context_value_chars: 2048
-  max_llm_bundles: 2000
-  concept_batch_size: 4
-  relation_batch_size: 4
+  max_llm_bundles: 3000
+  concept_batch_size: 6
+  relation_batch_size: 6
   max_repairs_per_bundle: 1
   max_definition_memberships: 1200000
   review: true
@@ -137,6 +137,7 @@ llm:
   max_input_bytes: 100000
   max_output_tokens: 12288
   max_repairs: 1
+  max_response_repairs: 1
   max_retries: 3
   timeout_seconds: 300
   temperature: 0

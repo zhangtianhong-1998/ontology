@@ -168,6 +168,8 @@ llm:
   max_output_tokens: 8192
   # One initial attempt plus four repairs per table; the table pass remains one.
   max_repairs: 4
+  # One syntax/schema-only retry; consumes the same shared call budget.
+  max_response_repairs: 1
   # Retry transient 5xx/network errors; a timeout does not repeat unchanged semantic repairs.
   max_retries: 3
   timeout_seconds: 180

@@ -18,7 +18,31 @@ from .storage import qi
 
 
 _ROLES = ("name", "alias", "description", "formula", "unit", "scope",
+          "calculation_operator", "operand_reference",
           "business_time", "dimension_coordinate", "numeric_business_value")
+_FRAGMENT_ROLES = frozenset(("calculation_operator", "operand_reference"))
+_OPERATOR_VALUES = frozenset((
+    "sum", "avg", "average", "mean", "count", "count_distinct", "distinct_count",
+    "min", "max", "ratio", "rank", "add", "subtract", "multiply", "divide",
+    "求和", "平均", "均值", "计数", "去重计数", "最小值", "最大值", "比率", "排名",
+))
+_IDENTIFIER_VALUE = re.compile(r"[^\W\d]\w*(?:\.[^\W\d]\w*)*", re.UNICODE)
+_EXPLICIT_FORMULA_NAME = re.compile(r"(?:^|_)(?:formula|expression|expr)(?:_|$)")
+_EXPLICIT_FORMULA_COMMENT = re.compile(r"完整公式|完整表达式|计算公式|计算表达式|\b(?:formula|expression)\b", re.I)
+_OPERATOR_NAME = re.compile(
+    r"(?:^|_)(?:operator|operation)(?:_|$)|"
+    r"(?:^|_)(?:calculation|calc|aggregation|aggregate|inference|derivation|arithmetic)"
+    r"_(?:type|kind|mode|method)(?:_|$)")
+_OPERATOR_COMMENT = re.compile(
+    r"(?:聚合|汇总|计算|运算|推导|推断|操作)(?:符|类型|方式|方法|种类)|"
+    r"\b(?:operator|(?:calculation|aggregation|aggregate|inference|arithmetic)\s+(?:type|kind|mode|method))\b", re.I)
+_OPERAND_NAME = re.compile(
+    r"(?:^|_)(?:source|input|operand|argument|parameter|measure|metric)"
+    r"_(?:field|column|ref|reference)(?:_|$)|"
+    r"(?:^|_)(?:field|column)_(?:ref|reference)(?:_|$)|(?:^|_)operand(?:_|$)")
+_OPERAND_COMMENT = re.compile(
+    r"字段引用|引用字段|来源字段|源字段|输入字段|操作数|字段标识|引用列|来源列|源列|输入列|"
+    r"\b(?:(?:source|input|referenced)\s+(?:field|column)|(?:field|column)\s+reference|operand)\b", re.I)
 _SENSITIVE_VALUE = re.compile(
     r"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
     r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b|"
@@ -39,6 +63,7 @@ class ObservedValue(_Strict):
 class ColumnRoleProposal(_Strict):
     column: str
     role: Literal["name", "alias", "description", "formula", "unit", "scope",
+                  "calculation_operator", "operand_reference",
                   "business_time", "dimension_coordinate", "numeric_business_value"]
     observations: list[ObservedValue] = Field(default_factory=list)
     rationale: str = ""
@@ -47,6 +72,70 @@ class ColumnRoleProposal(_Strict):
 class ColumnRoleInferenceResponse(_Strict):
     proposals: list[ColumnRoleProposal] = Field(default_factory=list)
     unresolved_columns: list[str] = Field(default_factory=list)
+
+
+def classify_formula_fragment(table, candidate):
+    """Keep source-backed calculation fragments distinct from full formulas.
+
+    A legacy formula proposal is reclassified only when both the declaration
+    and observed values support a fragment. Identifier-shaped values alone do
+    not disprove a direct mapping in an explicitly declared formula column.
+    This does not resolve operand targets or construct an expression.
+    """
+    if candidate.get("status") != "source_verified_role_candidate":
+        return None
+    proposed = candidate.get("role")
+    if proposed not in {"formula", *_FRAGMENT_ROLES}:
+        return None
+    column = next((item for item in table.get("columns", ())
+                   if item.get("column_name") == candidate.get("column")), None)
+    observations = candidate.get("observations") or []
+    if column is None or not observations:
+        return None
+    values = [str(item.get("value", "")).strip() for item in observations]
+    if any(not value for value in values):
+        return None
+    effective = proposed
+    reason = "source_checked_fragment_role_candidate"
+    validation_scope = "source_checked_observations"
+    if proposed == "formula":
+        name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", column["column_name"]).casefold()
+        comment = str(column.get("column_comment") or "")
+        if (_EXPLICIT_FORMULA_NAME.search(name)
+                or name in {"calculation", "caliber"}
+                or _EXPLICIT_FORMULA_COMMENT.search(comment)):
+            return None
+        # Use every available profile sample as a contradiction check, not
+        # just the few values cited by the model. This remains sample-scoped.
+        profile = next((item for item in table.get("profiles", ())
+                        if item.get("column") == candidate["column"]), {})
+        values.extend(str(value).strip() for value in profile.get("distinct_sample", ())
+                      if value is not None and str(value).strip())
+        validation_scope = "source_checked_observations_and_available_profile_samples"
+        if ((_OPERATOR_NAME.search(name) or _OPERATOR_COMMENT.search(comment))
+                and all(value.casefold() in _OPERATOR_VALUES for value in values)):
+            effective = "calculation_operator"
+            reason = "declared_operator_field_with_observed_operator_values"
+        elif ((_OPERAND_NAME.search(name) or _OPERAND_COMMENT.search(comment))
+                and all(_IDENTIFIER_VALUE.fullmatch(value) for value in values)):
+            effective = "operand_reference"
+            reason = "declared_operand_field_with_observed_identifier_values"
+        else:
+            return None
+    return {**candidate, "column": candidate["column"], "proposed_role": proposed,
+            "effective_role": effective, "formula_status": "fragment", "reason": reason,
+            "validation_scope": validation_scope,
+            "expression_constructed": False, "operand_target_verified": False}
+
+
+def formula_fragment_context(table):
+    """Return calculation parameters for card scope, including restored roles."""
+    fragments = {}
+    for candidate in table.get("inferred_semantic_roles", ()):
+        fragment = classify_formula_fragment(table, candidate)
+        if fragment is not None:
+            fragments[fragment["column"]] = fragment
+    return fragments
 
 
 def _positive_int(config, key, default, *, maximum):
@@ -149,12 +238,13 @@ def _validate_response(data, table_name, response, eligible, observed):
         if reason:
             rejected.append({"column": column, "role": role, "reason": reason})
             continue
-        accepted.append({"column": column, "role": role,
-                         "status": "source_verified_role_candidate",
-                         "semantic_status": "unjudged",
-                         "schema_evidence_id": f"schema:{table_name}:{column}",
-                         "evidence_kind": "source_values_supported_role_candidate",
-                         "observations": evidence})
+        candidate = {"column": column, "role": role,
+                     "status": "source_verified_role_candidate",
+                     "semantic_status": "unjudged",
+                     "schema_evidence_id": f"schema:{table_name}:{column}",
+                     "evidence_kind": "source_values_supported_role_candidate",
+                     "observations": evidence}
+        accepted.append(classify_formula_fragment(data.tables[table_name], candidate) or candidate)
     return accepted, rejected
 
 
@@ -258,7 +348,8 @@ async def infer_column_role_candidates(data, llm, config=None):
         for item in accepted:
             item["used_in_candidate_recall"] = item["column"] in consumed_roles.get(
                 item["role"], ()) or item["role"] in {
-                    "business_time", "dimension_coordinate", "numeric_business_value"}
+                    "business_time", "dimension_coordinate", "numeric_business_value",
+                    "calculation_operator", "operand_reference"}
             item["consumer"] = ("row_semantics" if item["role"] in {
                 "business_time", "dimension_coordinate", "numeric_business_value"}
                 else "semantic_card_recall")

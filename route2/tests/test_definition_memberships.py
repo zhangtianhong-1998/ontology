@@ -2,7 +2,9 @@
 from copy import deepcopy
 from pathlib import Path
 
-from ontology_r2.definition_memberships import build_definition_memberships
+import pytest
+
+from ontology_r2.definition_memberships import _semantic_columns, build_definition_memberships
 from ontology_r2.group_incremental import ConceptBundleDecision, compile_concept
 from ontology_r2.semantic_cards import SemanticCardIndex, build_semantic_cards
 from ontology_r2.storage import Dataset, read_yaml
@@ -181,6 +183,118 @@ def test_only_matching_labels_are_insufficient_to_compile_a_reusable_template(tm
         assert result['memberships'] == []
         assert result['template_errors'][0]['reason'] == 'name_only_template_cannot_propagate'
         assert result['coverage']['records_without_accepted_template'] == 2
+    finally:
+        index.close()
+        data.close()
+
+
+@pytest.mark.parametrize('proposed_role', ['alias', 'name'])
+def test_demoted_code_alias_keeps_independent_memberships_and_pending_references(tmp_path, proposed_role):
+    root = tmp_path / 'input'
+    _table(root, 'measure_definition', {'id': '记录主键', 'measure_name': '度量名称',
+        'definition': '度量定义', 'measure_code': '度量编码'}, [
+        {'id': '1', 'measure_name': '收入', 'definition': '可复用的收入总额', 'measure_code': 'M001'},
+        {'id': '2', 'measure_name': '收入', 'definition': '可复用的收入总额', 'measure_code': 'M002'}])
+    work = tmp_path / 'work'
+    work.mkdir()
+    data = Dataset(root, work)
+    data.tables['fruit.measure_definition']['inferred_semantic_roles'] = [
+        {'column': 'measure_code', 'role': proposed_role, 'status': 'source_verified_role_candidate'}]
+    built = build_semantic_cards(data, tmp_path / 'cards.sqlite')
+    index = SemanticCardIndex(built['index_path'])
+    try:
+        cards = index.all_cards(10)['cards']
+        assert len(cards) == 2 and len({card['pattern_id'] for card in cards}) == 1
+        card = next(card for card in cards if card['row_number'] == 1)
+        assert card['binding_columns_excluded_from_semantic_pattern'] == ['measure_code']
+        assert (proposed_role, 'measure_code') not in _semantic_columns(data, card)
+        decision = ConceptBundleDecision(status='proposed', label='收入', definition='可复用的收入总额',
+            root_type='Measure', ontology_level='type', classification_basis='reusable_measure',
+            classification_quote='可复用的收入总额',
+            alignments=[{'record_id': card['record_id'], 'mapping_kind': 'exact', 'quote': '可复用的收入总额'}])
+        concept, alignments = compile_concept(data, PROFILE, {'records': [card]}, decision, {})
+        result = build_definition_memberships(data, index, {
+            'snapshot_id': data.snapshot_id, 'concepts': [concept], 'record_alignments': alignments})
+        assert len(result['memberships']) == 2
+        assert len({member['record_id'] for member in result['memberships']}) == 2
+        assert result['templates'][0]['binding_columns_excluded_from_semantic_pattern'] == ['measure_code']
+        assert result['reference_variants_pending'][0]['reference_values'] == {'measure_code': 'M002'}
+        assert all(member['mapping_kind'] == 'shares_definition_type_template'
+                   and not member['entity_identity_claim'] and not member['relationship_inheritance']
+                   for member in result['memberships'])
+        assert result['coverage']['llm_calls'] == 0
+    finally:
+        index.close()
+        data.close()
+
+
+def test_binding_exclusion_removes_only_alias_role_not_name_or_scope(tmp_path):
+    data, index, group = _fixture(tmp_path)
+    try:
+        table = data.tables['fruit.measure_definition']
+        table['inferred_semantic_roles'] = [
+            {'column': field, 'role': role, 'status': 'source_verified_role_candidate'}
+            for field, role in [('reference_code', 'alias'), ('reference_code', 'name'), ('reference_code', 'scope')]]
+        card = index.all_cards(10)['cards'][0]
+        card['binding_columns_excluded_from_semantic_pattern'] = ['reference_code']
+        pairs = _semantic_columns(data, card)
+        assert ('alias', 'reference_code') not in pairs
+        assert ('name', 'reference_code') in pairs
+        assert ('scope', 'reference_code') in pairs
+        card['role_conflicts'] = [{'column': 'reference_code', 'proposed_role': role,
+                                   'effective_role': 'reference', 'binding_only': True}
+                                  for role in ('name', 'alias')]
+        pairs = _semantic_columns(data, card)
+        assert ('name', 'reference_code') not in pairs
+        assert ('alias', 'reference_code') not in pairs
+        assert ('scope', 'reference_code') in pairs
+    finally:
+        index.close()
+        data.close()
+
+
+def test_checked_calculation_fragments_keep_scope_without_reintroducing_formula(tmp_path):
+    root = tmp_path / 'input'
+    _table(root, 'measure_definition', {'id': '记录主键', 'name': '名称', 'definition': '定义',
+        'inference_type': '聚合操作类型', 'source_field': '来源字段', 'calculation_formula': '完整公式',
+        'reference_code': '关联编码'}, [
+        {'id': str(i), 'name': '数量', 'definition': '数量的可复用计算口径',
+         'inference_type': operator, 'source_field': 'sales.amount',
+         'calculation_formula': 'amount', 'reference_code': ref}
+        for i, operator, ref in [(1, 'SUM', 'A'), (2, 'SUM', 'B'), (3, 'AVG', 'C')]])
+    work = tmp_path / 'work'
+    work.mkdir()
+    data = Dataset(root, work)
+    data.tables['fruit.measure_definition']['inferred_semantic_roles'] = [
+        {'column': column, 'role': 'formula', 'status': 'source_verified_role_candidate',
+         'schema_evidence_id': 'schema:fruit.measure_definition:' + column,
+         'observations': [{'column': column, 'row_number': 1, 'value': value}]}
+        for column, value in [('inference_type', 'SUM'), ('source_field', 'sales.amount')]]
+    built = build_semantic_cards(data, tmp_path / 'cards.sqlite')
+    index = SemanticCardIndex(built['index_path'])
+    try:
+        card = next(card for card in index.all_cards(10)['cards'] if card['row_number'] == 1)
+        pairs = _semantic_columns(data, card)
+        assert ('formula', 'inference_type') not in pairs
+        assert ('formula', 'source_field') not in pairs
+        assert ('scope', 'inference_type') in pairs and ('scope', 'source_field') in pairs
+        assert ('formula', 'calculation_formula') in pairs
+        # Scope alone does not have authority to erase a formula role.
+        no_fragment_proof = {**card, 'calculation_fragments': []}
+        assert ('formula', 'inference_type') in _semantic_columns(data, no_fragment_proof)
+        decision = ConceptBundleDecision(status='proposed', label='数量', definition='数量的可复用计算口径',
+            root_type='GeneralObject', ontology_level='type',
+            scope_roles={column: 'applicability' for column in card['scope']},
+            alignments=[{'record_id': card['record_id'], 'mapping_kind': 'exact', 'quote': '数量的可复用计算口径'}])
+        concept, alignments = compile_concept(data, PROFILE, {'records': [card]}, decision, {})
+        result = build_definition_memberships(data, index, {
+            'snapshot_id': data.snapshot_id, 'concepts': [concept], 'record_alignments': alignments})
+        assert {member['row_number'] for member in result['memberships']} == {1, 2}
+        assert result['reference_variants_pending'][0]['row_number'] == 2
+        assert result['coverage']['records_without_accepted_template'] == 1
+        assert len(result['templates'][0]['calculation_fragments']) == 2
+        assert all(not member['entity_identity_claim'] and not member['relationship_inheritance']
+                   for member in result['memberships'])
     finally:
         index.close()
         data.close()

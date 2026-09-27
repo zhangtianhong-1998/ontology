@@ -165,6 +165,135 @@ def test_code_reference_card_preserves_source_field(tmp_path):
         data.close()
 
 
+def test_model_code_aliases_remain_bindings_without_multiplying_definition_patterns(tmp_path):
+    root = tmp_path / "input"
+    code_fields = ["measure_code", "metric_code", *[f"external_{i}_code" for i in range(8)]]
+    columns = {"id": "记录ID", "measure_name": "名称", "definition": "定义",
+               "alias": "别名", "budget_flag": "预算适用范围", "period": "周期",
+               **{field: "引用编码" for field in code_fields}}
+    _table(root, "measure_definition", columns, [
+        {"id": str(i), "measure_name": "收入", "definition": "对收入金额求和",
+         "alias": "营收", "budget_flag": str(i == 3), "period": "Y",
+         **{field: f"{field}_{i}" for field in code_fields}}
+        for i in (1, 2, 3)
+    ])
+    work = tmp_path / "work"
+    work.mkdir()
+    data = Dataset(root, work)
+    try:
+        table = data.tables["fruit.measure_definition"]
+        table["inferred_semantic_roles"] = [
+            {"column": field, "role": "alias", "status": "source_verified_role_candidate"}
+            for field in code_fields]
+        built = build_semantic_cards(data, tmp_path / "bindings.sqlite")
+        assert built["coverage"]["definition_patterns_indexed"] == 2
+        assert built["coverage"]["cards_indexed"] == 3
+        report = built["coverage"]["by_table"]["fruit.measure_definition"]
+        assert set(report["binding_columns_excluded_from_semantic_pattern"]) == set(code_fields)
+        assert all(item["semantic_identity_claim"] is False and item["effective_role"] == "reference"
+                   for item in report["role_conflicts"])
+        index = SemanticCardIndex(built["index_path"])
+        try:
+            cards = index.all_cards(3)["cards"]
+            assert len({card["record_id"] for card in cards}) == 3
+            for card in cards:
+                assert [entry["value"] for entry in card["fields"]["alias"]] == ["营收"]
+                assert set(entry["column"] for entry in card["fields"]["reference"]) == set(code_fields)
+                assert len(card["role_conflicts"]) == len(code_fields)
+                assert card["scope"]["period"] == "Y"
+                assert "budget_flag" in card["scope"]
+            assert {row[0] for row in index.db.execute("SELECT name_norm FROM aliases")} == {"营收"}
+        finally:
+            index.close()
+    finally:
+        data.close()
+
+
+def test_model_code_names_do_not_become_business_names_but_scope_stays_semantic(tmp_path):
+    root = tmp_path / "input"
+    _table(root, "metric_definition", {"id": "ID", "metric_code": "指标编码",
+                                       "metric_name": "指标名称", "definition": "指标定义",
+                                       "region_code": "地区编码"}, [
+        {"id": "1", "metric_code": "M001", "metric_name": "水果收入",
+         "definition": "水果收入金额合计", "region_code": "EAST"},
+        {"id": "2", "metric_code": "M002", "metric_name": "水果收入",
+         "definition": "水果收入金额合计", "region_code": "EAST"},
+        {"id": "3", "metric_code": "M003", "metric_name": "水果收入",
+         "definition": "水果收入金额合计", "region_code": "SOUTH"},
+    ])
+    _table(root, "metric_attr", {"id": "ID", "metric_code": "指标编码",
+                                "definition": "属性定义"}, [
+        {"id": "1", "metric_code": "M001", "definition": "按月记录属性"}])
+    work = tmp_path / "work"
+    work.mkdir()
+    data = Dataset(root, work)
+    try:
+        data.tables["fruit.metric_definition"]["inferred_semantic_roles"] = [
+            {"column": column, "role": role, "status": "source_verified_role_candidate"}
+            for column, role in (("metric_code", "name"), ("region_code", "name"),
+                                 ("region_code", "scope"))]
+        data.tables["fruit.metric_attr"]["inferred_semantic_roles"] = [
+            {"column": "metric_code", "role": "name", "status": "source_verified_role_candidate"}]
+        built = build_semantic_cards(data, tmp_path / "code_names.sqlite")
+        assert built["coverage"]["definition_patterns_indexed"] == 2
+        index = SemanticCardIndex(built["index_path"])
+        try:
+            cards = index.all_cards(3)["cards"]
+            assert {card["name"] for card in cards} == {"水果收入"}
+            assert {card["scope"]["region_code"] for card in cards} == {"EAST", "SOUTH"}
+            assert all({entry["column"] for entry in card["fields"]["reference"]} == {
+                "metric_code", "region_code"} for card in cards)
+            assert all({entry["column"] for entry in card["fields"]["name"]} == {
+                "metric_name"} for card in cards)
+            attr = index.seeds(3, kind="reference")[0]
+            assert attr["table"] == "fruit.metric_attr" and attr["name"] == ""
+            assert attr["fields"]["reference"][0]["value"] == "M001"
+        finally:
+            index.close()
+    finally:
+        data.close()
+
+
+def test_calculation_fragments_are_parameters_not_complete_formulas(tmp_path):
+    root = tmp_path / "input"
+    _table(root, "measure_definition", {"id": "ID", "measure_name": "名称",
+        "definition": "定义", "inference_type": "聚合操作类型", "source_field": "被引用的字段",
+        "calculation_formula": "计算公式"}, [
+        {"id": "1", "measure_name": "收入", "definition": "收入的通用计算表达",
+         "inference_type": "SUM", "source_field": "revenue", "calculation_formula": "收入"},
+        {"id": "2", "measure_name": "收入", "definition": "收入的通用计算表达",
+         "inference_type": "AVG", "source_field": "revenue", "calculation_formula": "收入"},
+        {"id": "3", "measure_name": "收入", "definition": "收入的通用计算表达",
+         "inference_type": "SUM", "source_field": "net_revenue", "calculation_formula": "收入"},
+    ])
+    work = tmp_path / "work"
+    work.mkdir()
+    data = Dataset(root, work)
+    try:
+        data.tables["fruit.measure_definition"]["inferred_semantic_roles"] = [
+            {"column": column, "role": "formula", "status": "source_verified_role_candidate",
+             "schema_evidence_id": f"schema:fruit.measure_definition:{column}",
+             "observations": [{"row_number": 1, "column": column, "value": value}]}
+            for column, value in (("inference_type", "SUM"), ("source_field", "revenue"),
+                                  ("calculation_formula", "收入"))]
+        built = build_semantic_cards(data, tmp_path / "fragments.sqlite")
+        assert built["coverage"]["definition_patterns_indexed"] == 3
+        index = SemanticCardIndex(built["index_path"])
+        try:
+            for card in index.all_cards(3)["cards"]:
+                assert [entry["column"] for entry in card["fields"]["formula"]] == ["calculation_formula"]
+                assert {"inference_type", "source_field"} <= set(card["scope"])
+                fragments = {item["column"]: item for item in card["calculation_fragments"]}
+                assert fragments["inference_type"]["effective_role"] == "calculation_operator"
+                assert fragments["source_field"]["effective_role"] == "operand_reference"
+                assert all(item["formula_status"] == "fragment" and not item["expression_constructed"]
+                           and not item["operand_target_verified"] for item in fragments.values())
+        finally:
+            index.close()
+    finally:
+        data.close()
+
+
 def test_reference_rule_name_does_not_turn_rule_row_into_business_definition(tmp_path):
     root = tmp_path / "rule_input"
     _table(root, "param_ref_rule", {"id": "记录 ID", "rule_name": "规则名称",

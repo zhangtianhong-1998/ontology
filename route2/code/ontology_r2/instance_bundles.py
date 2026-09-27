@@ -33,8 +33,8 @@ def _limits(options):
         raise ValueError("max_joint_pairs_per_rule must be 0..2")
     if limits["max_bundle_bytes"] < 1000 or limits["max_candidates_per_bundle"] < 1:
         raise ValueError("Bundle bytes and candidate count are too small")
-    if not 1 <= limits["max_pattern_seed_pool"] <= 1000:
-        raise ValueError("max_pattern_seed_pool must be 1..1000")
+    if not 1 <= limits["max_pattern_seed_pool"] <= 10000:
+        raise ValueError("max_pattern_seed_pool must be 1..10000")
     return limits
 
 
