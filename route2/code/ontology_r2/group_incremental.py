@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import Field, field_validator
 
 from .models import BuildPlan, Condition, DerivedType, RelationPlan, Strict, json_null_placeholder
+from .definition_subject import quantity_subject_assessment
+from .relation_evidence import validate_definition_reference
 from .relation_contract import (canonical_relation_id, canonical_relation_label,
                                 relation_semantic_parameters,
                                 validate_calculation_parameter_evidence,
@@ -167,6 +169,86 @@ def _canonical_label(records, proposed):
                   "annotation_is_semantic_evidence": False}
 
 
+_BUSINESS_INDEPENDENCE = re.compile(
+    r"(?:可用于|适用于|通用于|复用于)(?:不同|任意|任何|所有|各类)(?:经营|业务)对象|"
+    r"(?:不绑定|不限定|不限制)(?:任何|具体|特定)?(?:经营|业务)对象|"
+    r"(?:经营|业务)对象(?:不限|无限制)|"
+    r"\b(?:across|for) (?:different|any|all) business (?:objects|entities)\b|"
+    r"\b(?:independent of|not (?:bound|restricted|limited) to) "
+    r"(?:(?:any|a specific|specific) )?business (?:objects?|entities|entity)\b", re.I)
+_REUSE_EXCEPTION = re.compile(
+    r"但|然而|仅|只(?:适用|用于|针对)|专(?:用于|供)|限于|排除|不适用|并非|"
+    r"不是|不能|不可|不得|禁止|不允许|若|如果|"
+    r"\b(?:except|only|unless|but|however|if)\b|\bnot (?:independent|applicable|usable)\b", re.I)
+_BUSINESS_SCOPE_COLUMN = re.compile(
+    r"^(?:business|operating)_(?:object|entity)(?:_scope)?$|经营对象|业务对象", re.I)
+_STANDARD_NAME_COLUMN = re.compile(
+    r"^(?:standard|canonical)_name$|标准名(?:称)?|规范名(?:称)?|\b(?:standard|canonical) name\b", re.I)
+
+
+def _generic_business_statement(value):
+    """Recognize explicit source declarations, not genericity from a short name.
+
+    This intentionally bounded language contract leaves unfamiliar wording
+    unresolved. It never recognizes a business entity by a domain vocabulary.
+    """
+    text = str(value).strip()
+    return bool(_BUSINESS_INDEPENDENCE.search(text) and not _REUSE_EXCEPTION.search(text))
+
+
+def _measure_reuse_assessment(data, records, label=None):
+    """Every exact record needs its own positive, complete reuse declaration.
+
+    A null business_object_quote says nothing about the original definition.
+    Related records and formula/operator shapes cannot fill this evidence gap.
+    """
+    assessments = []
+    for record in records:
+        metadata = {item["column_name"]: item for item in
+                    getattr(data, "tables", {}).get(record["table"], {}).get("columns", [])}
+        proofs, conflicts, standard_names = [], [], []
+        for role, entry in _entries(record):
+            if entry.get("truncated"):
+                continue
+            column, value = entry["column"], str(entry.get("value") or "").strip()
+            if not value:
+                continue
+            declaration = str(metadata.get(column, {}).get("column_comment") or "")
+            witness = {"column": column, "role": role, "value": value,
+                       "declaration": declaration}
+            business_scope = role == "scope" and (
+                _BUSINESS_SCOPE_COLUMN.search(column) or _BUSINESS_SCOPE_COLUMN.search(declaration))
+            if role in ("description", "scope") and _generic_business_statement(value):
+                proofs.append({**witness, "basis": "explicit_business_independence"})
+            elif business_scope and _explicitly_unrestricted(value):
+                proofs.append({**witness, "basis": "unrestricted_business_object_field"})
+            elif business_scope:
+                conflicts.append({**witness, "reason": "explicit_business_object_binding"})
+            if role in ("name", "alias") and (
+                    _STANDARD_NAME_COLUMN.search(column) or _STANDARD_NAME_COLUMN.search(declaration)):
+                standard_names.append(witness)
+                # A short alias cannot abstract its own more specific canonical
+                # definition. A separate generic definition must be the seed.
+                if (label and label.casefold() != value.casefold()
+                        and label.casefold() in value.casefold()):
+                    conflicts.append({**witness, "reason": "short_name_does_not_replace_standard_name"})
+        reasons = sorted({item["reason"] for item in conflicts})
+        if not proofs:
+            reasons.append("missing_explicit_business_independence")
+        assessments.append({"record_id": record["record_id"], "table": record["table"],
+                            "supported": bool(proofs) and not conflicts,
+                            "proofs": proofs, "conflicts": conflicts,
+                            "standard_names": standard_names, "reasons": reasons})
+    return assessments
+
+
+class ConceptEvidenceError(ValueError):
+    """Carry the checked source diagnostics into unresolved group checkpoints."""
+    def __init__(self, message, audit):
+        super().__init__(message)
+        self.audit = audit
+
+
 class RecordAlignmentDecision(Strict):
     record_id: str
     mapping_kind: Literal["exact", "narrower", "related", "unresolved"]
@@ -183,7 +265,9 @@ class ConceptBundleDecision(Strict):
     classification_basis: Literal["business_driven_metric", "reusable_measure",
                                   "other", "unresolved"] = "unresolved"
     classification_quote: str = ""
-    business_object_quote: str = ""
+    business_object_quote: str = Field(default="", description=(
+        "Metric: quote the actual operating object, never a service topic or a word from an unrestricted declaration. "
+        "Measure: empty is required but is NOT evidence of independence; every exact source must pass measure_reuse_assessment."))
     aggregation_operator: Literal["sum", "avg", "count", "distinct_count",
                                   "min", "max", "filter"] | None = Field(
         default=None, description="Only a source-evidenced Measure may set an operator. Metric MUST use null; its calculation remains in the original formula.")
@@ -412,11 +496,13 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
     if not exact_records:
         raise ValueError("New concept requires an exact source definition record")
     label, label_normalization = _canonical_label(exact_records, decision.label)
-    if decision.ontology_level == "type" and decision.root_type in ("Metric", "Measure"):
+    # A source record cannot evade quantity classification by switching its
+    # ontology level from type to instance/unresolved.
+    if decision.root_type in ("Metric", "Measure"):
         expected = ("business_driven_metric" if decision.root_type == "Metric"
                     else "reusable_measure")
         if decision.classification_basis != expected:
-            raise ValueError("Metric/Measure type requires a matching classification basis")
+            raise ValueError("Metric/Measure requires a matching classification basis")
         if not decision.classification_quote.strip() or not _complete_classification_fragment(
                 exact_records, decision.classification_quote):
             raise ValueError("Metric/Measure classification quote must be a complete exact definition")
@@ -480,6 +566,24 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
             raise ValueError("Type induction requires every scope field to be classified")
         if "observation" in decision.scope_roles.values():
             raise ValueError("Observation coordinates cannot become type identity")
+    quantity_subjects = []
+    if decision.root_type in ("Metric", "Measure"):
+        quantity_subjects = [{"record_id": record["record_id"], **quantity_subject_assessment(
+            data, record, label, decision.classification_quote)} for record in exact_records]
+        if any(item["blocks_exact_record_identity"] for item in quantity_subjects):
+            raise ConceptEvidenceError(
+                "Service/display subject or mixed record cannot be exact to a quantity definition: "
+                + "; ".join(reason for item in quantity_subjects for reason in item["reasons"]),
+                {"quantity_subject_assessment": quantity_subjects})
+    measure_reuse = _measure_reuse_assessment(data, exact_records, label)
+    if decision.root_type == "Measure" and not all(item["supported"] for item in measure_reuse):
+        gaps = "; ".join(f"{item['record_id']}: {', '.join(item['reasons'])}"
+                         for item in measure_reuse if not item["supported"])
+        raise ConceptEvidenceError("Measure requires an independent generic source definition: " + gaps,
+                                   {"measure_reuse_assessment": measure_reuse})
+    if decision.root_type == "Metric" and any(item["proofs"] for item in measure_reuse):
+        raise ConceptEvidenceError("Metric conflicts with an explicit business-independent source declaration",
+                                   {"measure_reuse_assessment": measure_reuse})
     normalized_label = " ".join(label.casefold().split())
     grounded_definition, source_formulas = _source_semantics(exact_records)
     normalized_definition = " ".join(grounded_definition.casefold().split())
@@ -549,6 +653,11 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                "definition": grounded_definition,
                "proposed_definition": decision.definition.strip(),
                "definition_basis": "complete_source_fields",
+               "classification_evidence": {"basis": decision.classification_basis,
+                                           "classification_quote": decision.classification_quote,
+                                           "business_object_quote": decision.business_object_quote,
+                                           "quantity_subject_assessment": quantity_subjects,
+                                           "measure_reuse_assessment": measure_reuse},
                "source_formulas": source_formulas,
                "identity_scope": "snapshot_only",
                "ontology_level": decision.ontology_level,
@@ -659,6 +768,27 @@ def compile_relation(data, profile, core, bundle, decision):
         raise ValueError("Relation compiler only supports one key field")
     source_record, target_record = _quoted_positive_pair(
         bundle, decision, source, target, source_field, target_field)
+    reference_audit = validate_definition_reference(
+        data, bundle, decision, source_record, target_record)
+    reference_evidence = []
+    if reference_audit["status"] == "supported":
+        for item in reference_audit["evidence"]:
+            evidence_id = item.get("evidence_id") or "record:" + digest(
+                [data.snapshot_id, item["record_id"], item["column"]])[:24]
+            if evidence_id not in data.evidence:
+                data.evidence[evidence_id] = {
+                    "id": evidence_id, "origin": item["origin"],
+                    "raw_fragment": item["raw_fragment"], "raw_fragment_truncated": False,
+                    "source_ref": {key: item[key] for key in
+                                   ("table", "column", "record_id", "row") if key in item}}
+            reference_evidence.append(evidence_id)
+        audit_id = "relation_contract:" + digest([data.snapshot_id, reference_audit])[:24]
+        data.evidence[audit_id] = {
+            "id": audit_id, "origin": "automatic_contract_check",
+            "raw_fragment": json.dumps(reference_audit, ensure_ascii=False),
+            "basis_evidence_ids": list(dict.fromkeys(reference_evidence)),
+            "source_ref": {"snapshot_id": data.snapshot_id, "rule_id": rule["rule_id"]}}
+        reference_evidence.append(audit_id)
     dependency_evidence = []
     if decision.parent_relation == "depends_on":
         from .calculation_contracts import parse_calculation
@@ -706,6 +836,7 @@ def compile_relation(data, profile, core, bundle, decision):
                         allowed_roles=_RELATION_QUOTE_ROLES, excluded_columns={target_field},
                         require_complete=True),
         *dependency_evidence,
+        *reference_evidence,
     ]))
     relation_id = canonical_relation_id(
         decision.parent_relation, domain, range_type, namespace="relation",
@@ -898,8 +1029,20 @@ def bundle_request_payload(data, profile, core, bundle):
                            "parameter_basis": _parameter_basis(data, record, key, value),
                            "unrestricted_literal_supported": _explicitly_unrestricted(value)}
                           for record in exact_records for key, value in (record.get("scope") or {}).items()]
+    endpoint_declarations = {}
+    for endpoint in ("source", "target"):
+        reference = (bundle.get("rule") or {}).get(endpoint) or {}
+        table = getattr(data, "tables", {}).get(reference.get("table"), {})
+        if reference:
+            column = next((item for item in table.get("columns", [])
+                           if item["column_name"] == reference.get("field")), {})
+            endpoint_declarations[endpoint] = {
+                **reference, "table_comment": table.get("table_comment") or "",
+                "column_comment": column.get("column_comment") or ""}
     return {"bundle": bundle, "canonical_name_choices": _source_names(exact_records),
             "scope_role_evidence": scope_declarations,
+            "measure_reuse_assessment": _measure_reuse_assessment(data, exact_records),
+            "relation_endpoint_declarations": endpoint_declarations,
             "root_model": {"object_roots": profile["object_roots"], "relation_roots": profile["relation_roots"]},
             "current_types": _type_context(core, bundle),
             "current_relations": [{"id": item.id, "parent": item.parent} for item in core.relation_types[-12:]]}
@@ -1164,6 +1307,14 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                 else:
                                     properties[key] = item
                             old["source_properties"] = [properties[key] for key in sorted(properties)]
+                            # Equivalent definitions may have additional exact
+                            # sources. Keep each source's classification audit.
+                            previous_audit = old.setdefault("classification_evidence", {})
+                            for key in ("measure_reuse_assessment", "quantity_subject_assessment"):
+                                checks = {item["record_id"]: item for item in previous_audit.get(key, [])}
+                                checks.update({item["record_id"]: item for item in
+                                               concept["classification_evidence"][key]})
+                                previous_audit[key] = list(checks.values())
                             if old["ontology_level"] == "unresolved":
                                 old["ontology_level"] = concept["ontology_level"]
                                 old["ontology_type_id"] = concept["ontology_type_id"]
@@ -1230,6 +1381,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
             except Exception as exc:
                 step.update(status="unresolved", error_type=type(exc).__name__,
                             reason=str(exc) if isinstance(exc, ValueError) else "See trace")
+                if isinstance(getattr(exc, "audit", None), dict):
+                    step["compiler_evidence_audit"] = exc.audit
             step["core_after"] = digest(core.model_dump())
             steps.append(step)
             batch_decisions.pop(bundle["bundle_id"], None)

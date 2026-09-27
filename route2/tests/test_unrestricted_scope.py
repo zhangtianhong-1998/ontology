@@ -12,7 +12,7 @@ from test_group_incremental import PROFILE
 
 
 def _compile(data, key, name, scope, roles, *, metric=False, formula=None, source_scope=True):
-    definition = name + ("是苹果经营业务的收入减去成本。" if metric else "是可复用金额合计。")
+    definition = name + ("是苹果经营业务的收入减去成本。" if metric else "是可用于不同经营对象的金额合计。")
     fields = {
         "name": [{"column": "name", "value": name}],
         "description": [{"column": "definition", "value": definition}],

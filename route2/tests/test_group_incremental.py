@@ -47,7 +47,8 @@ def _concept_decision(record_ids, *, scope=None, kinds=None, quotes=None):
     quotes = quotes or ["水果收入"] * len(record_ids)
     return ConceptBundleDecision(
         status="proposed", label="水果收入", definition="水果业务收入",
-        root_type="Metric", scope=scope or {},
+        root_type="Metric", scope=scope or {}, classification_basis="business_driven_metric",
+        classification_quote="华东水果收入", business_object_quote="水果",
         alignments=[RecordAlignmentDecision(record_id=record_id,
                                             mapping_kind=kind, quote=quote)
                     for record_id, kind, quote in zip(record_ids, kinds, quotes)],
@@ -338,7 +339,8 @@ def test_measure_operator_is_an_optional_evidenced_property_not_type_name():
         "row_number": 1, "root_hint": "Measure", "scope": {}, "unit": "元",
         "fields": {
             "name": [{"column": "name", "value": "收入"}],
-            "description": [{"column": "definition", "value": "收入按 SUM(x) 汇总各期间金额"}],
+            "description": [{"column": "definition", "value": "收入按 SUM(x) 汇总各期间金额"},
+                            {"column": "reuse_policy", "value": "不限定经营对象。"}],
             "unit": [{"column": "unit", "value": "元"}],
         },
     }
@@ -357,7 +359,8 @@ def test_measure_operator_is_an_optional_evidenced_property_not_type_name():
                         decision.model_copy(update={"aggregation_operator": "avg"}), {})
     distinct_record = {**record, "fields": {
         **record["fields"], "description": [
-            {"column": "definition", "value": "收入按 COUNT(DISTINCT x) 去重计数"}]}}
+            {"column": "definition", "value": "收入按 COUNT(DISTINCT x) 去重计数"},
+            {"column": "reuse_policy", "value": "不限定经营对象。"}]}}
     with pytest.raises(ValueError, match="operator lacks exact source evidence"):
         compile_concept(data, PROFILE, {"records": [distinct_record]},
                         decision.model_copy(update={
@@ -397,7 +400,8 @@ def test_measure_definition_may_have_time_applicability_but_not_observation_iden
                         decision.model_copy(update={"scope_roles": {"month": "observation"}}), {})
     rank = {**record, "record_id": "rank", "scope": {}, "unit": "", "fields": {
         "name": [{"column": "name", "value": "当年预算排名"}],
-        "description": [{"column": "definition", "value": "当年预算排名按预算值降序给出序位"}],
+        "description": [{"column": "definition", "value": "当年预算排名按预算值降序给出序位"},
+                        {"column": "reuse_policy", "value": "不限定经营对象。"}],
     }}
     rank_decision = decision.model_copy(update={
         "label": "当年预算排名", "definition": "通用预算序位",
@@ -426,7 +430,8 @@ def test_same_name_measure_merges_equal_definitions_and_separates_distinct_meani
                   "kind": "definition", "root_hint": "Measure", "row_number": 1,
                   "scope": {}, "unit": "元", "fields": {
                       "name": [{"column": "name", "value": "收入"}],
-                      "description": [{"column": "definition", "value": meaning}],
+                      "description": [{"column": "definition", "value": meaning},
+                                      {"column": "reuse_policy", "value": "不限定经营对象。"}],
                       "unit": [{"column": "unit", "value": "元"}],
                   }}
         return {"bundle_id": f"b{index}", "task_kind": "concept_induction",
@@ -514,7 +519,8 @@ def test_same_label_with_different_exact_unit_or_scope_keeps_distinct_identity()
                                  _concept_decision(["r2"]), {})[0]
     south_yuan = compile_concept(data, PROFILE,
                                  {"records": [_record("r3", region="华南")]},
-                                 _concept_decision(["r3"]), {})[0]
+                                 _concept_decision(["r3"]).model_copy(update={
+                                     "classification_quote": "华南水果收入"}), {})[0]
     assert len({east_yuan["id"], east_tonne["id"], south_yuan["id"]}) == 3
 
 

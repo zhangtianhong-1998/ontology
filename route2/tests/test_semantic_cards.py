@@ -257,7 +257,7 @@ def _wide_reference_dataset(tmp_path, *, first_reference=None):
     references = [f"ref{i}_code" for i in range(10)]
     rows = []
     for number in (1, 2):
-        rows.append({"id": str(number), "measure_name": "收入", "definition": "可复用的收入总额",
+        rows.append({"id": str(number), "measure_name": "收入", "definition": "适用于不同经营对象的收入总额",
                      **{field: "reference_value_" + "A" * 80 for field in references},
                      "ref9_code": first_reference if number == 1 else "reference_value_" + "B" * 80})
     _table(root, "measure_definition", {

@@ -19,15 +19,15 @@ def _fixture(tmp_path):
         'id': '记录主键', 'measure_name': '度量名称', 'definition': '度量定义',
         'formula': '计算公式', 'scope': '适用范围', 'unit': '单位', 'reference_code': '引用编码',
     }, [
-        {'id': '1', 'measure_name': '收入', 'definition': '可复用的收入总额',
+        {'id': '1', 'measure_name': '收入', 'definition': '适用于不同经营对象的收入总额',
          'formula': 'sum(amount)', 'scope': '全年', 'unit': '元', 'reference_code': 'A'},
-        {'id': '2', 'measure_name': '收入', 'definition': '可复用的收入总额',
+        {'id': '2', 'measure_name': '收入', 'definition': '适用于不同经营对象的收入总额',
          'formula': 'sum(amount)', 'scope': '全年', 'unit': '元', 'reference_code': 'B'},
-        {'id': '3', 'measure_name': '收入', 'definition': '可复用的收入总额',
+        {'id': '3', 'measure_name': '收入', 'definition': '适用于不同经营对象的收入总额',
          'formula': 'sum(amount)', 'scope': '全年', 'unit': '元', 'reference_code': 'A'},
-        {'id': '4', 'measure_name': '收入', 'definition': '可复用的收入总额',
+        {'id': '4', 'measure_name': '收入', 'definition': '适用于不同经营对象的收入总额',
          'formula': 'avg(amount)', 'scope': '全年', 'unit': '元', 'reference_code': 'A'},
-        {'id': '5', 'measure_name': '收入', 'definition': '可复用的收入总额',
+        {'id': '5', 'measure_name': '收入', 'definition': '适用于不同经营对象的收入总额',
          'formula': 'sum(amount)', 'scope': '季度', 'unit': '元', 'reference_code': 'A'},
     ])
     work = tmp_path / 'work'
@@ -36,11 +36,11 @@ def _fixture(tmp_path):
     built = build_semantic_cards(data, tmp_path / 'cards.sqlite')
     index = SemanticCardIndex(built['index_path'])
     card = next(c for c in index.all_cards(100)['cards'] if c['row_number'] == 1)
-    decision = ConceptBundleDecision(status='proposed', label='收入', definition='可复用的收入总额',
+    decision = ConceptBundleDecision(status='proposed', label='收入', definition='适用于不同经营对象的收入总额',
         root_type='Measure', ontology_level='type', scope={'scope': '全年'},
         scope_roles={'scope': 'applicability'}, classification_basis='reusable_measure',
-        classification_quote='可复用的收入总额',
-        alignments=[{'record_id': card['record_id'], 'mapping_kind': 'exact', 'quote': '可复用的收入总额'}])
+        classification_quote='适用于不同经营对象的收入总额',
+        alignments=[{'record_id': card['record_id'], 'mapping_kind': 'exact', 'quote': '适用于不同经营对象的收入总额'}])
     concept, alignments = compile_concept(data, PROFILE, {'records': [card]}, decision, {})
     group = {'snapshot_id': data.snapshot_id, 'concepts': [concept], 'record_alignments': alignments}
     return data, index, group
@@ -77,10 +77,10 @@ def test_all_reference_columns_and_empty_representative_values_are_inspected(tmp
     index = SemanticCardIndex(built['index_path'])
     try:
         card = next(c for c in index.all_cards(2)['cards'] if c['row_number'] == 1)
-        decision = ConceptBundleDecision(status='proposed', label='收入', definition='可复用的收入总额',
+        decision = ConceptBundleDecision(status='proposed', label='收入', definition='适用于不同经营对象的收入总额',
             root_type='Measure', ontology_level='type', classification_basis='reusable_measure',
-            classification_quote='可复用的收入总额',
-            alignments=[{'record_id': card['record_id'], 'mapping_kind': 'exact', 'quote': '可复用的收入总额'}])
+            classification_quote='适用于不同经营对象的收入总额',
+            alignments=[{'record_id': card['record_id'], 'mapping_kind': 'exact', 'quote': '适用于不同经营对象的收入总额'}])
         concept, alignments = compile_concept(data, PROFILE, {'records': [card]}, decision, {})
         result = build_definition_memberships(data, index, {
             'snapshot_id': data.snapshot_id, 'concepts': [concept], 'record_alignments': alignments})
@@ -224,8 +224,8 @@ def test_demoted_code_alias_keeps_independent_memberships_and_pending_references
     root = tmp_path / 'input'
     _table(root, 'measure_definition', {'id': '记录主键', 'measure_name': '度量名称',
         'definition': '度量定义', 'measure_code': '度量编码'}, [
-        {'id': '1', 'measure_name': '收入', 'definition': '可复用的收入总额', 'measure_code': 'M001'},
-        {'id': '2', 'measure_name': '收入', 'definition': '可复用的收入总额', 'measure_code': 'M002'}])
+        {'id': '1', 'measure_name': '收入', 'definition': '适用于不同经营对象的收入总额', 'measure_code': 'M001'},
+        {'id': '2', 'measure_name': '收入', 'definition': '适用于不同经营对象的收入总额', 'measure_code': 'M002'}])
     work = tmp_path / 'work'
     work.mkdir()
     data = Dataset(root, work)
@@ -239,10 +239,10 @@ def test_demoted_code_alias_keeps_independent_memberships_and_pending_references
         card = next(card for card in cards if card['row_number'] == 1)
         assert card['binding_columns_excluded_from_semantic_pattern'] == ['measure_code']
         assert (proposed_role, 'measure_code') not in _semantic_columns(data, card)
-        decision = ConceptBundleDecision(status='proposed', label='收入', definition='可复用的收入总额',
+        decision = ConceptBundleDecision(status='proposed', label='收入', definition='适用于不同经营对象的收入总额',
             root_type='Measure', ontology_level='type', classification_basis='reusable_measure',
-            classification_quote='可复用的收入总额',
-            alignments=[{'record_id': card['record_id'], 'mapping_kind': 'exact', 'quote': '可复用的收入总额'}])
+            classification_quote='适用于不同经营对象的收入总额',
+            alignments=[{'record_id': card['record_id'], 'mapping_kind': 'exact', 'quote': '适用于不同经营对象的收入总额'}])
         concept, alignments = compile_concept(data, PROFILE, {'records': [card]}, decision, {})
         result = build_definition_memberships(data, index, {
             'snapshot_id': data.snapshot_id, 'concepts': [concept], 'record_alignments': alignments})
