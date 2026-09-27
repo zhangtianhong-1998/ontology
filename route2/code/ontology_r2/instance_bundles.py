@@ -338,7 +338,7 @@ def _example_record(data, item, key):
 
 def _relation_bundle(data, rule, limits):
     source, target = rule["source"], rule["target"]
-    if rule["status"] != "checked_technical":
+    if rule["status"] not in ("checked_technical", "observed_subset"):
         return None, "rule_not_compilable"
     source_info, target_info = data.tables[source["table"]], data.tables[target["table"]]
     source_root, target_root = _root_hint(source_info), _root_hint(target_info)
@@ -398,8 +398,17 @@ def _relation_bundle(data, rule, limits):
               "examples": {"positive": positives, "counterexamples": negatives},
               "retrieval": [{"candidate_id": rule["candidate_id"],
                              "channels": rule.get("retrieval_channels", []),
-                             "candidate_status": "checked_technical"}],
-              "limits": {"technical_match_is_business_relation": False}}
+                             "candidate_status": rule["status"]}],
+              "limits": {"technical_match_is_business_relation": False,
+                         "semantic_scope": "quoted_witness_pairs_only"},
+              "technical_coverage": {
+                  "rule_status": rule["status"], "scan_scope": check["scan_scope"],
+                  "eligible_references": check["checks"]["eligible_references"],
+                  "unique_matches": check["checks"]["unique_matches"],
+                  "ambiguous_matches": check["checks"].get("ambiguous_matches", 0),
+                  "missing_in_input": check["checks"].get("missing_in_input", 0),
+                  "missing_scope": check["checks"].get("missing_scope", 0),
+                  "all_unique_matches_semantically_accepted": False}}
     bundle["metadata_context"] = _metadata_context(data, bundle["records"])
     # Prefer preserving a positive pair and its counterexample over a second pair.
     while _size(bundle) > limits["max_bundle_bytes"] and len(positives) > 1:
@@ -408,6 +417,9 @@ def _relation_bundle(data, rule, limits):
                 (pair["source_record_id"], pair["target_record_id"])}
         keep.update(item["record_id"] for item in negatives)
         bundle["records"] = [item for item in bundle["records"] if item["record_id"] in keep]
+    bundle["technical_coverage"]["unique_witness_pairs_in_bundle"] = len(positives)
+    bundle["technical_coverage"]["unique_matches_not_in_bundle"] = max(
+        0, check["checks"]["unique_matches"] - len(positives))
     if _size(bundle) > limits["max_bundle_bytes"]:
         return None, "relation_over_budget"
     bundle["bundle_id"] = "bundle:" + digest([data.snapshot_id, bundle["task_kind"],
@@ -423,7 +435,7 @@ def _round_robin_rules(rules, limit):
     for numeric_only in (False, True):
         groups = defaultdict(list)
         for rule in sorted(rules, key=lambda item: (-_reference_priority(item), item["rule_id"])):
-            if (rule["status"] == "checked_technical"
+            if (rule["status"] in ("checked_technical", "observed_subset")
                     and bool(rule.get("numeric_overlap_only", False)) == numeric_only):
                 groups[rule["source"]["table"]].append(rule)
         while groups and len(chosen) < limit:
@@ -541,7 +553,7 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
             skipped.append({"seed_id": seed["card_id"], "reason": reason})
     joined_coverage = joined.coverage()
     joined.close()
-    checked_rules = sum(item["status"] == "checked_technical"
+    checked_rules = sum(item["status"] in ("checked_technical", "observed_subset")
                         for item in association.get("rules", []))
     # Inspect additional checked rules when an earlier one is only a concept
     # alignment lead. A skipped lead must not consume a relation-bundle slot.
@@ -658,6 +670,10 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
                 "joint_distinct": {"source": "semantic_cards.coverage.by_table.*.joint_distinct",
                                    "method": "bounded_exact_joint_distinct_no_cartesian_enumeration"},
                 "checked_rules": checked_rules, "rules_selected": len(rules),
+                "technical_rule_statuses": {
+                    status: sum(rule["status"] == status for rule in association.get("rules", []))
+                    for status in ("checked_technical", "observed_subset", "unresolved")},
+                "rule_selection_scope": "unique witnessed rows from full-input checks; semantic review still required",
                 "checked_rules_not_selected": max(0, checked_rules - len(rules)),
                 "bundles_built": len(bundles), "bundles_by_task": {
                     kind: sum(item["task_kind"] == kind for item in bundles)

@@ -254,6 +254,31 @@ def test_same_name_types_require_complete_verified_equivalence_for_fact_binding(
         data.close()
 
 
+@pytest.mark.parametrize("target_parameters,assertion_parameters", [
+    ({"period_scope": "公历月"}, {"period_scope": "公历年"}),
+    ({}, {"period_scope": "公历年"}),
+    ({"period_scope": "公历年"}, None),
+])
+def test_equivalence_replay_cannot_hide_definition_parameter_conflicts(
+        tmp_path, target_parameters, assertion_parameters):
+    data, core = _fixture(tmp_path, duplicate_type=True)
+    try:
+        core.object_types[0].definition_parameters = {"period_scope": "公历年"}
+        core.object_types[1].definition_parameters = target_parameters
+        canonical = core.object_types[0].id
+        assertion = {"id": "type_equivalence:stale", "source_type_id": canonical,
+                     "target_type_id": core.object_types[1].id, "canonical_type_id": canonical}
+        if assertion_parameters is not None:
+            assertion["definition_parameters"] = assertion_parameters
+        result = _bind(data, core, _LLM(),
+                       canonical_type_map={item.id: canonical for item in core.object_types},
+                       equivalence_assertions=[assertion])
+        assert result["instances"] == []
+        assert result["coverage"]["skipped_reasons"]["multiple_compatible_types_share_label"] == 2
+    finally:
+        data.close()
+
+
 def test_conflicting_value_at_same_coordinates_stays_candidate_only(tmp_path):
     data, core = _fixture(tmp_path, conflicting=True)
     try:

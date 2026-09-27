@@ -86,6 +86,23 @@ def test_anonymous_numeric_field_cannot_be_named_from_values(tmp_path):
         data.close()
 
 
+def test_declared_unit_packet_requests_complete_quote_and_rejects_substring(tmp_path):
+    declaration = "水果销售收入，单位元"
+    data = _dataset(tmp_path, comment=declaration)
+    try:
+        llm = _LLM(unit="元", unit_quote=declaration)
+        _, accepted = _induce(data, llm)
+        contract = llm.calls[0]["declared_unit_quote_contract"]
+        assert contract["recognized_units"] == ["元"]
+        assert contract["required_unit_quote_if_declared"] == declaration
+        assert accepted["coverage"]["accepted_templates"] == 1
+        _, rejected = _induce(data, _LLM(unit="元", unit_quote="单位元"))
+        assert rejected["coverage"]["accepted_templates"] == 0
+        assert rejected["steps"][0]["reason"] == "Unit must appear explicitly in the complete field declaration"
+    finally:
+        data.close()
+
+
 def test_template_round_trip_reuses_schema_with_new_numbers_and_refreshes_evidence(tmp_path):
     first = _dataset(tmp_path / "first", units=("元", "元"))
     second = _dataset(tmp_path / "second", values=("210", "320"), units=("元", "元"))

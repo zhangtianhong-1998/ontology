@@ -122,6 +122,7 @@ configuration_relations:
   max_pairs_per_spec: 1000
   max_semantic_decisions: 40
 llm:
+  cache_dir: ../.cache/semantic_control_llm
   mode: agentscope
   stream: false
   thinking:

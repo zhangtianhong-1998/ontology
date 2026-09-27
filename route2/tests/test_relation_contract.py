@@ -64,3 +64,29 @@ def test_registered_derived_predicate_and_evidenced_roles_have_distinct_identity
         canonical_relation_id("depends_on", "a", "b", semantic_parameters={"arbitrary": "claim"})
     with pytest.raises(ValueError, match="incompatible"):
         canonical_relation_label("contains", "calculation_dependency")
+
+
+@pytest.mark.parametrize("parent,predicate,cue", [
+    ("points_to", "definition_reference", "points to"),
+    ("related_to", "scope_constraint", "related to"),
+    ("depends_on", "calculation_dependency", "依赖"),
+    ("contains", "has_member", "包含"),
+])
+def test_registered_predicate_accepts_own_root_display_cue(parent, predicate, cue):
+    validate_proposed_relation_label(cue, parent, predicate_name=predicate)
+    assert canonical_relation_label(parent, predicate) == predicate
+    validate_proposed_relation_label("甲" + cue + "乙", parent, predicate_name=predicate,
+                                     subject_label="甲", object_label="乙")
+    for label in ("乙" + cue + "甲", "uses", "caused by", "甲随意关联乙"):
+        with pytest.raises(ValueError):
+            validate_proposed_relation_label(label, parent, predicate_name=predicate,
+                                             subject_label="甲", object_label="乙")
+
+
+def test_derived_predicate_rejects_wrong_root_cues_or_unregistered_name():
+    with pytest.raises(ValueError):
+        validate_proposed_relation_label("related to", "points_to", predicate_name="definition_reference")
+    with pytest.raises(ValueError):
+        validate_proposed_relation_label("points to", "related_to", predicate_name="scope_constraint")
+    with pytest.raises(ValueError):
+        validate_proposed_relation_label("points to", "points_to", predicate_name="uses_target")

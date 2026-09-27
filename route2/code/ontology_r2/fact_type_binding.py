@@ -471,7 +471,11 @@ async def bind_fact_observations(
         if (canonical in by_type_id and source_id in by_type_id
                 and target_id in by_type_id
                 and canonical_type_map.get(source_id) == canonical
-                and canonical_type_map.get(target_id) == canonical):
+                and canonical_type_map.get(target_id) == canonical
+                and by_type_id[source_id].definition_parameters
+                == by_type_id[target_id].definition_parameters
+                == by_type_id[canonical].definition_parameters
+                == assertion.get("definition_parameters", {})):
             equivalence_by_canonical.setdefault(canonical, []).append(assertion["id"])
             verified_equivalence_pairs.add(frozenset((source_id, target_id)))
 
@@ -601,7 +605,8 @@ async def bind_fact_observations(
             canonical_item = by_type_id[canonical_id]
             if (_norm(canonical_item.label) != _norm(item.label)
                     or _norm(canonical_item.unit) != _norm(item.unit)
-                    or canonical_item.applicability_scope != item.applicability_scope):
+                    or canonical_item.applicability_scope != item.applicability_scope
+                    or canonical_item.definition_parameters != item.definition_parameters):
                 status["reason"] = "canonical_type_business_signature_conflict"
                 skipped[status["reason"]] += len(candidates)
                 accepted_fields -= 1

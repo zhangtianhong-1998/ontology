@@ -97,6 +97,76 @@ def _explicitly_unrestricted(value):
         text))
 
 
+_PARAMETER_DECLARATION = re.compile(
+    r"粒度|期间类型|周期类型|(?:计算|聚合|统计|排序).{0,8}(?:参数|类型|方式|标记)|"
+    r"(?:预算|预测|实际|目标|剩余|估计|排名).{0,4}(?:标记|标志)|"
+    r"\b(?:granularity|calculation parameter|aggregation parameter|period type)\b", re.I)
+_OBSERVED_PERIOD = re.compile(r"(?:\d{4}(?:年|Q[1-4]|[-/]\d{1,2}(?:[-/]\d{1,2})?)?|\d{4}年\d{1,2}月)", re.I)
+
+
+def _parameter_basis(data, record, column, value):
+    """Check source declarations; a year/place value is not a grain setting."""
+    if not str(value).strip() or _OBSERVED_PERIOD.fullmatch(str(value).strip()):
+        return None
+    if not any(role == "scope" and entry.get("column") == column
+               and not entry.get("truncated") and str(entry.get("value")) == value
+               for role, entry in _entries(record)):
+        return None
+    metadata = next((entry for entry in getattr(data, "tables", {}).get(record["table"], {}).get("columns", [])
+                     if entry["column_name"] == column), {})
+    declaration = str(metadata.get("column_comment") or "")
+    if _PARAMETER_DECLARATION.search(declaration):
+        return {"basis": "source_column_declaration", "record_id": record["record_id"],
+                "table": record["table"], "column": column, "value": value,
+                "declaration": declaration, "schema_evidence_id": f"schema:{record['table']}:{column}"}
+    fragment = next((item for item in record.get("calculation_fragments", [])
+                     if item.get("column") == column and item.get("formula_status") == "fragment"
+                     and item.get("effective_role") in ("calculation_operator", "operand_reference")), None)
+    if fragment:
+        return {"basis": "source_checked_calculation_fragment", "record_id": record["record_id"],
+                "table": record["table"], "column": column, "value": value,
+                "fragment": fragment}
+    return None
+
+
+def _source_names(records):
+    result = []
+    for record in records:
+        for role, entry in _entries(record):
+            if role not in ("name", "alias") or entry.get("truncated"):
+                continue
+            raw = str(entry.get("value") or "").strip()
+            names = [raw]
+            if role == "alias" and raw.startswith("["):
+                try:
+                    parsed = json.loads(raw)
+                    names = parsed if isinstance(parsed, list) and all(isinstance(v, str) for v in parsed) else []
+                except ValueError:
+                    names = []
+            result.extend({"value": name.strip(), "record_id": record["record_id"],
+                           "column": entry["column"], "role": role}
+                          for name in names if name.strip())
+    return result
+
+
+def _canonical_label(records, proposed):
+    """Only strip one display annotation after a uniquely witnessed full name."""
+    choices = _source_names(records)
+    names = {item["value"] for item in choices}
+    label = proposed.strip()
+    if label in names:
+        return label, None
+    matched = [name for name in names if label.startswith(name)
+               and re.fullmatch(r"\s*[（(][^（）()]+[）)]", label[len(name):])]
+    if len(matched) != 1:
+        raise ValueError("Concept label is absent from exact source name/alias choices")
+    name = matched[0]
+    return name, {"kind": "source_name_with_display_annotation", "proposed_label": proposed,
+                  "canonical_label": name, "annotation": label[len(name):],
+                  "source_name_witnesses": [item for item in choices if item["value"] == name],
+                  "annotation_is_semantic_evidence": False}
+
+
 class RecordAlignmentDecision(Strict):
     record_id: str
     mapping_kind: Literal["exact", "narrower", "related", "unresolved"]
@@ -115,12 +185,13 @@ class ConceptBundleDecision(Strict):
     classification_quote: str = ""
     business_object_quote: str = ""
     aggregation_operator: Literal["sum", "avg", "count", "distinct_count",
-                                  "min", "max", "filter"] | None = None
+                                  "min", "max", "filter"] | None = Field(
+        default=None, description="Only a source-evidenced Measure may set an operator. Metric MUST use null; its calculation remains in the original formula.")
     # An accepted source-grounded concept is not automatically a class.
     # Existing responses without this field remain instance-level candidates.
     ontology_level: Literal["type", "instance", "unresolved"] = "unresolved"
     scope: dict[str, str] = Field(default_factory=dict)
-    scope_roles: dict[str, Literal["applicability", "observation", "unrestricted"]] = Field(default_factory=dict)
+    scope_roles: dict[str, Literal["applicability", "observation", "unrestricted", "parameter"]] = Field(default_factory=dict)
     alignments: list[RecordAlignmentDecision] = Field(default_factory=list)
     reason: str = ""
 
@@ -340,6 +411,7 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         selected.append((item, record))
     if not exact_records:
         raise ValueError("New concept requires an exact source definition record")
+    label, label_normalization = _canonical_label(exact_records, decision.label)
     if decision.ontology_level == "type" and decision.root_type in ("Metric", "Measure"):
         expected = ("business_driven_metric" if decision.root_type == "Metric"
                     else "reusable_measure")
@@ -351,12 +423,12 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         if not any(
                 role in ("name", "alias", "description")
                 and not entry.get("truncated")
-                and decision.label.casefold() in str(entry["value"]).casefold()
+                and label.casefold() in str(entry["value"]).casefold()
                 for record in exact_records for role, entry in _entries(record)):
             raise ValueError("Metric/Measure label is absent from exact source records")
         if decision.root_type == "Measure":
             operator = decision.aggregation_operator
-            if _operator_label(decision.label):
+            if _operator_label(label):
                 raise ValueError("An aggregation operator alone is not a Measure")
             if decision.business_object_quote.strip():
                 raise ValueError("A reusable Measure cannot carry a named business object quote")
@@ -364,11 +436,11 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                     decision.classification_quote, operator):
                 raise ValueError("Measure calculation operator lacks exact source evidence")
         else:
-            if _operator_label(decision.label):
+            if _operator_label(label):
                 raise ValueError("An aggregation operator alone is not a Metric")
             if decision.aggregation_operator is not None:
                 raise ValueError("Metric calculation belongs in its source formula, not a single Measure operator")
-            if not _named_business_object(exact_records, decision.label,
+            if not _named_business_object(exact_records, label,
                                           decision.business_object_quote):
                 raise ValueError("Metric requires a source-quoted business object in its definition or name")
     exact_scope = {}
@@ -385,7 +457,14 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
     effective_scope = {**exact_scope, **decision.scope}
     if not set(decision.scope_roles) <= set(effective_scope):
         raise ValueError("Scope role names a field absent from exact source definitions")
+    parameter_evidence = {}
     for key, role in decision.scope_roles.items():
+        if role == "parameter":
+            bases = [_parameter_basis(data, record, key, effective_scope[key]) for record in exact_records]
+            if not all(bases):
+                raise ValueError("Definition parameter requires a complete source value and a checked grain/calculation declaration")
+            parameter_evidence[key] = bases
+            continue
         if role != "unrestricted":
             continue
         value = effective_scope[key]
@@ -401,7 +480,7 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
             raise ValueError("Type induction requires every scope field to be classified")
         if "observation" in decision.scope_roles.values():
             raise ValueError("Observation coordinates cannot become type identity")
-    normalized_label = " ".join(decision.label.casefold().split())
+    normalized_label = " ".join(label.casefold().split())
     grounded_definition, source_formulas = _source_semantics(exact_records)
     normalized_definition = " ".join(grounded_definition.casefold().split())
     operator = decision.aggregation_operator if decision.root_type == "Measure" else None
@@ -410,11 +489,15 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                                        source_formulas])[:24]
     applicability = {key: value for key, value in effective_scope.items()
                      if decision.scope_roles.get(key) == "applicability"}
+    parameters = {key: value for key, value in effective_scope.items()
+                  if decision.scope_roles.get(key) == "parameter"}
     coordinates = {key: value for key, value in effective_scope.items()
                    if decision.scope_roles.get(key) == "observation"}
-    type_id = ("type:" + digest([decision.root_type, normalized_label,
-                                  normalized_definition, applicability, unit, operator,
-                                  source_formulas])[:24]
+    identity = [decision.root_type, normalized_label, normalized_definition, applicability, unit, operator,
+                source_formulas]
+    if parameters:
+        identity.append({"definition_parameters": parameters})
+    type_id = ("type:" + digest(identity)[:24]
                if decision.ontology_level == "type" else None)
     alignments, all_evidence = [], set()
     for item, record in selected:
@@ -461,7 +544,8 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
          "evidence_ids": sorted(evidence_ids)}
         for (role, table, column), evidence_ids in sorted(property_sources.items())
     ]
-    concept = {"id": concept_id, "type": decision.root_type, "label": decision.label.strip(),
+    concept = {"id": concept_id, "type": decision.root_type, "label": label,
+               "proposed_label": decision.label, "label_normalization": label_normalization,
                "definition": grounded_definition,
                "proposed_definition": decision.definition.strip(),
                "definition_basis": "complete_source_fields",
@@ -470,6 +554,7 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                "ontology_level": decision.ontology_level,
                "ontology_type_id": type_id,
                "scope": effective_scope, "applicability_scope": applicability,
+               "definition_parameters": parameters, "parameter_evidence": parameter_evidence,
                "scope_roles": dict(decision.scope_roles),
                "unrestricted_scope": {key: value for key, value in effective_scope.items()
                                       if decision.scope_roles.get(key) == "unrestricted"},
@@ -498,6 +583,7 @@ def _compiled_object_type(concept):
         evidence_ids=concept["evidence_ids"],
         evidence_scope="definition_record",
         applicability_scope=concept["applicability_scope"],
+        definition_parameters=concept.get("definition_parameters", {}),
         unit=concept["unit"], derivation_kind="exact_definition",
         aggregation_operator=concept.get("aggregation_operator"),
         source_concept_ids=[concept["id"]],
@@ -533,7 +619,7 @@ def compile_relation(data, profile, core, bundle, decision):
     if decision.status != "proposed":
         return None
     rule = bundle.get("rule") or {}
-    if rule.get("status") != "checked_technical":
+    if rule.get("status") not in ("checked_technical", "observed_subset"):
         raise ValueError("Relation bundle has no checked technical rule")
     if (bundle.get("snapshot_id") != data.snapshot_id or
             rule.get("snapshot_id") != data.snapshot_id or
@@ -557,10 +643,17 @@ def compile_relation(data, profile, core, bundle, decision):
                                     predicate_name=decision.predicate_name)
     counts = rule.get("verification", {}).get("checks") or {}
     eligible, unique = counts.get("eligible_references"), counts.get("unique_matches")
+    failed = [counts.get(key, 0) for key in
+              ("ambiguous_matches", "missing_in_input", "missing_scope")]
     if (type(eligible) is not int or eligible <= 0 or type(unique) is not int
-            or unique != eligible or any(counts.get(key, 0) for key in (
-                "ambiguous_matches", "missing_in_input", "missing_scope"))):
+            or not 0 < unique <= eligible
+            or any(type(count) is not int or count < 0 for count in failed)
+            or unique + sum(failed[:2]) != eligible
+            or (rule["status"] == "checked_technical" and (unique != eligible or any(failed)))):
         raise ValueError("Checked technical rule has incomplete or inconsistent full-input counts")
+    # An observed subset certifies only its unique matches. The plan below
+    # remains restricted to the single quoted pair; other good or bad rows
+    # never inherit this sampled semantic decision.
     source_field, target_field = source.get("field"), target.get("field")
     if not source_field or not target_field:
         raise ValueError("Relation compiler only supports one key field")
@@ -791,7 +884,25 @@ def _type_context(core, bundle, limit=12):
     chosen = [*sorted(learned, key=relevance)[:slots], *related]
     return [{"id": item.id, "parent": item.parent, "definition": item.definition,
              "label": item.label, "applicability_scope": item.applicability_scope,
+             "definition_parameters": item.definition_parameters,
              "unit": item.unit, "category": item.category} for item in chosen]
+
+
+def bundle_request_payload(data, profile, core, bundle):
+    """One payload builder for live requests and exact transport-budget tests."""
+    exact_ids = set(bundle.get("exact_alignment_record_ids") or ())
+    exact_records = [record for record in bundle.get("records", [])
+                     if record.get("context_role") != "related_context"
+                     and (not exact_ids or record["record_id"] in exact_ids)]
+    scope_declarations = [{"record_id": record["record_id"], "column": key, "value": value,
+                           "parameter_basis": _parameter_basis(data, record, key, value),
+                           "unrestricted_literal_supported": _explicitly_unrestricted(value)}
+                          for record in exact_records for key, value in (record.get("scope") or {}).items()]
+    return {"bundle": bundle, "canonical_name_choices": _source_names(exact_records),
+            "scope_role_evidence": scope_declarations,
+            "root_model": {"object_roots": profile["object_roots"], "relation_roots": profile["relation_roots"]},
+            "current_types": _type_context(core, bundle),
+            "current_relations": [{"id": item.id, "parent": item.parent} for item in core.relation_types[-12:]]}
 
 
 async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *, review=True,
@@ -860,11 +971,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 await pending
 
     def packet_payload(bundle):
-        return {"bundle": bundle, "root_model": {
-            "object_roots": profile["object_roots"], "relation_roots": profile["relation_roots"]},
-            "current_types": _type_context(core, bundle),
-            "current_relations": [{"id": item.id, "parent": item.parent}
-                                  for item in core.relation_types[-12:]]}
+        return bundle_request_payload(data, profile, core, bundle)
 
     async def prepare_batch(position, kind, size):
         """One request can carry independent decisions without merging evidence."""
@@ -1016,6 +1123,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                             elif (existing.parent != new_type.parent
                                   or existing.definition != new_type.definition
                                   or existing.applicability_scope != new_type.applicability_scope
+                                  or existing.definition_parameters != new_type.definition_parameters
                                   or existing.unit != new_type.unit
                                   or existing.aggregation_operator != new_type.aggregation_operator):
                                 raise ValueError("Conflicting derived object type ID")
@@ -1060,6 +1168,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                 old["ontology_level"] = concept["ontology_level"]
                                 old["ontology_type_id"] = concept["ontology_type_id"]
                                 old["applicability_scope"] = concept["applicability_scope"]
+                                old["definition_parameters"] = concept["definition_parameters"]
+                                old["parameter_evidence"] = concept["parameter_evidence"]
                                 old["scope_roles"] = concept["scope_roles"]
                                 old["unrestricted_scope"] = concept["unrestricted_scope"]
                                 old["observation_coordinates"] = concept["observation_coordinates"]

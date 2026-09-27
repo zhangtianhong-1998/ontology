@@ -58,7 +58,7 @@ for(const [title,items,kind] of groups){const found=items.filter(x=>`${name(x)} 
 function renderDetails(){const p=$('details'),point=selected;p.replaceChildren();if(!point?.id){p.append(el('h2',mode==='ontology'?'整体本体结构':'元数据图'));p.append(el('p',mode==='ontology'?'点击对象节点或关系连线，查看属性、关系、实例和证据。':'点击物理表或声明外键，查看元数据和来源。','empty'));return}
 if(mode==='ontology'){
 if(point.kind==='object'){const x=T.get(point.id);if(!x)return;const children=(O.object_types||[]).filter(y=>y.parent===x.id),as=objectAttrs(x.id),rs=objectRels(x.id),samples=objectInstances(x.id);
-p.append(el('h2',name(x)),el('span',typeKind(x),'kind'),el('div',x.id,'id'));field(p,'定义',x.definition);if(x.parent)field(p,'上位类型',name(T.get(x.parent))||x.parent);field(p,'适用范围',Object.keys(x.applicability_scope||{}).length?x.applicability_scope:undefined);field(p,'单位',x.unit);field(p,'计算运算',x.aggregation_operator);
+p.append(el('h2',name(x)),el('span',typeKind(x),'kind'),el('div',x.id,'id'));field(p,'定义',x.definition);if(x.parent)field(p,'上位类型',name(T.get(x.parent))||x.parent);field(p,'适用范围',Object.keys(x.applicability_scope||{}).length?x.applicability_scope:undefined);field(p,'计算参数',Object.keys(x.definition_parameters||{}).length?x.definition_parameters:undefined);field(p,'单位',x.unit);field(p,'计算运算',x.aggregation_operator);
 if(x.category==='business_type'&&(x.canonical_type_id||x.equivalent_type_ids?.length)){
 const canonical=T.get(x.canonical_type_id||x.id),equivalents=verifiedEquivalentTypes(x),judgements=equivalenceEvidence(x);
 section(p,'规范类型',canonical?[canonical]:[],y=>button(name(y),y.id,()=>select('object',y.id)),'规范类型未进入页面预览');

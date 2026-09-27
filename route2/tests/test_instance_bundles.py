@@ -93,6 +93,17 @@ def test_checked_business_keys_precede_numeric_only_collisions():
     assert [item["rule_id"] for item in _round_robin_rules(rules, 1)] == ["b"]
 
 
+def test_partial_business_reference_can_precede_unrelated_numeric_collision():
+    rules = [
+        {"rule_id": "numeric", "status": "checked_technical", "numeric_overlap_only": True,
+         "source": {"table": "a", "field": "id"}, "target": {"table": "b", "field": "id"}},
+        {"rule_id": "partial", "status": "observed_subset", "numeric_overlap_only": False,
+         "source": {"table": "a", "field": "metric_code"},
+         "target": {"table": "metric", "field": "code"}},
+    ]
+    assert [item["rule_id"] for item in _round_robin_rules(rules, 1)] == ["partial"]
+
+
 def test_seed_budget_spans_business_roots_before_repeating_one_table():
     pool = [{"card_id": f"card-{index}", "table": f"table-{root}",
              "root_hint": root, "fields": {"description": [{"value": "定义"}]}}

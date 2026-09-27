@@ -148,8 +148,10 @@ def validate_proposed_relation_label(label: str, parent: str, *,
     value = _normalized(label)
     if not value or len(value) > 96 or re.search(r"[\n\r:;；。]", value):
         raise ValueError("Relation label must be a short predicate phrase")
-    allowed_cues = {_normalized(item) for item in
-                    (_DERIVED_CUES[name] if name != parent else _CUES[parent])}
+    # The machine predicate is already validated above. A root's controlled
+    # display verb may describe its registered subtype without renaming it.
+    cues = (*_DERIVED_CUES[name], *_CUES[parent]) if name != parent else _CUES[parent]
+    allowed_cues = {_normalized(item) for item in cues}
     if subject_label is not None and object_label is not None:
         subject, object_ = _normalized(subject_label), _normalized(object_label)
         if not subject or not object_:

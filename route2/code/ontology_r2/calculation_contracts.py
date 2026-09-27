@@ -100,6 +100,16 @@ def _root(item, types):
     return parent
 
 
+def _target_parameters_supported(source, target):
+    """A referenced definition may require no parameter absent from its caller.
+
+    Exact agreement is required: a missing period or month/year mismatch is
+    not evidence for an implicit aggregation or grain conversion.
+    """
+    return all(source.definition_parameters.get(key) == value
+               for key, value in target.definition_parameters.items())
+
+
 def _evidence(data, prop, accepted_records):
     for evidence_id in prop.evidence_ids:
         item = data.evidence.get(evidence_id, {})
@@ -198,13 +208,15 @@ def enrich_calculation_contracts(data, plan, group_result, index=None):
                            "source_type_id": type_id, "source_label": item.label,
                            "raw_formula": raw, **evidence, **parsed,
                            "applicability_scope": item.applicability_scope,
+                           "definition_parameters": item.definition_parameters,
                            "bindings": [], "identity_scope": "definition"}
             if parsed["status"] == "parsed":
                 for occurrence in parsed["symbols"]:
                     candidates = registry.get(_norm(occurrence["symbol"]), {})
                     compatible = {candidate: proof for candidate, proof in candidates.items()
                                   if candidate != type_id and all(item.applicability_scope.get(key) == value
-                                      for key, value in selected[candidate].applicability_scope.items())}
+                                      for key, value in selected[candidate].applicability_scope.items())
+                                  and _target_parameters_supported(item, selected[candidate])}
                     binding = {**occurrence, "candidate_type_ids": sorted(candidates),
                                "compatible_type_ids": sorted(compatible), "status": "unresolved"}
                     if len(compatible) == 1:
@@ -214,6 +226,9 @@ def enrich_calculation_contracts(data, plan, group_result, index=None):
                     else:
                         binding["reason"] = ("ambiguous_definition" if len(compatible) > 1 else
                                              "self_reference" if type_id in candidates else
+                                             "definition_parameters_not_proven" if any(
+                                                 not _target_parameters_supported(item, selected[candidate])
+                                                 for candidate in candidates) else
                                              "scope_not_proven" if candidates else "symbol_has_no_accepted_definition")
                     calculation["bindings"].append(binding)
                 if len(normalized_variants) > 1:
@@ -281,6 +296,8 @@ def calculation_relation_errors(data, relation, object_types):
     if any(source.applicability_scope.get(key) != value
            for key, value in target.applicability_scope.items()):
         return ["calculation relation target applicability is not proved"]
+    if not _target_parameters_supported(source, target):
+        return ["calculation relation target definition parameters are not proved"]
 
     def property_evidence(item, roles):
         record_ids = {data.evidence.get(evidence_id, {}).get("source_ref", {}).get("record_id")
@@ -328,6 +345,8 @@ def calculation_relation_errors(data, relation, object_types):
             continue
         if any(source.applicability_scope.get(key) != value
                for key, value in other.applicability_scope.items()):
+            continue
+        if not _target_parameters_supported(source, other):
             continue
         for other_role, _, proof in property_evidence(other, ("name", "alias")):
             values = _aliases(proof["raw_fragment"]) if other_role == "alias" else [proof["raw_fragment"]]

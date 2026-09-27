@@ -34,6 +34,7 @@ def _packet(data, candidate, types):
             "id": item.id, "label": item.label, "definition": item.definition,
             "root_type": item.parent, "unit": item.unit,
             "applicability_scope": item.applicability_scope,
+            "definition_parameters": item.definition_parameters,
             "derivation_kind": item.derivation_kind,
             "definition_fragments": fragments,
         })
@@ -48,6 +49,7 @@ def _packet(data, candidate, types):
             "observation_coordinates_are_not_type_identity": True,
             "object_relations_are_not_lifted": True,
             "parent_scope_is_shared_applicability_only": True,
+            "definition_parameters_must_match_exactly_and_be_preserved_on_parent": True,
         },
     }
 

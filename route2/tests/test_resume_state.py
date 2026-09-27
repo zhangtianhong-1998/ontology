@@ -21,6 +21,13 @@ def test_snapshot_checkpoint_validates_and_reuses_plan(tmp_path, monkeypatch):
         save_state(checkpoint, data, profile, state)
         restored = restore_state(checkpoint, data, profile)
         assert restored['plan'] == plan
+        # Old cached stages were compiled before parameter-aware type identity.
+        old = json.loads(checkpoint.read_text())
+        old['contract']['version'] = 2
+        checkpoint.write_text(json.dumps(old))
+        with pytest.raises(ValueError, match='semantic contract'):
+            restore_state(checkpoint, data, profile)
+        save_state(checkpoint, data, profile, state)
         monkeypatch.setenv('ONTOLOGY_LLM_MODEL', 'changed-model')
         with pytest.raises(ValueError, match='contract'):
             restore_state(checkpoint, data, profile)

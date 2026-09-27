@@ -61,6 +61,9 @@ class DerivedType(Strict):
     # Optional schema details keep older YAML plans valid. For object types,
     # applicability_scope describes the definition, not observation coordinates.
     applicability_scope: dict[str, str] = Field(default_factory=dict)
+    # Definition-level calculation settings/grain, never observed coordinates.
+    # These participate in exact type identity even when no row filter applies.
+    definition_parameters: dict[str, str] = Field(default_factory=dict)
     unit: str | None = None
     # Optional calculation attribute of a reusable Measure quantity. SUM/AVG
     # alone are operations, never Measure ontology types.

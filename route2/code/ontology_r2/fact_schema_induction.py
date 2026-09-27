@@ -137,6 +137,11 @@ def _packet(data, report, field, core, association_context, max_samples):
               "sample_scope": "bounded_actual_distinct_rows_only",
               "more_sample_rows_available": len(rows) > max_samples,
               "unit_columns": units, "checked_association_conditions": links,
+              "declared_unit_quote_contract": {
+                  "recognized_units": sorted(_unit_from_comment(declaration["value"])),
+                  "required_unit_quote_if_declared": declaration["value"],
+                  "rule": "When unit comes from this field declaration, unit_quote MUST equal the entire required_unit_quote_if_declared, not just a unit word or substring."
+              },
               "associated_definitions": context,
               "contract": "Declare only a source-named business quantity. Samples do not name a Metric. "
                           "Missing formulas and units stay unknown; scope keys must map to actual coordinate columns."}

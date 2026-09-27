@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from ontology_r2.group_incremental import (BundleBatchReview, ConceptBatchDecision, ConceptBundleDecision,
-                                         RelationBundleDecision, construct_from_bundles)
+                                         RelationBundleDecision, bundle_request_payload, construct_from_bundles)
 from ontology_r2.configuration_relation_stage import ConfigurationRelationDecision
 from ontology_r2.llm import StructuredLLM
 from ontology_r2.models import BuildPlan, DerivedType
@@ -112,9 +112,10 @@ def _bounded_packets_and_limit(llm):
     bundles = _batch_packets(3)
     for bundle in bundles:
         bundle['evidence_padding'] = '原始证据' * 500
-    packets = [{'bundle': bundle, 'root_model': {'object_roots': PROFILE['object_roots'],
-                                               'relation_roots': PROFILE['relation_roots']},
-                'current_types': [], 'current_relations': []} for bundle in bundles]
+    data = SimpleNamespace(snapshot_id='snap', evidence={})
+    # Budget the same complete payload sent in production, including names and
+    # role evidence. A duplicate fixture would drift when the contract grows.
+    packets = [bundle_request_payload(data, PROFILE, BuildPlan(), bundle) for bundle in bundles]
     reviews = [{**packet, 'candidate': _bounded_decision(packet)} for packet in packets]
     proposal_bytes = llm.request_bytes('concept_batch', {'packets': packets}, ConceptBatchDecision)
     review_pair_bytes = llm.request_bytes('group_review_batch', {'packets': reviews[:2]}, BundleBatchReview)

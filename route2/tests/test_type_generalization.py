@@ -223,3 +223,57 @@ def test_measure_generalization_waits_for_reusable_quantity_scope_proof():
     decision["root_type"] = "Measure"
     with pytest.raises(ValueError, match="reusable-quantity scope contract"):
         compile_generalization(data, PROFILE, core, decision)
+
+
+def _parameterized_case():
+    data, core = _fixture(descriptions=(
+        "阿里云水果销售所得营业收入", "商业市场水果销售所得营业收入"))
+    decision = _decision()
+    decision.update(label="水果收入", definition="水果销售所得营业收入", business_object_quote="水果")
+    for name, child, support in zip(("阿里云", "商业市场"), core.object_types, decision["children"]):
+        child.label = f"{name}水果收入"
+        child.definition_parameters = {"period_scope": "公历年", "budget": "1"}
+        support.update(shared_quote="水果销售所得营业收入", specialization_quote=child.definition)
+    return data, core, decision
+
+
+@pytest.mark.parametrize("other", [{"period_scope": "公历月", "budget": "1"},
+                                    {"period_scope": "公历年"}, {}])
+def test_generalization_cannot_drop_or_ignore_parameter_differences(other):
+    data, core, decision = _parameterized_case()
+    core.object_types[1].definition_parameters = other
+    assert propose_generalization_candidates(core, data, 2) == []
+    with pytest.raises(ValueError, match="Child definition parameters differ"):
+        compile_generalization(data, PROFILE, core, decision)
+
+
+def test_shared_parameters_are_inherited_hashed_and_rechecked_on_replay():
+    data, core, decision = _parameterized_case()
+    candidate = propose_generalization_candidates(core, data, 1)[0]
+    compiled, parent = compile_generalization(data, PROFILE, core, decision)
+    assert candidate["definition_parameters"] == parent.definition_parameters == {
+        "period_scope": "公历年", "budget": "1"}
+    assert all(item.definition_parameters == parent.definition_parameters for item in compiled.object_types)
+    repeated, same = compile_generalization(data, PROFILE, BuildPlan.model_validate(compiled.model_dump()), decision)
+    assert same.id == parent.id and len(repeated.object_types) == 3
+    altered = compiled.model_copy(deep=True)
+    next(item for item in altered.object_types if item.id == parent.id).definition_parameters = {}
+    with pytest.raises(ValueError, match="parent ID conflicts"):
+        compile_generalization(data, PROFILE, altered, decision)
+    for item in core.object_types:
+        item.definition_parameters = {"period_scope": "公历月", "budget": "1"}
+    _, monthly = compile_generalization(data, PROFILE, core, decision)
+    assert monthly.id != parent.id
+
+
+def test_legacy_generalization_plan_defaults_to_empty_parameters_and_replays():
+    data, core, decision = _parameterized_case()
+    for item in core.object_types:
+        item.definition_parameters = {}
+    compiled, parent = compile_generalization(data, PROFILE, core, decision)
+    legacy = compiled.model_dump()
+    for item in legacy["object_types"]:
+        item.pop("definition_parameters")
+    repeated, same = compile_generalization(data, PROFILE, BuildPlan.model_validate(legacy), decision)
+    assert same.id == parent.id and same.definition_parameters == {}
+    assert len(repeated.object_types) == 3

@@ -105,9 +105,9 @@ def propose_generalization_candidates(plan: BuildPlan, data, max_pairs: int):
     for item in eligible:
         fragments = list(_semantic_fragments(data, item))
         if fragments:
-            by_group[(item.parent, _norm(item.unit))].append((item, fragments))
+            by_group[(item.parent, _norm(item.unit), tuple(sorted(item.definition_parameters.items())))].append((item, fragments))
     ranked = []
-    for (root, unit), entries in by_group.items():
+    for (root, unit, parameters), entries in by_group.items():
         inverted = defaultdict(list)
         for index, (_, fragments) in enumerate(entries):
             for term in _terms(" ".join(fragment for _, _, fragment, _ in fragments)):
@@ -130,10 +130,12 @@ def propose_generalization_candidates(plan: BuildPlan, data, max_pairs: int):
         for (left, right), score in scores.items():
             a, b = entries[left][0], entries[right][0]
             ids = sorted((a.id, b.id))
+            identity = [*ids, dict(parameters)] if parameters else ids
             ranked.append({"child_type_ids": ids, "root_type": root,
                            "unit": unit or None, "lexical_overlap": score,
+                           "definition_parameters": dict(parameters),
                            "status": "candidate_only",
-                           "candidate_id": "generalization:" + digest(ids)[:24]})
+                           "candidate_id": "generalization:" + digest(identity)[:24]})
     return sorted(ranked, key=lambda x: (-x["lexical_overlap"], x["child_type_ids"]))[:max_pairs]
 
 
@@ -188,6 +190,9 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
     # Measure-to-Measure specialization needs a separate scope contract.
     if decision.root_type == "Measure":
         raise ValueError("Measure generalization requires a reusable-quantity scope contract")
+    parameters = dict(children[0].definition_parameters)
+    if any(item.definition_parameters != parameters for item in children[1:]):
+        raise ValueError("Child definition parameters differ; parameter-dropping generalization is unsupported")
     units = {_norm(item.unit) for item in children}
     if len(units) != 1 or _norm(decision.unit) not in units:
         raise ValueError("Child units conflict with the proposed parent unit")
@@ -203,13 +208,18 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
 
     label = " ".join(_norm(decision.label).split())
     definition = " ".join(_norm(decision.definition).split())
-    parent_id = "type:" + digest(["shared_supertype", decision.root_type, label,
-                                   definition, common_scope, _norm(decision.unit)])[:24]
+    identity = ["shared_supertype", decision.root_type, label,
+                definition, common_scope, _norm(decision.unit)]
+    # Empty parameters retain old IDs, allowing pre-parameter plans to replay.
+    if parameters:
+        identity.append(parameters)
+    parent_id = "type:" + digest(identity)[:24]
     old_parent = existing.get(parent_id)
     if old_parent and (old_parent.category != "business_type"
                        or old_parent.derivation_kind != "shared_supertype"
                        or old_parent.parent != decision.root_type
-                       or old_parent.definition != decision.definition.strip()):
+                       or old_parent.definition != decision.definition.strip()
+                       or old_parent.definition_parameters != parameters):
         raise ValueError("Generalized parent ID conflicts with an existing type")
 
     evidence_ids, templates, terms, record_ids = set(), [], set(), set()
@@ -256,6 +266,10 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
     evidence_ids.update(evidence_id for child in children
                         for evidence_id, role, _, _ in _semantic_fragments(data, child)
                         if role == "formula")
+    # Parameter witnesses can live outside description/formula columns; retain
+    # the accepted children's supporting evidence when inheriting their settings.
+    if parameters:
+        evidence_ids.update(evidence_id for child in children for evidence_id in child.evidence_ids)
 
     if decision.root_type == "Metric":
         anchor = _plain(decision.business_object_quote)
@@ -281,6 +295,7 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
         unit=decision.unit, derivation_kind="shared_supertype",
         induced_from_type_ids=sorted(item.id for item in children),
         applicability_scope=common_scope,
+        definition_parameters=parameters,
         evidence_scope="multiple_definition_records",
         evidence_ids=sorted(evidence_ids),
         source_concept_ids=sorted({concept_id for item in children

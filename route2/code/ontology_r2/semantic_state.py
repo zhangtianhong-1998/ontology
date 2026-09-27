@@ -14,7 +14,9 @@ from .validation import validate_plan
 
 def state_contract(data, profile):
     from .llm import SYSTEM, TASK_PROMPTS
-    return {"version": 2, "snapshot_id": data.snapshot_id,
+    # Definition parameters now participate in type identity and relation
+    # compatibility; pre-contract checkpoints must not bypass these checks.
+    return {"version": 3, "snapshot_id": data.snapshot_id,
             "profile_hash": digest(profile), "prompts_hash": digest([SYSTEM, TASK_PROMPTS]),
             # Source files alone do not capture a changed exclusion policy.
             # Replaying old evidence must not undo a newly excluded column.

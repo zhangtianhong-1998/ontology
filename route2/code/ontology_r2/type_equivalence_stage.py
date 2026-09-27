@@ -21,6 +21,7 @@ def _packet(data, candidate, types):
             "id": item.id, "root_type": candidate["root_type"],
             "label": item.label, "definition": item.definition,
             "unit": item.unit, "applicability_scope": item.applicability_scope,
+            "definition_parameters": item.definition_parameters,
             "complete_source_definitions": [
                 {"role": role, "evidence_id": fragment["evidence_id"],
                  "value": fragment["value"], "source_ref": fragment["source_ref"]}
@@ -37,6 +38,7 @@ def _packet(data, candidate, types):
             "quote_the_full_original_description_on_both_sides": True,
             "quote_both_full_original_formulas_if_present": True,
             "formula_or_business_qualifier_conflict_means_no_equivalence": True,
+            "definition_parameters_must_be_identical_complete_source_values": True,
             "do_not_merge_observation_coordinates": True,
             "do_not_invent_a_business_identity_from_a_shared_name": True,
         },
@@ -131,7 +133,7 @@ async def run_type_equivalence(data, core, decide, *, max_pairs=20,
                 ("accepted", "no_change", "unresolved", "rejected", "error",
                  "budget_exhausted", "packet_over_budget")}
     coverage = {
-        "candidate_generation": "bounded_same_root_name_unit_scope_with_complete_definitions",
+        "candidate_generation": "bounded_same_root_name_unit_scope_parameters_with_complete_definitions",
         "eligible_source_type_count": sum(len(members) for members in groups.values()),
         "same_name_group_count": len(same_name_groups),
         "all_possible_pairs": possible_pairs,

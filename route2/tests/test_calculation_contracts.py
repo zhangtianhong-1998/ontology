@@ -1,7 +1,9 @@
 """Formula contracts bind complete accepted definitions, never substring hits."""
 from types import SimpleNamespace
+import pytest
 
-from ontology_r2.calculation_contracts import enrich_calculation_contracts, parse_calculation
+from ontology_r2.calculation_contracts import (calculation_relation_errors,
+    enrich_calculation_contracts, parse_calculation)
 from ontology_r2.models import BuildPlan, DerivedType
 
 
@@ -82,3 +84,58 @@ def test_self_reference_and_conflicting_formula_variants_are_not_accepted():
     assert len(result["calculations"]) == 2
     assert all(item["reason"] == "conflicting_source_formula_variants" for item in result["calculations"])
     assert result["dependencies"] == []
+
+
+def _profit_revenue_relation():
+    return DerivedType(id='calc:profit-revenue', parent='depends_on',
+        predicate_name='calculation_dependency', label='calculation_dependency',
+        definition='利润的被减数是收入', domain=['profit'], range=['revenue'],
+        semantic_parameters={'operand_role': 'minuend'},
+        evidence_scope='complete_calculation_definition',
+        evidence_ids=['profit:formula', 'revenue:name'])
+
+
+@pytest.mark.parametrize('source_parameters', [{}, {'period_scope': '公历月'}])
+def test_calculation_rejects_missing_or_different_target_definition_parameters(source_parameters):
+    data, plan, group = _case()
+    plan.object_types[0].definition_parameters = source_parameters
+    plan.object_types[1].definition_parameters = {'period_scope': '公历年'}
+    result = enrich_calculation_contracts(data, plan, group)
+    calc = result['calculations'][0]
+    assert calc['status'] == 'unresolved'
+    assert result['dependencies'] == []
+    binding = next(b for b in calc['bindings'] if b['symbol'] == '收入')
+    assert binding['reason'] == 'definition_parameters_not_proven'
+    assert calculation_relation_errors(data, _profit_revenue_relation(), plan.object_types) == [
+        'calculation relation target definition parameters are not proved']
+
+
+@pytest.mark.parametrize('target_parameters', [{}, {'period_scope': '公历年'}])
+def test_calculation_accepts_supported_parameters_and_unparameterized_measure(target_parameters):
+    data, plan, group = _case()
+    plan.object_types[0].definition_parameters = {'period_scope': '公历年'}
+    plan.object_types[1].definition_parameters = target_parameters
+    assert enrich_calculation_contracts(data, plan, group)['calculations'][0]['status'] == 'accepted'
+    assert calculation_relation_errors(data, _profit_revenue_relation(), plan.object_types) == []
+
+
+def test_calculation_parameter_guard_applies_to_every_target_parameter():
+    data, plan, group = _case()
+    plan.object_types[0].definition_parameters = {'period_scope': '公历年'}
+    plan.object_types[1].definition_parameters = {'period_scope': '公历年', 'aggregation': '预算'}
+    assert enrich_calculation_contracts(data, plan, group)['calculations'][0]['status'] == 'unresolved'
+    assert calculation_relation_errors(data, _profit_revenue_relation(), plan.object_types)
+
+
+def test_ambiguity_uses_the_same_parameter_guard_as_binding_and_replay():
+    data, plan, group = _case(duplicate=True)
+    plan.object_types[0].definition_parameters = {'period_scope': '公历月'}
+    plan.object_types[1].definition_parameters = {'period_scope': '公历月'}
+    plan.object_types[3].definition_parameters = {'period_scope': '公历年'}
+    result = enrich_calculation_contracts(data, plan, group)
+    assert result['calculations'][0]['status'] == 'accepted'
+    assert calculation_relation_errors(data, _profit_revenue_relation(), plan.object_types) == []
+    plan.object_types[3].definition_parameters = {'period_scope': '公历月'}
+    assert enrich_calculation_contracts(data, plan, group)['calculations'][0]['status'] == 'unresolved'
+    assert calculation_relation_errors(data, _profit_revenue_relation(), plan.object_types) == [
+        'calculation relation symbol has ambiguous accepted definitions']
