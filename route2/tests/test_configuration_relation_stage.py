@@ -10,6 +10,7 @@ from ontology_r2.configuration_relation_stage import (
     compile_configuration_relation,
 )
 from ontology_r2.configuration_relations import discover_configuration_relations
+from ontology_r2.relation_contract import canonical_relation_id
 from ontology_r2.storage import read_yaml
 from ontology_r2.validation import validate_plan
 from test_configuration_relations import _input
@@ -49,6 +50,9 @@ def test_compile_uses_definition_types_and_config_witness_only(tmp_path):
         relation = next_plan.relation_types[-1]
         assert relation.category == "business_relation_type"
         assert relation.parent == "depends_on"
+        assert relation.id == canonical_relation_id(
+            "depends_on", "type:profit", "type:revenue")
+        assert relation.label == "depends_on"
         assert relation.domain == ["type:profit"]
         assert relation.range == ["type:revenue"]
         assert relation.endpoint_basis == "configuration_reference"
@@ -74,6 +78,8 @@ def test_compile_uses_definition_types_and_config_witness_only(tmp_path):
     (_decision(configuration_quote="依赖"), "predicate and direction"),
     (_decision(source_definition_quote="利润来自云上服务"), "exact complete definition record"),
     (_decision(target_definition_quote="成本是利润"), "exact complete definition record"),
+    (_decision(label="经营利润包含收入"), "canonical directed predicate"),
+    (_decision(label="收入依赖经营利润"), "canonical directed predicate"),
 ])
 def test_rejects_invented_predicate_direction_or_definition_quote(tmp_path, decision, reason):
     data, plan, concepts, alignments, spec = _input(tmp_path)
@@ -83,6 +89,39 @@ def test_rejects_invented_predicate_direction_or_definition_quote(tmp_path, deci
             compile_configuration_relation(
                 data, PROFILE, plan, candidate, decision, concepts, alignments)
         assert plan.relation_types == []
+    finally:
+        data.close()
+
+
+def test_same_signature_with_different_claimed_meaning_is_unresolved(tmp_path):
+    data, plan, concepts, alignments, spec = _input(tmp_path)
+    try:
+        candidate = _candidate(data, plan, concepts, alignments, spec)
+        accepted, _ = compile_configuration_relation(
+            data, PROFILE, plan, candidate, _decision(), concepts, alignments)
+        with pytest.raises(ValueError, match="conflicts with an existing type"):
+            compile_configuration_relation(
+                data, PROFILE, accepted, candidate,
+                _decision(definition="经营利润只在特定经营口径下依赖收入"),
+                concepts, alignments)
+    finally:
+        data.close()
+
+
+def test_plan_validator_rejects_forged_business_predicate_name(tmp_path):
+    data, plan, concepts, alignments, spec = _input(tmp_path)
+    try:
+        candidate = _candidate(data, plan, concepts, alignments, spec)
+        accepted, _ = compile_configuration_relation(
+            data, PROFILE, plan, candidate, _decision(), concepts, alignments)
+        forged = accepted.model_copy(deep=True)
+        forged.relation_types[0].label = "经营利润大幅推动收入"
+        assert any("canonical predicate name" in error
+                   for error in validate_plan(forged, data, PROFILE))
+        forged.relation_types[0].label = "depends_on"
+        forged.relation_types[0].id = "business_relation:invented"
+        assert any("canonical predicate name" in error
+                   for error in validate_plan(forged, data, PROFILE))
     finally:
         data.close()
 

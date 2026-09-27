@@ -151,29 +151,29 @@ def test_viewer_payload_keeps_local_match_candidates_outside_metadata_graph(tmp_
 
 def test_ontology_overview_keeps_business_structure_without_source_fields_or_cartesian_edges():
     overview = _ontology_overview({
-        "object_roots": [{"id": "Metric"}, {"id": "Measure"}],
+        "object_roots": [{"id": "GeneralObject"}, {"id": "Metric"}, {"id": "Measure"}],
         "object_types": [
-            {"id": "Revenue", "parent": "Metric", "category": "business_type"},
-            {"id": "Cost", "parent": "Metric", "category": "business_type"},
-            {"id": "Sum", "parent": "Measure", "category": "business_type"},
-            {"id": "source_record_type:metric", "parent": "Metric", "category": "source_record_type"},
+            {"id": "FruitRevenue", "parent": "Metric", "category": "business_type"},
+            {"id": "FruitCost", "parent": "Metric", "category": "business_type"},
+            {"id": "Income", "parent": "Measure", "category": "business_type"},
+            {"id": "source_record_type:metric", "parent": "GeneralObject", "category": "source_record_type"},
         ],
-        "attributes": [{"id": "source_column:metric.name", "domain": ["Revenue"]}],
+        "attributes": [{"id": "source_column:metric.name", "domain": ["FruitRevenue"]}],
         "relation_types": [
-            {"id": "depends", "label": "依赖", "category": "business_relation_type",
-             "domain": ["Revenue"], "range": ["Cost"]},
+            {"id": "depends", "label": "depends_on", "category": "business_relation_type",
+             "domain": ["FruitRevenue"], "range": ["FruitCost"]},
             {"id": "ambiguous", "category": "business_relation_type",
-             "domain": ["Revenue", "Cost"], "range": ["Sum"]},
+             "domain": ["FruitRevenue", "FruitCost"], "range": ["Income"]},
             {"id": "record_link", "domain": ["source_record_type:metric"],
-             "range": ["Revenue"]},
+             "range": ["FruitRevenue"]},
         ],
     })
     assert {item["id"] for item in overview["nodes"]} == {
-        "Metric", "Measure", "Revenue", "Cost", "Sum"}
+        "GeneralObject", "Metric", "Measure", "FruitRevenue", "FruitCost", "Income"}
     assert {tuple(item.values()) for item in overview["inheritance"]} == {
-        ("Metric", "Revenue"), ("Metric", "Cost"), ("Measure", "Sum")}
-    assert overview["relations"] == [{"id": "depends", "source": "Revenue",
-                                       "target": "Cost", "label": "依赖", "parent": None}]
+        ("Metric", "FruitRevenue"), ("Metric", "FruitCost"), ("Measure", "Income")}
+    assert overview["relations"] == [{"id": "depends", "source": "FruitRevenue",
+                                       "target": "FruitCost", "label": "depends_on", "parent": None}]
     assert overview["omitted_relation_type_ids"] == ["ambiguous", "record_link"]
 
 
@@ -186,10 +186,10 @@ def test_viewer_counts_business_and_source_record_types_separately(tmp_path):
         "object_types": [
             {"id": "source_record_type:demo.api", "parent": "GeneralObject",
              "category": "source_record_type"},
-            {"id": "source_record_type:demo.measure", "parent": "Measure",
+            {"id": "source_record_type:demo.measure", "parent": "GeneralObject",
              "category": "source_record_type"},
             {"id": "FruitRevenue", "parent": "Metric", "category": "business_type"},
-            {"id": "Sum", "parent": "Measure", "category": "business_type"},
+            {"id": "Income", "parent": "Measure", "category": "business_type"},
             {"id": "legacy", "parent": "Measure"}],
         "relation_roots": [{"id": "depends_on"}],
         "relation_types": [{"id": "calculation_depends_on", "parent": "depends_on"}],
@@ -207,14 +207,33 @@ def test_viewer_counts_business_and_source_record_types_separately(tmp_path):
     assert 'data-type-filter=' not in html
     assert '<section class="metrics"' not in html
     assert {item["id"] for item in data["ontology_overview"]["nodes"]} == {
-        "GeneralObject", "Metric", "Measure", "FruitRevenue", "Sum"}
+        "GeneralObject", "Metric", "Measure", "FruitRevenue", "Income"}
     assert {item["target"] for item in data["ontology_overview"]["inheritance"]} == {
-        "FruitRevenue", "Sum"}
+        "FruitRevenue", "Income"}
     assert "search-panel\" class=\"search-panel\" hidden" in html
-    assert "聚合度量" in html and "整体本体结构" in html
+    assert "Measure:'度量'" in html and "整体本体结构" in html
+    assert "聚合度量" not in html
     assert "cols.slice(0,6)" not in html
     assert "(M.links||[]).filter(x=>x.status==='declared'" in html
     assert "业务类型" not in html
+
+
+def test_viewer_uses_fitted_pan_zoom_canvas(tmp_path):
+    run = tmp_path / "fit-canvas"
+    run.mkdir()
+    write_yaml(run / "manifest.yaml", {"status": "complete"})
+    write_yaml(run / "ontology.yaml", {
+        "object_roots": [{"id": "Metric"}],
+        "object_types": [{"id": "Revenue", "parent": "Metric", "category": "business_type"}],
+    })
+    html = render_viewer(run, 10).read_text()
+    assert 'id="graph-viewport"' in html
+    assert 'id="zoom-in"' in html and 'id="zoom-out"' in html
+    assert 'id="zoom-fit"' in html and 'id="zoom-level"' in html
+    assert "addEventListener('wheel'" in html
+    assert "setPointerCapture(event.pointerId)" in html
+    assert ".graph-viewport{overflow:hidden" in html
+    assert "svg.style.width" not in html
 
 
 def test_viewer_shows_verified_equivalence_on_business_type_without_relation_edge(tmp_path):

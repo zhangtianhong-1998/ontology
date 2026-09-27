@@ -9,6 +9,8 @@ from typing import Literal
 from pydantic import Field, field_validator
 
 from .models import BuildPlan, Condition, DerivedType, RelationPlan, Strict
+from .relation_contract import (canonical_relation_id, canonical_relation_label,
+                                validate_proposed_relation_label)
 from .storage import digest
 from .validation import validate_plan
 
@@ -16,9 +18,8 @@ from .validation import validate_plan
 ROOTS = ("GeneralObject", "Measure", "Metric", "Dimension", "Term")
 OBJECT_RELATIONS = ("contains", "depends_on", "related_to", "points_to")
 
-# A Measure is an aggregation/filter operation, not a business-valued quantity.
-# Keep this gate deliberately narrow: an unfamiliar operation stays unresolved
-# until its executable meaning can be checked instead of guessing from a name.
+# An operator describes a reusable quantity's calculation; it is not a
+# Measure type by itself. This vocabulary only verifies an optional property.
 _OPERATOR_LABELS = {
     "sum": frozenset(("sum", "求和", "合计", "总和", "加总", "累计求和")),
     "avg": frozenset(("avg", "average", "mean", "平均", "均值", "求平均")),
@@ -46,6 +47,38 @@ def _operator_label(label):
                                    for value in labels}), None)
 
 
+def _matches_optional_operator(quote, operator):
+    found = {name for name, pattern in _OPERATOR_EVIDENCE.items()
+             if pattern.search(quote)}
+    if "distinct_count" in found:
+        found.discard("count")
+    return found == {operator}
+
+
+def _complete_classification_fragment(records, quote):
+    """A shared word is not enough to justify the Metric/Measure boundary."""
+    return any(
+        role in ("description", "formula")
+        and not entry.get("truncated")
+        and quote.strip() == str(entry["value"]).strip()
+        for record in records for role, entry in _entries(record)
+    )
+
+
+def _named_business_object(records, label, quote):
+    """Ground the operating object in an original name or definition."""
+    anchor = re.sub(r"\s+", "", quote).casefold()
+    surface = re.sub(r"\s+", "", label).casefold()
+    if len(anchor) < 2 or anchor == surface or anchor not in surface:
+        return False
+    return any(
+        role in ("name", "alias", "description")
+        and not entry.get("truncated")
+        and quote in str(entry["value"])
+        for record in records for role, entry in _entries(record)
+    )
+
+
 class RecordAlignmentDecision(Strict):
     record_id: str
     mapping_kind: Literal["exact", "narrower", "related", "unresolved"]
@@ -59,9 +92,10 @@ class ConceptBundleDecision(Strict):
     root_type: Literal["GeneralObject", "Measure", "Metric", "Dimension", "Term"] | None = None
     # The table name is only a retrieval hint. A quantitative business type
     # needs a source-grounded reason for its Metric/Measure boundary.
-    classification_basis: Literal["business_driven_metric", "aggregation_or_filter_measure",
+    classification_basis: Literal["business_driven_metric", "reusable_measure",
                                   "other", "unresolved"] = "unresolved"
     classification_quote: str = ""
+    business_object_quote: str = ""
     aggregation_operator: Literal["sum", "avg", "count", "distinct_count",
                                   "min", "max", "filter"] | None = None
     # An accepted source-grounded concept is not automatically a class.
@@ -219,24 +253,35 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         raise ValueError("New concept requires an exact source definition record")
     if decision.ontology_level == "type" and decision.root_type in ("Metric", "Measure"):
         expected = ("business_driven_metric" if decision.root_type == "Metric"
-                    else "aggregation_or_filter_measure")
+                    else "reusable_measure")
         if decision.classification_basis != expected:
             raise ValueError("Metric/Measure type requires a matching classification basis")
-        if not decision.classification_quote.strip() or not any(
-                role in ("description", "formula")
+        if not decision.classification_quote.strip() or not _complete_classification_fragment(
+                exact_records, decision.classification_quote):
+            raise ValueError("Metric/Measure classification quote must be a complete exact definition")
+        if not any(
+                role in ("name", "alias", "description")
                 and not entry.get("truncated")
-                and decision.classification_quote in str(entry["value"])
+                and decision.label.casefold() in str(entry["value"]).casefold()
                 for record in exact_records for role, entry in _entries(record)):
-            raise ValueError("Metric/Measure classification quote is absent from an exact definition")
+            raise ValueError("Metric/Measure label is absent from exact source records")
         if decision.root_type == "Measure":
             operator = decision.aggregation_operator
-            if (not operator or _operator_label(decision.label) != operator
-                    or not _OPERATOR_EVIDENCE[operator].search(decision.classification_quote)):
-                raise ValueError("Measure requires an explicitly evidenced reusable aggregation operator")
-            if any(str(record.get("unit") or "").strip() for record in exact_records):
-                raise ValueError("Measure operator cannot carry a business value unit")
-        elif _operator_label(decision.label):
-            raise ValueError("An aggregation operator alone is not a Metric")
+            if _operator_label(decision.label):
+                raise ValueError("An aggregation operator alone is not a Measure")
+            if decision.business_object_quote.strip():
+                raise ValueError("A reusable Measure cannot carry a named business object quote")
+            if operator and not _matches_optional_operator(
+                    decision.classification_quote, operator):
+                raise ValueError("Measure calculation operator lacks exact source evidence")
+        else:
+            if _operator_label(decision.label):
+                raise ValueError("An aggregation operator alone is not a Metric")
+            if decision.aggregation_operator is not None:
+                raise ValueError("Metric calculation belongs in its source formula, not a single Measure operator")
+            if not _named_business_object(exact_records, decision.label,
+                                          decision.business_object_quote):
+                raise ValueError("Metric requires a source-quoted business object in its label")
     exact_scope = {}
     for record in exact_records:
         for key, value in (record.get("scope") or {}).items():
@@ -249,8 +294,6 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         raise ValueError("Conflicting units cannot share an exact concept")
     unit = next(iter(exact_units), "")
     effective_scope = {**exact_scope, **decision.scope}
-    if decision.ontology_level == "type" and decision.root_type == "Measure" and effective_scope:
-        raise ValueError("Measure operator cannot be scoped to a business observation")
     if not set(decision.scope_roles) <= set(effective_scope):
         raise ValueError("Scope role names a field absent from exact source definitions")
     if decision.ontology_level == "type":
@@ -262,14 +305,15 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
             raise ValueError("Observation coordinates cannot become type identity")
     normalized_label = " ".join(decision.label.casefold().split())
     normalized_definition = " ".join(decision.definition.casefold().split())
+    operator = decision.aggregation_operator if decision.root_type == "Measure" else None
     concept_id = "concept:" + digest([data.snapshot_id, decision.root_type, normalized_label,
-                                       normalized_definition, effective_scope, unit])[:24]
+                                       normalized_definition, effective_scope, unit, operator])[:24]
     applicability = {key: value for key, value in effective_scope.items()
                      if decision.scope_roles.get(key) == "applicability"}
     coordinates = {key: value for key, value in effective_scope.items()
                    if decision.scope_roles.get(key) == "observation"}
     type_id = ("type:" + digest([decision.root_type, normalized_label,
-                                  normalized_definition, applicability, unit])[:24]
+                                  normalized_definition, applicability, unit, operator])[:24]
                if decision.ontology_level == "type" else None)
     alignments, all_evidence = [], set()
     for item, record in selected:
@@ -325,8 +369,7 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                "unclassified_scope": {key: value for key, value in effective_scope.items()
                                       if key not in decision.scope_roles},
                "unit": unit or None,
-               "aggregation_operator": (decision.aggregation_operator
-                                        if decision.root_type == "Measure" else None),
+               "aggregation_operator": operator,
                "source_properties": source_properties,
                "source_refs": [{"record_id": item["source_record_id"],
                                 "card_id": item.get("source_card_id"),
@@ -394,6 +437,7 @@ def compile_relation(data, profile, core, bundle, decision):
             and _child_surface(source["table"])
             and not _child_surface(target["table"])):
         raise ValueError("Contains direction is reversed for child-to-parent source")
+    validate_proposed_relation_label(decision.label, decision.parent_relation)
     counts = rule.get("verification", {}).get("checks") or {}
     eligible, unique = counts.get("eligible_references"), counts.get("unique_matches")
     if (type(eligible) is not int or eligible <= 0 or type(unique) is not int
@@ -448,11 +492,13 @@ def compile_relation(data, profile, core, bundle, decision):
                         require_complete=True),
         *dependency_evidence,
     ]))
-    relation_id = "relation:" + digest([decision.parent_relation, decision.label.casefold().strip(),
-                                        source["table"], target["table"], domain, range_type])[:24]
+    relation_id = canonical_relation_id(
+        decision.parent_relation, domain, range_type, namespace="relation",
+        qualifier=[source["table"], source_field, target["table"], target_field])
     relation_type = DerivedType(id=relation_id, parent=decision.parent_relation,
                                 definition=decision.definition.strip(), evidence_ids=evidence_ids,
-                                label=decision.label.strip(), domain=[domain], range=[range_type],
+                                label=canonical_relation_label(decision.parent_relation),
+                                domain=[domain], range=[range_type],
                                 endpoint_basis="table_binding",
                                 evidence_scope="sample_semantic_with_full_technical_check")
     selectors = [Condition(op="eq", field=field, value=str(value))
@@ -531,9 +577,7 @@ def compile_business_relation(data, profile, core, bundle, decision, plan,
     evidence_ids = sorted(set(base_type.evidence_ids)
                           | set(source_alignment["evidence_ids"])
                           | set(target_alignment["evidence_ids"]))
-    relation_id = "business_relation:" + digest([
-        base_type.parent, base_type.label, base_type.definition,
-        source_type, target_type])[:24]
+    relation_id = canonical_relation_id(base_type.parent, source_type, target_type)
     relation_type = DerivedType(
         id=relation_id, parent=base_type.parent, label=base_type.label,
         definition=base_type.definition, evidence_ids=evidence_ids,
@@ -671,13 +715,21 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                         candidate = core.model_copy(deep=True)
                         new_type = _compiled_object_type(concept)
                         if new_type is not None:
+                            if any(item.category == "business_type" and item.id != new_type.id
+                                   and item.parent == "Measure" and new_type.parent == "Measure"
+                                   and (item.label or "").casefold().strip() == new_type.label.casefold().strip()
+                                   for item in candidate.object_types):
+                                raise ValueError(
+                                    "Same-name Measure has a different definition, unit or scope; unresolved")
                             existing = next((item for item in candidate.object_types
                                              if item.id == new_type.id), None)
                             if existing is None:
                                 candidate.object_types.append(new_type)
                             elif (existing.parent != new_type.parent
                                   or existing.definition != new_type.definition
-                                  or existing.applicability_scope != new_type.applicability_scope):
+                                  or existing.applicability_scope != new_type.applicability_scope
+                                  or existing.unit != new_type.unit
+                                  or existing.aggregation_operator != new_type.aggregation_operator):
                                 raise ValueError("Conflicting derived object type ID")
                             else:
                                 sources = {(item.role, item.source_table, item.source_column):

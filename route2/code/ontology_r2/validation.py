@@ -1,5 +1,6 @@
 """Reject invented roots, nonexistent source fields and evidence-free plans."""
 from .models import BuildPlan
+from .relation_contract import canonical_relation_id, canonical_relation_label
 
 
 def validate_plan(plan: BuildPlan, data, profile):
@@ -51,8 +52,39 @@ def validate_plan(plan: BuildPlan, data, profile):
                     or not set(item.domain + item.range) <= business_ids
                     or not valid_basis):
                 errors.append("business relation requires exact business type endpoints: " + item.id)
+            if len(item.domain) != 1 or len(item.range) != 1:
+                errors.append("business relation requires one directed endpoint type per side: " + item.id)
+            else:
+                try:
+                    expected_id = canonical_relation_id(item.parent, item.domain[0], item.range[0])
+                    expected_label = canonical_relation_label(item.parent)
+                except ValueError:
+                    errors.append("business relation requires a supported object root: " + item.id)
+                else:
+                    if item.id != expected_id or item.label != expected_label:
+                        errors.append("business relation requires canonical predicate name and ID: " + item.id)
             if any(relation.predicate == item.id for relation in plan.relations):
                 errors.append("one-pair business relation cannot execute as a table plan: " + item.id)
+        if item.endpoint_basis == "table_binding":
+            bindings = [relation for relation in plan.relations if relation.predicate == item.id]
+            if len(item.domain) != 1 or len(item.range) != 1 or not bindings:
+                errors.append("source-record relation requires a directed plan and endpoint signature: " + item.id)
+            else:
+                try:
+                    expected_label = canonical_relation_label(item.parent)
+                    expected_ids = {
+                        canonical_relation_id(
+                            item.parent, item.domain[0], item.range[0],
+                            namespace="relation", qualifier=[
+                                binding.source_table, binding.source_column,
+                                binding.target_table, binding.target_column])
+                        for binding in bindings
+                    }
+                except ValueError:
+                    errors.append("source-record relation requires a supported object root and complete signature: " + item.id)
+                else:
+                    if expected_ids != {item.id} or item.label != expected_label:
+                        errors.append("source-record relation requires canonical predicate name and ID: " + item.id)
 
     def is_subtype(actual, declared):
         seen = set()

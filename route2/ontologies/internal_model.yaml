@@ -6,10 +6,10 @@ object_roots:
     label: 一般对象
   - id: Measure
     label: 度量
-    definition: 可复用的聚合或过滤操作，例如 SUM、AVG、COUNT；不以某项经营收入或利润命名。
+    definition: 不绑定具体经营对象的可复用量与计算口径，例如收入、10月年预算、当年预算排名；SUM、过滤等是计算属性，不单独成为度量类型。
   - id: Metric
     label: 指标
-    definition: 带经营含义与业务口径的量，例如收入、成本、利润；具体数值由维度和期间约束。
+    definition: 绑定具体经营对象、业务含义与计算方法的量，例如水果销售收入、水果经营利润；具体数值由维度和期间约束。
   - id: Dimension
     label: 维度
   - id: Term

@@ -51,38 +51,26 @@ def _table(root, name, comment, columns, rows):
 
 
 def make_fixture(root):
-    """Six definition rows, one explicit metric-to-SUM-operation reference."""
+    """Three definition rows, one business metric to reusable measure reference."""
     root = Path(root)
     _table(root, "fruit_metric_definition", "水果经营指标定义", {
         "metric_id": "记录编号", "metric_code": "指标编码", "metric_name": "指标名称",
         "definition": "指标业务定义", "calculation_formula": "计算公式",
         "measure_code": "被引用的度量编码", "unit": "金额单位",
-    }, [{"metric_id": "m1", "metric_code": "PROFIT", "metric_name": "水果销售利润",
-         "definition": "水果销售收入扣除销售成本的金额", "calculation_formula":
-         "水果销售利润 = SUM(水果销售收入) - SUM(水果销售成本)",
-         "measure_code": "SUM", "unit": "元"}])
-    _table(root, "fruit_metric_common", "水果经营指标公共定义", {
-        "id": "记录编号", "metric_name": "指标名称", "definition": "指标说明", "unit": "单位",
-    }, [{"id": "mc1", "metric_name": "水果销售利润",
-         "definition": "销售收入减去销售成本后的利润金额", "unit": "元"}])
-    _table(root, "fruit_measure_definition", "水果经营聚合操作定义", {
+    }, [{"metric_id": "m1", "metric_code": "FRUIT_SALES_REVENUE", "metric_name": "水果销售收入",
+         "definition": "水果销售业务产生的收入，按销售交易收入求和", "calculation_formula":
+         "水果销售收入 = SUM(收入)",
+         "measure_code": "REVENUE", "unit": "元"}])
+    _table(root, "fruit_measure_definition", "通用收入度量定义", {
         "measure_id": "记录编号", "measure_code": "度量编码", "measure_name": "度量名称",
         "definition": "度量业务定义", "unit": "金额单位",
-    }, [{"measure_id": "v1", "measure_code": "SUM", "measure_name": "SUM",
-         "definition": "SUM(x) 对输入数值求和", "unit": ""}])
-    _table(root, "fruit_measure_common", "水果经营聚合操作公共定义", {
-        "id": "记录编号", "measure_name": "度量名称", "definition": "度量说明", "unit": "单位",
-    }, [{"id": "vc1", "measure_name": "SUM",
-         "definition": "对输入值求和，采用 SUM(x)", "unit": ""}])
+    }, [{"measure_id": "v1", "measure_code": "REVENUE", "measure_name": "收入",
+         "definition": "收入是未限定经营对象的可复用金额口径，可按需要汇总", "unit": "元"}])
     _table(root, "fruit_dim_definition", "水果经营地区维度定义", {
         "dim_id": "记录编号", "dim_code": "维度编码", "dim_name": "维度名称",
         "definition": "维度业务定义",
     }, [{"dim_id": "d1", "dim_code": "REGION", "dim_name": "销售地区",
          "definition": "按水果销售所处地区划分"}])
-    _table(root, "fruit_dim_common", "水果经营地区维度公共定义", {
-        "id": "记录编号", "dim_name": "维度名称", "definition": "维度说明",
-    }, [{"id": "dc1", "dim_name": "销售地区",
-         "definition": "水果销售的地区归属"}])
 
 
 class FixtureDecisions:
@@ -108,10 +96,10 @@ class FixtureDecisions:
                 status="proposed", label=name, definition=definition,
                 root_type=seed["root_hint"], ontology_level="type",
                 classification_basis=("business_driven_metric" if seed["root_hint"] == "Metric"
-                                      else "aggregation_or_filter_measure" if seed["root_hint"] == "Measure"
+                                      else "reusable_measure" if seed["root_hint"] == "Measure"
                                       else "other"),
                 classification_quote=definition,
-                aggregation_operator=("sum" if seed["root_hint"] == "Measure" else None),
+                business_object_quote=("水果销售" if seed["root_hint"] == "Metric" else ""),
                 alignments=alignments,
             )
         if task == "relation_bundle":
@@ -122,8 +110,8 @@ class FixtureDecisions:
             target = records[pair["target_record_id"]]
             return RelationBundleDecision(
                 status="proposed", parent_relation="depends_on",
-                label="指标公式使用求和操作",
-                definition="利润指标的公式引用 SUM 聚合操作",
+                label="depends_on",
+                definition="水果销售收入指标的公式引用通用收入度量，并对收入求和",
                 source_quote=source["fields"]["name"][0]["value"],
                 target_quote=target["fields"]["name"][0]["value"],
             )
@@ -159,7 +147,7 @@ def run(output):
             {"agent_enabled": False, "max_rules": 1}))
         try:
             packets = build_instance_bundles(data, index, association, {
-                "max_concept_bundles": 6, "max_relation_bundles": 1,
+                "max_concept_bundles": 3, "max_relation_bundles": 1,
                 "max_candidates_per_bundle": 2, "max_joint_pairs_per_rule": 1,
             })
         finally:
@@ -167,7 +155,7 @@ def run(output):
         core, mapping = direct_mapping(data)
         result = asyncio.run(construct_from_bundles(
             data, profile, core, packets["bundles"], FixtureDecisions(),
-            max_bundles=7, review=True))
+            max_bundles=4, review=True))
         business_types = [item for item in result["plan"].object_types
                           if item.category == "business_type"]
         relation_types = result["plan"].relation_types
@@ -201,7 +189,7 @@ def run(output):
             raise AssertionError("Controlled relation materialization failed structural checks")
         manifest = {
             "status": "complete", "experimental_scope": "controlled_synthetic_fixture_only",
-            "input_tables": len(data.tables), "input_records": 6,
+            "input_tables": len(data.tables), "input_records": 3,
             "viewer": "viewer.html",
             "llm": {"mode": "fixed_fixture_decisions", "calls": 0},
             "semantic_quality": "unjudged; no live LLM or independent business Gold",

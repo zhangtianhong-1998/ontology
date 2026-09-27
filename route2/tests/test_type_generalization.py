@@ -67,11 +67,20 @@ def _decision():
 
 
 def test_generalization_reparents_two_accepted_types_and_keeps_sources():
-    data, core = _fixture()
+    data, core = _fixture(descriptions=(
+        "阿里云水果销售所得营业收入", "商业市场水果销售所得营业收入"))
+    for name, child in zip(("阿里云", "商业市场"), core.object_types):
+        child.label = f"{name}水果收入"
+    decision = _decision()
+    decision.update(label="水果收入", definition="水果销售所得营业收入",
+                    business_object_quote="水果")
+    for child, support in zip(core.object_types, decision["children"]):
+        support.update(shared_quote="水果销售所得营业收入",
+                       specialization_quote=child.definition)
     candidates = propose_generalization_candidates(core, data, 3)
     assert len(candidates) == 1 and candidates[0]["status"] == "candidate_only"
-    compiled, parent = compile_generalization(data, PROFILE, core, _decision())
-    assert parent.label == "收入" and parent.parent == "Metric"
+    compiled, parent = compile_generalization(data, PROFILE, core, decision)
+    assert parent.label == "水果收入" and parent.parent == "Metric"
     assert parent.derivation_kind == "shared_supertype"
     assert parent.induced_from_type_ids == ["type:商业市场", "type:阿里云"]
     assert parent.evidence_scope == "multiple_definition_records"
@@ -79,7 +88,7 @@ def test_generalization_reparents_two_accepted_types_and_keeps_sources():
     assert {item.parent for item in compiled.object_types if item.id != parent.id} == {parent.id}
     assert {item.parent for item in core.object_types} == {"Metric"}
     assert compiled.relation_types == core.relation_types
-    repeated, same_parent = compile_generalization(data, PROFILE, compiled, _decision())
+    repeated, same_parent = compile_generalization(data, PROFILE, compiled, decision)
     assert same_parent.id == parent.id and len(repeated.object_types) == 3
 
 
@@ -93,19 +102,28 @@ def test_candidate_recall_does_not_use_name_alone_or_claim_identity():
 
 def test_two_character_revenue_anchor_can_ground_rich_shared_definition():
     data, core = _fixture(descriptions=(
-        "阿里云收入是业务销售形成的经营所得",
-        "商业市场收入是业务销售形成的经营所得"))
+        "阿里云水果收入是业务销售形成的经营所得",
+        "商业市场水果收入是业务销售形成的经营所得"))
+    for name, child in zip(("阿里云", "商业市场"), core.object_types):
+        child.label = f"{name}水果收入"
     decision = _decision()
-    decision.update(definition="收入是业务销售形成的经营所得", shared_anchor="收入")
+    decision.update(label="水果收入", definition="水果收入是业务销售形成的经营所得",
+                    shared_anchor="收入", business_object_quote="水果")
     decision["children"][0].update(
-        shared_quote="收入是业务销售形成的经营所得",
-        specialization_quote="阿里云收入是业务销售形成的经营所得")
+        shared_quote="水果收入是业务销售形成的经营所得",
+        specialization_quote="阿里云水果收入是业务销售形成的经营所得")
     decision["children"][1].update(
-        shared_quote="收入是业务销售形成的经营所得",
-        specialization_quote="商业市场收入是业务销售形成的经营所得")
+        shared_quote="水果收入是业务销售形成的经营所得",
+        specialization_quote="商业市场水果收入是业务销售形成的经营所得")
     assert len(propose_generalization_candidates(core, data, 5)) == 1
     candidate, parent = compile_generalization(data, PROFILE, core, decision)
-    assert parent.label == "收入" and len(candidate.object_types) == 3
+    assert parent.label == "水果收入" and len(candidate.object_types) == 3
+
+
+def test_cross_business_revenue_cannot_be_invented_as_metric_supertype():
+    data, core = _fixture()
+    with pytest.raises(ValueError, match="shared source-quoted business object"):
+        compile_generalization(data, PROFILE, core, _decision())
 
 
 def test_two_character_anchor_does_not_hide_different_accounting_bases():
@@ -198,10 +216,10 @@ def test_nonproposal_does_not_change_core():
     assert core.model_dump() == before
 
 
-def test_business_revenue_cannot_be_generalized_as_measure_operation():
+def test_measure_generalization_waits_for_reusable_quantity_scope_proof():
     data, core = _fixture(roots=("Measure", "Measure"))
     assert propose_generalization_candidates(core, data, 3) == []
     decision = _decision()
     decision["root_type"] = "Measure"
-    with pytest.raises(ValueError, match="Measure operator generalization is unsupported"):
+    with pytest.raises(ValueError, match="reusable-quantity scope contract"):
         compile_generalization(data, PROFILE, core, decision)

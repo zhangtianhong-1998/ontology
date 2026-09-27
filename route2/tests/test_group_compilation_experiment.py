@@ -12,23 +12,25 @@ from scripts.run_group_compilation_experiment import run
 def test_controlled_packets_compile_business_types_and_evidence_bounded_relation(tmp_path):
     output = tmp_path / "group-compilation"
     summary = run(output)
-    assert summary["fixture_rows"] == summary["semantic_cards"] == 6
+    assert summary["fixture_rows"] == summary["semantic_cards"] == 3
     assert summary["checked_technical_rules"] == 1
-    assert summary["concept_bundles"] == 6
+    assert summary["concept_bundles"] == 3
     assert summary["relation_bundles"] == 1
     assert {item["parent"] for item in summary["accepted_business_types"]} == {
         "Metric", "Measure", "Dimension"}
-    assert summary["step_statuses"] == ["accepted"] * 7
+    assert {(item["parent"], item["label"]) for item in summary["accepted_business_types"]} == {
+        ("Metric", "水果销售收入"), ("Measure", "收入"), ("Dimension", "销售地区")}
+    assert summary["step_statuses"] == ["accepted"] * 4
     assert summary["relation_level"] == "source_record_relation_and_one_exact_concept_pair"
     assert summary["evaluation_scope"].startswith("engineering_contract_only")
 
     ontology = read_yaml(output / "ontology.yaml")
     business = [item for item in ontology["object_types"]
                 if item["category"] == "business_type"]
-    assert len(business) == 6
+    assert len(business) == 3
     assert all(item["evidence_scope"] == "definition_record" for item in business)
-    assert len(read_yaml(output / "business_concepts.yaml")) == 6
-    assert len(read_yaml(output / "record_alignments.yaml")) == 6
+    assert len(read_yaml(output / "business_concepts.yaml")) == 3
+    assert len(read_yaml(output / "record_alignments.yaml")) == 3
 
     plan = read_yaml(output / "extraction_plan.yaml")
     assert len(plan["relations"]) == 1
@@ -40,6 +42,7 @@ def test_controlled_packets_compile_business_types_and_evidence_bounded_relation
     business_relation = next(item for item in plan["relation_types"]
                              if item["category"] == "business_relation_type")
     assert record_relation["parent"] == business_relation["parent"] == "depends_on"
+    assert record_relation["label"] == business_relation["label"] == "depends_on"
     assert record_relation["domain"] == ["source_record_type:fruit.fruit_metric_definition"]
     assert record_relation["range"] == ["source_record_type:fruit.fruit_measure_definition"]
     assert record_relation["evidence_scope"] == plan["relations"][0]["evidence_scope"] == (
@@ -53,7 +56,7 @@ def test_controlled_packets_compile_business_types_and_evidence_bounded_relation
     assert all(item["predicate"] != business_relation["id"] for item in plan["relations"])
     evidence = {item["id"]: item for item in read_yaml(output / "evidence.yaml")}
     assert set(record_relation["evidence_ids"] + business_relation["evidence_ids"]) <= set(evidence)
-    assert any("水果销售收入" in evidence[item]["raw_fragment"]
+    assert any("收入" in evidence[item]["raw_fragment"]
                for item in business_relation["evidence_ids"] if item.startswith("record:"))
     validation = read_yaml(output / "validation.yaml")
     assert validation["passed"] is True
@@ -88,5 +91,6 @@ def test_controlled_packets_compile_business_types_and_evidence_bounded_relation
     assert viewer["validation"]["passed"] is True
     assert viewer["manifest"]["viewer"] == "viewer.html"
     assert viewer["manifest"]["llm"]["mode"] == "fixed_fixture_decisions"
+    assert all(item["label"] != "SUM" for item in viewer["ontology_overview"]["nodes"])
     with pytest.raises(FileExistsError, match="already contains files"):
         run(output)

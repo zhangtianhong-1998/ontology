@@ -164,13 +164,27 @@ def test_formula_in_only_one_column_requires_full_expression_in_other_definition
     assert assertion["target_formula_evidence_ids"] == []
 
 
-def test_unitless_measure_equivalence_requires_same_explicit_operator():
+def test_reusable_measure_equivalence_uses_complete_meaning_not_operator_only():
     data, core = _fixture(
-        descriptions=("SUM 是对取值求和的聚合操作", "SUM 是对取值求和的聚合操作"),
+        descriptions=("收入是可用于不同经营对象的营业所得金额", "收入是可用于不同经营对象的营业所得金额"),
+        formulas=(None, None), roots=("Measure", "Measure"), units=("元", "元"),
+    )
+    core.object_types = [item.model_copy(update={"label": "收入", "aggregation_operator": None})
+                         for item in core.object_types]
+    candidate = propose_equivalence_candidates(core, data, 2)[0]
+    assertion = compile_equivalence(data, core, candidate, _decision(data, candidate))
+    assert assertion["root_type"] == "Measure" and assertion["unit"] == "元"
+    core.object_types[1] = core.object_types[1].model_copy(update={"unit": "万元"})
+    assert propose_equivalence_candidates(core, data, 2) == []
+
+
+def test_measure_rank_may_be_unitless_but_operator_mismatch_blocks_recall():
+    data, core = _fixture(
+        descriptions=("当年预算排名按预算值降序给出序位", "当年预算排名按预算值降序给出序位"),
         formulas=(None, None), roots=("Measure", "Measure"), units=(None, None),
     )
-    core.object_types = [item.model_copy(update={"label": "SUM", "aggregation_operator": "sum"})
+    core.object_types = [item.model_copy(update={"label": "当年预算排名"})
                          for item in core.object_types]
     assert len(propose_equivalence_candidates(core, data, 2)) == 1
-    core.object_types[1] = core.object_types[1].model_copy(update={"aggregation_operator": "avg"})
+    core.object_types[1].aggregation_operator = "max"
     assert propose_equivalence_candidates(core, data, 2) == []

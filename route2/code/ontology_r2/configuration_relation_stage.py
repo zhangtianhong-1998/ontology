@@ -14,6 +14,8 @@ from typing import Literal
 
 from .configuration_relations import _check_column, _type_alignments
 from .models import BuildPlan, DerivedType, Strict
+from .relation_contract import (canonical_relation_id, canonical_relation_label,
+                                validate_proposed_relation_label)
 from .storage import digest, qi
 from .validation import validate_plan
 
@@ -210,18 +212,21 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
                (target_type, source_type, target_match, source_match,
                 target_record, source_record))
     subject_type, object_type, subject_match, object_match, subject_record, object_record = ordered
+    validate_proposed_relation_label(
+        decision.label, decision.parent_relation,
+        subject_label=subject_type.label, object_label=object_type.label)
     evidence_ids = sorted(set(candidate.get("evidence_ids", [])
                               + [config_evidence, source_definition_evidence,
                                  target_definition_evidence]
                               + source_match["evidence_ids"] + target_match["evidence_ids"]))
     if not set(evidence_ids) <= data.evidence.keys():
         raise ValueError("Configuration relation evidence is missing")
-    relation_id = "business_relation:" + digest([
-        decision.parent_relation, _norm(decision.label), _norm(decision.definition),
-        subject_type.id, object_type.id])[:24]
+    relation_id = canonical_relation_id(
+        decision.parent_relation, subject_type.id, object_type.id)
     relation_type = DerivedType(
         id=relation_id, parent=decision.parent_relation,
-        label=decision.label.strip(), definition=decision.definition.strip(),
+        label=canonical_relation_label(decision.parent_relation),
+        definition=decision.definition.strip(),
         category="business_relation_type", domain=[subject_type.id],
         range=[object_type.id], endpoint_basis="configuration_reference",
         evidence_scope="one_configuration_witness_with_exact_type_alignments",
@@ -230,7 +235,8 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
     proposed = core.model_copy(deep=True)
     existing = next((item for item in proposed.relation_types if item.id == relation_id), None)
     if existing:
-        if (existing.parent != relation_type.parent or existing.definition != relation_type.definition
+        if (existing.parent != relation_type.parent or existing.label != relation_type.label
+                or existing.definition != relation_type.definition
                 or existing.domain != relation_type.domain or existing.range != relation_type.range
                 or existing.endpoint_basis != relation_type.endpoint_basis
                 or existing.evidence_scope != relation_type.evidence_scope):

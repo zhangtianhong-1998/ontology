@@ -118,8 +118,9 @@ def _eligible_groups(plan, data):
         # Two unknown units do not establish a compatible quantitative unit.
         if root == "Metric" and not unit:
             continue
-        if root == "Measure" and (unit or not item.aggregation_operator):
-            continue
+        # A Measure may carry a unit and need not declare one of the small
+        # built-in operators. The complete definition is checked below;
+        # operator equality remains part of the candidate signature.
         fragments = _fragments(data, item)
         if fragments is None:
             continue
@@ -138,7 +139,8 @@ def _candidate(data, group_key, source, target):
         "candidate_id": "equivalence:" + digest([data.snapshot_id, left.id, right.id])[:24],
         "source_type_id": left.id, "target_type_id": right.id,
         "root_type": group_key[0], "label": left.label,
-        "unit": left.unit, "applicability_scope": dict(group_key[3]),
+        "unit": left.unit, "aggregation_operator": left.aggregation_operator,
+        "applicability_scope": dict(group_key[3]),
         "status": "candidate_only",
     }
 
@@ -149,7 +151,7 @@ def propose_equivalence_candidates(plan: BuildPlan, data, max_pairs: int):
         raise ValueError("max_pairs must be a nonnegative integer")
     groups = _eligible_groups(plan, data)
     result = []
-    for key, members in sorted(groups.items()):
+    for key, members in sorted(groups.items(), key=lambda entry: repr(entry[0])):
         for source, target in combinations(members, 2):
             if len(result) >= max_pairs:
                 return result
@@ -257,7 +259,8 @@ def compile_equivalence(data, core: BuildPlan, candidate, decision):
         "source_type_id": source_id, "target_type_id": target_id,
         "canonical_type_id": canonical,
         "root_type": group_key[0], "label": source.label,
-        "unit": source.unit, "applicability_scope": source.applicability_scope,
+        "unit": source.unit, "aggregation_operator": source.aggregation_operator,
+        "applicability_scope": source.applicability_scope,
         "source_description_evidence_ids": [x["evidence_id"] for x in source_fragments["description"]],
         "target_description_evidence_ids": [x["evidence_id"] for x in target_fragments["description"]],
         "source_formula_evidence_ids": [x["evidence_id"] for x in source_fragments["formula"]],

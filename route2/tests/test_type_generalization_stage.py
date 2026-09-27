@@ -10,12 +10,21 @@ from test_type_generalization import PROFILE, _decision, _fixture
 
 
 def test_stage_calls_structured_callback_and_compiles_only_accepted_decision():
-    data, core = _fixture()
+    data, core = _fixture(descriptions=(
+        "阿里云水果销售所得营业收入", "商业市场水果销售所得营业收入"))
+    for name, child in zip(("阿里云", "商业市场"), core.object_types):
+        child.label = f"{name}水果收入"
     packets = []
 
     async def decide(packet):
         packets.append(packet)
-        return _decision()
+        decision = _decision()
+        decision.update(label="水果收入", definition="水果销售所得营业收入",
+                        business_object_quote="水果")
+        for child, support in zip(core.object_types, decision["children"]):
+            support.update(shared_quote="水果销售所得营业收入",
+                           specialization_quote=child.definition)
+        return decision
 
     result = asyncio.run(run_generalization(
         data, PROFILE, core, decide, max_pairs=3, max_decisions=1))

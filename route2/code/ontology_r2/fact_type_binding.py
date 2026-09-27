@@ -119,8 +119,9 @@ def _recall_types(data, core, table, column, *, max_candidates, max_definition_c
     found = []
     excluded = Counter()
     for item in core.object_types:
-        # A fact value instantiates a business Metric. Measure describes a
-        # reusable aggregation/filter operation, not the value of one fact.
+        # A generic Measure can also have values, but safely binding one would
+        # need proof that the column has no unmodeled business object. This
+        # prototype therefore binds only fully named business Metrics.
         if (item.category != "business_type" or item.derivation_kind == "shared_supertype"
                 or _root_of(item, by_id) != "Metric"
                 or not item.label or not item.definition):

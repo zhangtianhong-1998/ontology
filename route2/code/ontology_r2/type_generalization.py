@@ -38,6 +38,7 @@ class GeneralizationDecision(Strict):
     definition: str = ""
     root_type: Literal["GeneralObject", "Measure", "Metric", "Dimension", "Term"] | None = None
     shared_anchor: str = ""
+    business_object_quote: str = ""
     parent_scope: dict[str, str] = Field(default_factory=dict)
     unit: str | None = None
     children: list[ChildSupport] = Field(default_factory=list)
@@ -182,11 +183,11 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
         if child is None or child.category != "business_type":
             raise ValueError("Generalization child is not an accepted business type")
         children.append(child)
-    # Measure denotes a reusable operation. Its subclasses need an
-    # operator-specific contract; the business-value superclass logic below
-    # deliberately applies only to Metric and other semantic objects.
+    # A generic reusable quantity might be the basis of several Metrics, but
+    # that is a cross-root semantic relation, not an automatic subclass edge.
+    # Measure-to-Measure specialization needs a separate scope contract.
     if decision.root_type == "Measure":
-        raise ValueError("Measure operator generalization is unsupported")
+        raise ValueError("Measure generalization requires a reusable-quantity scope contract")
     units = {_norm(item.unit) for item in children}
     if len(units) != 1 or _norm(decision.unit) not in units:
         raise ValueError("Child units conflict with the proposed parent unit")
@@ -255,6 +256,17 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
     evidence_ids.update(evidence_id for child in children
                         for evidence_id, role, _, _ in _semantic_fragments(data, child)
                         if role == "formula")
+
+    if decision.root_type == "Metric":
+        anchor = _plain(decision.business_object_quote)
+        if (len(anchor) < 2 or anchor == _plain(decision.label)
+                or anchor not in _plain(decision.label)
+                or anchor not in _plain(decision.definition)
+                or not all(any(anchor in _plain(fragment)
+                               for _, role, fragment, _ in _semantic_fragments(data, child)
+                               if role == "description")
+                           for child in children)):
+            raise ValueError("Metric parent requires a shared source-quoted business object")
 
     child_ids = {item.id for item in children}
     if old_parent:

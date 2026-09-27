@@ -119,7 +119,7 @@ def test_contains_rejects_child_to_parent_relation_direction():
         "target": {"table": "fruit.dim_definition", "field": "dim_code"},
     }}
     decision = RelationBundleDecision(
-        status="proposed", parent_relation="contains", label="维度包含成员",
+        status="proposed", parent_relation="contains", label="contains",
         definition="维度有成员", source_quote="苹果", target_quote="水果类别")
     with pytest.raises(ValueError, match="direction is reversed"):
         compile_relation(data, PROFILE, BuildPlan(), bundle, decision)
@@ -229,7 +229,8 @@ def test_reviewed_definition_becomes_a_business_type_but_observation_does_not():
                     update={"ontology_level": self.level,
                             "scope_roles": {"region": self.scope_role},
                             "classification_basis": "business_driven_metric",
-                            "classification_quote": "水果收入"})
+                            "classification_quote": "华东水果收入",
+                            "business_object_quote": "水果"})
             if task == "group_review":
                 return BundleReview(accepted=True)
             raise AssertionError(task)
@@ -273,40 +274,174 @@ def test_metric_measure_type_boundary_uses_definition_not_table_hint():
     data = SimpleNamespace(snapshot_id="snap", evidence={})
     record = {
         "record_id": "measure-def", "table": "fruit.metric", "row_number": 1,
-        "kind": "definition", "root_hint": "Metric", "scope": {}, "unit": "",
+        "kind": "definition", "root_hint": "Metric", "scope": {}, "unit": "元",
         "fields": {
-            "name": [{"column": "operation_name", "value": "SUM"}],
-            "description": [{"column": "definition", "value": "SUM(x) 对输入数值求和"}],
+            "name": [{"column": "measure_name", "value": "收入"}],
+            "description": [{"column": "definition", "value": "收入是可用于不同经营对象的营业所得金额"}],
+            "unit": [{"column": "unit", "value": "元"}],
         },
     }
     decision = ConceptBundleDecision(
-        status="proposed", label="SUM", definition="对输入数值求和",
+        status="proposed", label="收入", definition="可复用的营业所得金额",
         root_type="Measure", ontology_level="type",
-        classification_basis="aggregation_or_filter_measure",
-        classification_quote="SUM(x) 对输入数值求和", aggregation_operator="sum",
+        classification_basis="reusable_measure",
+        classification_quote="收入是可用于不同经营对象的营业所得金额",
         alignments=[RecordAlignmentDecision(record_id="measure-def",
-                                            mapping_kind="exact", quote="SUM")],
+                                            mapping_kind="exact", quote="收入")],
     )
     compiled = compile_concept(data, PROFILE, {"records": [record]}, decision, {})
     assert compiled[0]["type"] == "Measure"
     assert compiled[0]["ontology_type_id"]
-    assert compiled[0]["aggregation_operator"] == "sum"
+    assert compiled[0]["aggregation_operator"] is None
+    assert compiled[0]["unit"] == "元"
     with pytest.raises(ValueError, match="classification basis"):
         compile_concept(data, PROFILE, {"records": [record]},
                         decision.model_copy(update={"classification_basis": "business_driven_metric"}), {})
     with pytest.raises(ValueError, match="classification quote"):
         compile_concept(data, PROFILE, {"records": [record]},
-                        decision.model_copy(update={"classification_quote": "来源里没有这句话"}), {})
+                        decision.model_copy(update={"classification_quote": "收入"}), {})
+    operator_record = {**record, "record_id": "sum", "unit": "", "fields": {
+        "name": [{"column": "operation", "value": "SUM"}],
+        "description": [{"column": "definition", "value": "SUM(x) 对输入数值求和"}],
+    }}
+    with pytest.raises(ValueError, match="operator alone"):
+        compile_concept(data, PROFILE, {"records": [operator_record]},
+                        decision.model_copy(update={
+                            "label": "SUM", "classification_quote": "SUM(x) 对输入数值求和",
+                            "aggregation_operator": "sum",
+                            "alignments": [RecordAlignmentDecision(record_id="sum", mapping_kind="exact", quote="SUM")],
+                        }), {})
     business_record = {**_record("business-revenue", name="水果销售收入"),
                        "kind": "definition", "root_hint": "Measure"}
-    with pytest.raises(ValueError, match="explicitly evidenced reusable aggregation operator"):
+    metric = decision.model_copy(update={
+        "label": "水果销售收入", "root_type": "Metric",
+        "classification_basis": "business_driven_metric",
+        "classification_quote": "华东水果销售收入",
+        "business_object_quote": "水果", "scope_roles": {"region": "applicability"},
+        "alignments": [RecordAlignmentDecision(
+            record_id="business-revenue", mapping_kind="exact", quote="水果销售收入")],
+    })
+    assert compile_concept(data, PROFILE, {"records": [business_record]}, metric, {})[0]["type"] == "Metric"
+    with pytest.raises(ValueError, match="named business object"):
         compile_concept(data, PROFILE, {"records": [business_record]},
+                        metric.model_copy(update={"root_type": "Measure",
+                                                  "classification_basis": "reusable_measure"}), {})
+
+
+def test_measure_operator_is_an_optional_evidenced_property_not_type_name():
+    data = SimpleNamespace(snapshot_id="snap", evidence={})
+    record = {
+        "record_id": "income", "table": "fruit.measure", "kind": "definition",
+        "row_number": 1, "root_hint": "Measure", "scope": {}, "unit": "元",
+        "fields": {
+            "name": [{"column": "name", "value": "收入"}],
+            "description": [{"column": "definition", "value": "收入按 SUM(x) 汇总各期间金额"}],
+            "unit": [{"column": "unit", "value": "元"}],
+        },
+    }
+    decision = ConceptBundleDecision(
+        status="proposed", label="收入", definition="可复用的期间收入金额",
+        root_type="Measure", ontology_level="type",
+        classification_basis="reusable_measure",
+        classification_quote="收入按 SUM(x) 汇总各期间金额",
+        aggregation_operator="sum",
+        alignments=[RecordAlignmentDecision(record_id="income", mapping_kind="exact", quote="收入")],
+    )
+    concept, _ = compile_concept(data, PROFILE, {"records": [record]}, decision, {})
+    assert concept["aggregation_operator"] == "sum" and concept["unit"] == "元"
+    with pytest.raises(ValueError, match="operator lacks exact source evidence"):
+        compile_concept(data, PROFILE, {"records": [record]},
+                        decision.model_copy(update={"aggregation_operator": "avg"}), {})
+    distinct_record = {**record, "fields": {
+        **record["fields"], "description": [
+            {"column": "definition", "value": "收入按 COUNT(DISTINCT x) 去重计数"}]}}
+    with pytest.raises(ValueError, match="operator lacks exact source evidence"):
+        compile_concept(data, PROFILE, {"records": [distinct_record]},
                         decision.model_copy(update={
-                            "label": "水果销售收入", "classification_quote": "华东水果销售收入",
-                            "alignments": [RecordAlignmentDecision(
-                                record_id="business-revenue", mapping_kind="exact",
-                                quote="水果销售收入")],
-                        }), {})
+                            "classification_quote": "收入按 COUNT(DISTINCT x) 去重计数",
+                            "aggregation_operator": "count"}), {})
+    assert compile_concept(data, PROFILE, {"records": [distinct_record]},
+                           decision.model_copy(update={
+                               "classification_quote": "收入按 COUNT(DISTINCT x) 去重计数",
+                               "aggregation_operator": "distinct_count"}), {})[0]["aggregation_operator"] == "distinct_count"
+
+
+def test_measure_definition_may_have_time_applicability_but_not_observation_identity():
+    data = SimpleNamespace(snapshot_id="snap", evidence={})
+    record = {
+        "record_id": "budget", "table": "fruit.measure", "kind": "definition",
+        "row_number": 1, "root_hint": "Measure", "scope": {"month": "10"}, "unit": "元",
+        "fields": {
+            "name": [{"column": "name", "value": "10月年预算"}],
+            "description": [{"column": "definition", "value": "10月年预算适用于不同经营对象的预算金额"}],
+            "unit": [{"column": "unit", "value": "元"}],
+            "scope": [{"column": "month", "value": "10"}],
+        },
+    }
+    decision = ConceptBundleDecision(
+        status="proposed", label="10月年预算", definition="10月年度预算金额",
+        root_type="Measure", ontology_level="type",
+        classification_basis="reusable_measure",
+        classification_quote="10月年预算适用于不同经营对象的预算金额",
+        scope_roles={"month": "applicability"},
+        alignments=[RecordAlignmentDecision(record_id="budget", mapping_kind="exact", quote="10月年预算")],
+    )
+    concept, _ = compile_concept(data, PROFILE, {"records": [record]}, decision, {})
+    assert concept["type"] == "Measure"
+    assert concept["applicability_scope"] == {"month": "10"}
+    with pytest.raises(ValueError, match="Observation coordinates"):
+        compile_concept(data, PROFILE, {"records": [record]},
+                        decision.model_copy(update={"scope_roles": {"month": "observation"}}), {})
+    rank = {**record, "record_id": "rank", "scope": {}, "unit": "", "fields": {
+        "name": [{"column": "name", "value": "当年预算排名"}],
+        "description": [{"column": "definition", "value": "当年预算排名按预算值降序给出序位"}],
+    }}
+    rank_decision = decision.model_copy(update={
+        "label": "当年预算排名", "definition": "通用预算序位",
+        "classification_quote": "当年预算排名按预算值降序给出序位",
+        "scope_roles": {},
+        "alignments": [RecordAlignmentDecision(record_id="rank", mapping_kind="exact", quote="当年预算排名")],
+    })
+    assert compile_concept(data, PROFILE, {"records": [rank]}, rank_decision, {})[0]["unit"] is None
+
+
+def test_same_name_measure_merges_equal_definitions_but_holds_conflicting_meanings():
+    class MeasureLLM:
+        async def ask(self, task, payload, schema):
+            record = payload["bundle"]["records"][0]
+            return ConceptBundleDecision(
+                status="proposed", label="收入", definition=record["fields"]["description"][0]["value"],
+                root_type="Measure", ontology_level="type",
+                classification_basis="reusable_measure",
+                classification_quote=record["fields"]["description"][0]["value"],
+                alignments=[RecordAlignmentDecision(record_id=record["record_id"],
+                                                    mapping_kind="exact", quote="收入")],
+            )
+
+    def packet(index, meaning):
+        record = {"record_id": f"r{index}", "table": f"fruit.measure_{index}",
+                  "kind": "definition", "root_hint": "Measure", "row_number": 1,
+                  "scope": {}, "unit": "元", "fields": {
+                      "name": [{"column": "name", "value": "收入"}],
+                      "description": [{"column": "definition", "value": meaning}],
+                      "unit": [{"column": "unit", "value": "元"}],
+                  }}
+        return {"bundle_id": f"b{index}", "task_kind": "concept_induction",
+                "records": [record], "exact_alignment_record_ids": [record["record_id"]]}
+
+    same = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
+        [packet(1, "收入为营业所得金额"), packet(2, "收入为营业所得金额")],
+        MeasureLLM(), review=False))
+    assert [step["status"] for step in same["steps"]] == ["accepted", "accepted"]
+    assert len([item for item in same["plan"].object_types if item.parent == "Measure"]) == 1
+    assert len(same["concepts"][0]["source_refs"]) == 2
+    different = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
+        [packet(1, "收入为含税营业所得金额"), packet(2, "收入为不含税营业所得金额")],
+        MeasureLLM(), review=False))
+    assert [step["status"] for step in different["steps"]] == ["accepted", "unresolved"]
+    assert len([item for item in different["plan"].object_types if item.parent == "Measure"]) == 1
 
 
 def test_no_change_is_complete_but_unresolved_remains_partial():
@@ -434,7 +569,7 @@ def test_relation_quotes_must_come_from_one_validated_positive_pair(tmp_path):
                                        "matching_raw_value": "K1"}]},
         }
         decision = RelationBundleDecision(
-            status="proposed", parent_relation="points_to", label="引用指标",
+            status="proposed", parent_relation="points_to", label="points_to",
             definition="参数指向指标定义", source_quote="水果销售收入",
             target_quote="水果销售收入")
         core, _ = direct_mapping(data)
@@ -553,7 +688,8 @@ def test_relation_quotes_must_come_from_one_validated_positive_pair(tmp_path):
                                                  "target_quote": "K1"})
         with pytest.raises(ValueError, match="positive pair"):
             compile_relation(data, PROFILE, core, bundle, key_values)
-        false_dependency = decision.model_copy(update={"parent_relation": "depends_on"})
+        false_dependency = decision.model_copy(update={"parent_relation": "depends_on",
+                                                "label": "depends_on"})
         with pytest.raises(ValueError, match="source formula"):
             compile_relation(data, PROFILE, core, bundle, false_dependency)
         # The model no longer chooses executable endpoint types at all.
@@ -564,7 +700,8 @@ def test_relation_quotes_must_come_from_one_validated_positive_pair(tmp_path):
         r1["fields"]["formula"] = [{"column": "formula", "value":
                                      "水果销售利润 = 水果销售收入 - 水果销售成本"}]
         supported_dependency = decision.model_copy(update={
-            "parent_relation": "depends_on", "source_quote": "水果销售利润"})
+            "parent_relation": "depends_on", "label": "depends_on",
+            "source_quote": "水果销售利润"})
         supported_plan, _ = compile_relation(data, PROFILE, core, bundle,
                                              supported_dependency)
         assert any("水果销售收入" in data.evidence[e]["raw_fragment"]
