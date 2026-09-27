@@ -8,17 +8,20 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .association_rules import build_association_rules
+from .calculation_stage import compile_calculation_stage
 from .column_roles import classify_columns
 from .column_role_inference import infer_column_role_candidates
 from .configuration_relations import (discover_configuration_relations,
                                       infer_configuration_specs)
 from .configuration_relation_stage import adjudicate_configuration_relations
 from .concept_candidates import recall_concept_candidates
-from .datahub_adapter import dataset_urn
+from .metadata_graph import MetadataGraph, build_metadata_graph, write_metadata_graph
 from .discovery import discover_and_check
+from .definition_memberships import build_definition_memberships
 from .embedding import LocalEmbedder, settings as embedding_settings
 from .fact_observations import build_fact_observation_candidates
 from .fact_type_binding import bind_fact_observations
+from .fact_schema_induction import induce_fact_schema
 from .group_incremental import construct_from_bundles
 from .incremental import construct, ontology_from_plan
 from .instance_bundles import build_instance_bundles
@@ -27,6 +30,7 @@ from .progress import ProgressReporter
 from .record_types import source_record_type
 from .relations import Extractor
 from .semantic_cards import SemanticCardIndex, build_semantic_cards
+from .semantic_state import restore_state, save_state
 from .storage import Dataset, Sink, digest, read_yaml, write_yaml
 from .type_generalization import GeneralizationDecision
 from .type_generalization_stage import run_generalization
@@ -38,7 +42,7 @@ from .value_aliases import propose_value_alias_candidates
 def load_config(path):
     path = Path(path).resolve()
     config = read_yaml(path)
-    for key in ("dataset", "model_profile", "env_file"):
+    for key in ("dataset", "model_profile", "env_file", "resume_from", "fact_templates_from"):
         if key in config:
             config[key] = str((path.parent / config[key]).resolve())
     for key in ("responses", "cache_dir"):
@@ -59,71 +63,8 @@ def load_config(path):
 
 
 def technical_graph(data):
-    """Build a local source-metadata graph with source-record type bridges.
-
-    The optional DataHub URN is an interchange identifier. DataHub does not
-    construct this graph, infer its edges, or participate in extraction.
-    """
-    nodes, edges = [{"id": "snapshot:" + data.snapshot_id, "kind": "DatasetSnapshot"}], []
-    for path, sha in sorted(data.files.items()):
-        nodes.append({"id": "source:" + path, "kind": "Source", "path": path, "sha256": sha})
-        edges.append({"source": "snapshot:" + data.snapshot_id, "type": "includes_source", "target": "source:" + path})
-    for name, t in data.tables.items():
-        metadata_file = data.evidence["schema:" + name]["source_ref"]["file"]
-        record_type, classification = source_record_type(name, t)
-        try:
-            default_datahub_urn = dataset_urn(name)
-        except ValueError:
-            # The optional interchange format must not make local extraction
-            # fail for a quoted source identifier that DataHub cannot encode.
-            default_datahub_urn = None
-        nodes.append({"id": name, "kind": "Table", **{k: t.get(k) for k in ("schema", "table_name", "table_comment", "relkind", "estimated_rows", "total_size", "data_size")},
-                      "observed_rows": t["rows"], "declared_primary_key": list(t["pk"]),
-                      "source_record_type": record_type.id,
-                      "datahub_urn": default_datahub_urn,
-                      "datahub_urn_scope": ("default_postgres_PROD_interchange" if default_datahub_urn
-                                            else "unsupported_local_identifier"),
-                      "evidence_ids": ["schema:" + name]})
-        nodes.append({"id": record_type.id, "kind": "SourceRecordType", "category": record_type.category,
-                      "label": record_type.label, "definition": record_type.definition,
-                      "parent": record_type.parent, "evidence_ids": record_type.evidence_ids,
-                      "classification_basis": classification["basis"],
-                      "business_concept_inferred": False, "observed_rows": t["rows"],
-                      "mapping_origin": "local_deterministic_source_structure"})
-        edges.append({"source": name, "type": "mapped_as_source_record_type", "target": record_type.id,
-                      "semantic_status": "source_structure_only"})
-        edges.append({"source": name, "type": "documented_by", "target": "source:" + metadata_file})
-        edges.append({"source": name, "type": "sample_from", "target": "source:" + str(Path(t["csv_path"]).relative_to(data.root))})
-        for constraint in t["constraints"]:
-            cid = name + ":constraint:" + digest([constraint.get("constraint_name"),
-                                                     constraint.get("constraint_type"),
-                                                     constraint.get("definition")])[:16]
-            nodes.append({"id": cid, "kind": "Constraint", **constraint})
-            edges.append({"source": name, "type": "has_declared_constraint", "target": cid})
-            edges.append({"source": cid, "type": "documented_by", "target": "source:" + metadata_file.replace("schema/tables/", "schema/constraints/", 1)})
-            if (constraint.get("constraint_type") == "p" or
-                    str(constraint.get("constraint_type_name", "")).upper() == "PRIMARY KEY"):
-                for position, column_name in enumerate(t["pk"], start=1):
-                    edges.append({"source": cid, "type": "declared_key_column",
-                                  "target": name + "." + column_name, "key_position": position})
-        for c in t["columns"]:
-            cid = name + "." + c["column_name"]
-            nodes.append({"id": cid, "kind": "Column", **c,
-                          "table": name, "datahub_field_path": c["column_name"],
-                          "is_declared_primary_key": c["column_name"] in t["pk"],
-                          "evidence_ids": ["schema:" + name + ":" + c["column_name"]]})
-            edges.append({"source": name, "type": "table_has_column", "target": cid})
-        for fk in t["foreign_keys"]:
-            edges.append({"source": name + "." + fk["column_name"], "type": "declared_fk", "target": fk["referenced_schema"] + "." + fk["referenced_table"] + "." + fk["referenced_column"], "raw": fk})
-    known = {node["id"] for node in nodes}
-    for edge in edges:
-        if edge["target"] not in known:
-            nodes.append({"id": edge["target"], "kind": "ExternalColumnReference", "availability": "not_in_input"})
-            known.add(edge["target"])
-    return {"nodes": nodes, "edges": edges, "lineage_source_available": False,
-            "graph_source": "local_schema_and_csv_snapshot",
-            "datahub_interchange": {"format": "metadata-file", "default_platform": "postgres",
-                                    "default_environment": "PROD", "service_backed": False}}
+    """Compatibility entry point for the offline metadata graph builder."""
+    return build_metadata_graph(data)
 
 
 def check_output(sink):
@@ -236,6 +177,7 @@ async def build(config, output):
         profiling = {**config.get("profiling", {}), "input_scope": config.get("data_scope", "unknown")}
         data = Dataset(config["dataset"], output / "work", config.get("memory_limit", "1GB"),
                        profiling, progress=progress, privacy_config=config.get("privacy"))
+        resumed = restore_state(config.get("resume_from"), data, profile)
         sink = Sink(output, config.get("shard_size", 5000))
         llm = StructuredLLM(config["llm"], output)
         manifest.update(snapshot_id=data.snapshot_id, input_files=data.files, input_tables=len(data.tables), input_records=sum(t["rows"] for t in data.tables.values()), model_profile_hash=digest(profile))
@@ -244,6 +186,17 @@ async def build(config, output):
         write_yaml(output / "profiles.yaml", {name: t["profiles"] for name, t in data.tables.items()})
         write_yaml(output / "column_roles.yaml", {name: classify_columns(table)
                                                    for name, table in data.tables.items()})
+        prior_roles = (resumed or {}).get("column_role_report", {})
+        roles_reused = bool(prior_roles and not prior_roles.get("coverage", {}).get("partial", True)
+                            and prior_roles.get("coverage", {}).get("status") != "disabled")
+        role_candidates = (prior_roles if roles_reused else
+                           await infer_column_role_candidates(
+                               data, llm, config.get("column_role_inference", {})))
+        # Restored candidates stay in table metadata; unresolved columns alone
+        # are reconsidered. Never relabel an incomplete checkpoint as complete.
+        data.column_role_report = role_candidates
+        write_yaml(output / "column_role_candidates.yaml", role_candidates)
+        manifest["column_role_inference"] = role_candidates["coverage"]
         discovery = {"candidates": [], "checks": [], "coverage": {"status": "disabled", "partial": False}}
         if config.get("discovery", {}).get("enabled", True):
             discovery = discover_and_check(data, config.get("discovery", {}), progress=progress)
@@ -254,16 +207,42 @@ async def build(config, output):
         manifest["field_discovery"] = {"candidate_count": len(discovery["candidates"]),
                                        "checked_count": discovery["coverage"].get("candidates_checked", 0),
                                        "partial": discovery["coverage"]["partial"]}
+        alias_result = {"candidates": [], "coverage": {"status": "disabled"}}
+        if config.get("alias_recall", {}).get("enabled", False):
+            options = {key: value for key, value in config["alias_recall"].items() if key != "enabled"}
+            stage = progress.task("别名字段候选召回", 1) if progress else nullcontext(None)
+            with stage as task:
+                alias_result = propose_value_alias_candidates(data, **options)
+                if task:
+                    task.advance(detail=f"{len(alias_result['candidates'])} 对")
+        write_yaml(output / "alias_candidates.yaml", alias_result)
+        manifest["alias_recall"] = {"candidate_count": len(alias_result["candidates"]),
+                                     "coverage": alias_result["coverage"]}
         association = {"rules": [], "coverage": {"status": "disabled", "partial": False},
                        "agent": {"status": "disabled"}}
         if config.get("association_rules", {}).get("enabled", False):
-            association = await build_association_rules(
-                data, discovery, config["association_rules"], llm=llm)
+            stage = progress.task("关联规则全量核验") if progress else nullcontext(None)
+            with stage as task:
+                association = await build_association_rules(
+                    data, discovery, config["association_rules"], llm=llm,
+                    alias_candidates=alias_result,
+                    progress=(lambda event: task.advance(
+                        int(event.get("status") == "completed"),
+                        detail=f"{event.get('origin', '')} {event.get('requested_position', 0)}/{event.get('requested_total', 0)}"))
+                    if task else None)
         write_yaml(output / "association_rules.yaml", association)
         manifest["association_rules"] = {"rules": len(association["rules"]),
                                           "statuses": association["coverage"].get("statuses", {}),
                                           "agent": association["agent"],
                                           "partial": association["coverage"].get("partial", False)}
+        meta_graph, export_report = write_metadata_graph(data, output, association)
+        data.metadata_graph = MetadataGraph(meta_graph)
+        manifest["metadata_graph"] = {
+            "backend": "local_queryable_snapshot", "datahub": export_report,
+            "nodes": len(meta_graph["nodes"]), "edges": len(meta_graph["edges"]),
+            "technical_links": meta_graph["association_coverage"]["included_links"],
+            "used_for": ["source_neighborhood", "evidence_packet_schema", "visualization"],
+        }
         fact_options = config.get("fact_observations", {})
         if not isinstance(fact_options, dict):
             raise ValueError("fact_observations must be a mapping")
@@ -317,13 +296,6 @@ async def build(config, output):
             "unresolved_tables": fact_result["coverage"].get("unresolved_tables", 0),
             "partial": fact_result["coverage"]["partial"],
         }
-        # Run this after deterministic fact and technical-link discovery so a
-        # source-checked *candidate* role cannot change their row-purpose or
-        # field-association evidence. It only widens later semantic recall.
-        role_candidates = await infer_column_role_candidates(
-            data, llm, config.get("column_role_inference", {}))
-        write_yaml(output / "column_role_candidates.yaml", role_candidates)
-        manifest["column_role_inference"] = role_candidates["coverage"]
         concept_result = {"candidates": [], "coverage": {"status": "disabled"}}
         if config.get("concept_recall", {}).get("enabled", False):
             options = {key: value for key, value in config["concept_recall"].items()
@@ -337,22 +309,14 @@ async def build(config, output):
         write_yaml(output / "concept_candidates.yaml", concept_result)
         manifest["concept_recall"] = {"candidate_count": len(concept_result["candidates"]),
                                        "coverage": concept_result["coverage"]}
-        alias_result = {"candidates": [], "coverage": {"status": "disabled"}}
-        if config.get("alias_recall", {}).get("enabled", False):
-            options = {key: value for key, value in config["alias_recall"].items() if key != "enabled"}
-            stage = progress.task("别名字段候选召回", 1) if progress else nullcontext(None)
-            with stage as task:
-                alias_result = propose_value_alias_candidates(data, **options)
-                if task:
-                    task.advance(detail=f"{len(alias_result['candidates'])} 对")
-        write_yaml(output / "alias_candidates.yaml", alias_result)
-        manifest["alias_recall"] = {"candidate_count": len(alias_result["candidates"]),
-                                     "coverage": alias_result["coverage"]}
         plan, ontology, knowledge = await construct(data, profile, config, output, llm, manifest,
                                                     discovery_checks=discovery["checks"],
                                                     discovery_candidates=discovery["candidates"],
                                                     concept_candidates=concept_result["candidates"],
                                                     progress=progress)
+        if resumed:
+            plan = resumed["plan"]
+            manifest["resumed_from"] = str(config["resume_from"])
         card_report = {"status": "disabled", "partial": False}
         bundle_report = {"status": "disabled", "partial": False}
         group_result = {"concepts": [], "record_alignments": [],
@@ -390,7 +354,11 @@ async def build(config, output):
                 review=options.get("review", True),
                 max_bundles=options.get("max_llm_bundles", 20),
                 max_repairs_per_bundle=options.get("max_repairs_per_bundle", 0),
-                progress=progress)
+                progress=progress, prior_result=resumed,
+                concept_batch_size=options.get("concept_batch_size", 1),
+                relation_batch_size=options.get("relation_batch_size", 1),
+                on_checkpoint=lambda result: save_state(
+                    output / "semantic_state.json", data, profile, result))
             plan = group_result["plan"]
             construction = read_yaml(output / "construction.yaml")
             construction["group_steps"] = group_result["steps"]
@@ -402,6 +370,39 @@ async def build(config, output):
                 plan, profile, data, read_yaml(output / "direct_mapping.yaml"),
                 construction["steps"])
             write_yaml(output / "ontology.yaml", ontology)
+        memberships = {"templates": [], "memberships": [], "reference_variants_pending": [],
+                       "rejections": [], "template_errors": [], "coverage": {"status": "disabled", "partial": False}}
+        if config.get("instance_bundles", {}).get("enabled", False):
+            index = SemanticCardIndex(output / "work" / "semantic_cards.sqlite")
+            try:
+                memberships = build_definition_memberships(
+                    data, index, group_result,
+                    max_records=config["instance_bundles"].get("max_definition_memberships", 100000))
+            finally:
+                index.close()
+            for member in memberships["memberships"]:
+                sink.put("definition_memberships", member)
+        for key in ("templates", "reference_variants_pending", "rejections", "template_errors"):
+            write_yaml(output / ("definition_" + key + ".yaml"), memberships[key])
+        write_yaml(output / "definition_membership_coverage.yaml", memberships["coverage"])
+        manifest["definition_memberships"] = memberships["coverage"]
+        stage_signature = digest({key: config.get(key, {}) for key in (
+            "type_generalization", "configuration_relations", "type_equivalence",
+            "fact_schema_induction", "fact_type_binding", "fact_templates_from",
+            "fact_observations", "discovery", "association_rules", "alias_recall",
+            "instance_bundles", "embedding", "column_role_inference")})
+        saved_stages = ((resumed or {}).get("stage_outputs", {})
+                        if roles_reused
+                        and (resumed or {}).get("stage_signature") == stage_signature
+                        and group_result.get("coverage", {}).get("steps_this_run", 1) == 0
+                        else {})
+
+        def completed_stage(name):
+            """Reuse completed semantic decisions, never a budget-truncated stage."""
+            result = saved_stages.get(name)
+            if result and not result.get("partial", False) and not result.get("coverage", {}).get("partial", True):
+                return result
+            return None
         generalization = {"steps": [], "coverage": {"status": "disabled"},
                           "partial": False}
         generalization_options = config.get("type_generalization", {})
@@ -412,7 +413,7 @@ async def build(config, output):
         if generalization_options.get("enabled", False):
             stage = progress.task("业务上位类型归纳", 1) if progress else nullcontext(None)
             with stage as task:
-                generalization = await run_generalization(
+                generalization = completed_stage("generalization") or await run_generalization(
                     data, profile, plan,
                     lambda packet: llm.ask("type_generalization", packet,
                                            GeneralizationDecision),
@@ -422,7 +423,7 @@ async def build(config, output):
                 )
                 if task:
                     task.advance(detail=str(generalization["coverage"]["statuses"]["accepted"]))
-            plan = generalization["plan"]
+            plan = generalization.get("plan", plan)
             write_yaml(output / "extraction_plan.yaml", plan.model_dump())
             construction = read_yaml(output / "construction.yaml")
             construction["final_core_hash"] = digest(plan.model_dump())
@@ -451,11 +452,11 @@ async def build(config, output):
         configuration_relations = {"candidates": [],
                                    "coverage": {"status": "disabled", "partial": False}}
         if config_relation_options.get("enabled", False):
-            configuration_specs = infer_configuration_specs(
+            configuration_specs = completed_stage("configuration_specs") or infer_configuration_specs(
                 data, plan, group_result["concepts"], group_result["record_alignments"],
                 association["rules"],
                 max_specs=config_relation_options.get("max_specs", 20))
-            configuration_relations = discover_configuration_relations(
+            configuration_relations = completed_stage("configuration_relations") or discover_configuration_relations(
                 data, plan, group_result["concepts"], group_result["record_alignments"],
                 [item["spec"] for item in configuration_specs["spec_candidates"]],
                 max_pairs_per_spec=config_relation_options.get("max_pairs_per_spec", 200))
@@ -465,14 +466,16 @@ async def build(config, output):
         if config_relation_options.get("enabled", False):
             stage = progress.task("配置关系语义裁决", 1) if progress else nullcontext(None)
             with stage as task:
-                config_decisions = await adjudicate_configuration_relations(
+                config_decisions = completed_stage("config_decisions") or await adjudicate_configuration_relations(
                     data, profile, plan, configuration_relations["candidates"],
                     group_result["concepts"], group_result["record_alignments"], llm,
                     max_candidates=config_relation_options.get("max_semantic_decisions", 10))
                 if task:
                     task.advance(detail=str(config_decisions["coverage"]["accepted"]))
-            plan = config_decisions["plan"]
-            group_result["concept_relations"].extend(config_decisions["assertions"])
+            plan = config_decisions.get("plan", plan)
+            prior_assertions = {item["id"] for item in group_result["concept_relations"]}
+            group_result["concept_relations"].extend(
+                item for item in config_decisions["assertions"] if item["id"] not in prior_assertions)
             write_yaml(output / "extraction_plan.yaml", plan.model_dump())
             construction = read_yaml(output / "construction.yaml")
             construction["final_core_hash"] = digest(plan.model_dump())
@@ -497,6 +500,22 @@ async def build(config, output):
                             or configuration_relations["coverage"].get("partial")
                             or config_decisions["coverage"].get("partial")),
         }
+        calculations = {"calculations": [], "dependencies": [], "coverage": {"status": "disabled", "partial": False}}
+        if config.get("instance_bundles", {}).get("enabled", False):
+            index = SemanticCardIndex(output / "work" / "semantic_cards.sqlite")
+            try:
+                calculations = compile_calculation_stage(data, profile, plan, group_result, index)
+            finally:
+                index.close()
+            plan = calculations.pop("plan")
+            ontology = ontology_from_plan(plan, profile, data, read_yaml(output / "direct_mapping.yaml"),
+                                          read_yaml(output / "construction.yaml")["steps"])
+            ontology["calculations"] = calculations["calculations"]
+            ontology["calculation_dependencies"] = calculations["dependencies"]
+            write_yaml(output / "extraction_plan.yaml", plan.model_dump())
+            write_yaml(output / "ontology.yaml", ontology)
+        write_yaml(output / "calculation_contracts.yaml", calculations)
+        manifest["calculations"] = calculations["coverage"]
         equivalence_options = config.get("type_equivalence", {})
         if not isinstance(equivalence_options, dict):
             raise ValueError("type_equivalence must be a mapping")
@@ -515,7 +534,7 @@ async def build(config, output):
         if equivalence_options.get("enabled", False):
             stage = progress.task("同名业务类型等价核验", 1) if progress else nullcontext(None)
             with stage as task:
-                equivalence = await run_type_equivalence(
+                equivalence = completed_stage("equivalence") or await run_type_equivalence(
                     data, plan,
                     lambda packet: llm.ask("type_equivalence", packet,
                                            EquivalenceDecision),
@@ -541,6 +560,32 @@ async def build(config, output):
                 "model_decision_invocations", 0),
             "partial": equivalence["partial"],
         }
+        fact_schema = {"field_templates": [], "steps": [], "coverage": {"status": "disabled", "partial": False}}
+        schema_options = config.get("fact_schema_induction", {})
+        if schema_options.get("enabled", False):
+            reusable_templates = []
+            if config.get("fact_templates_from"):
+                reusable_templates = read_yaml(config["fact_templates_from"])
+            elif resumed:
+                reusable_templates = resumed.get("stage_outputs", {}).get("fact_schema", {}).get("field_templates", [])
+            fact_schema = completed_stage("fact_schema") or await induce_fact_schema(
+                data, fact_result, plan, llm, association_context=data.metadata_graph,
+                max_calls=schema_options.get("max_calls", 50),
+                max_samples_per_field=schema_options.get("max_samples_per_field", 5),
+                max_packet_bytes=schema_options.get("max_packet_bytes", 16000),
+                reusable_templates=reusable_templates)
+            plan = fact_schema.pop("plan", plan)
+            ontology = ontology_from_plan(plan, profile, data, read_yaml(output / "direct_mapping.yaml"),
+                                          read_yaml(output / "construction.yaml")["steps"])
+            ontology["calculations"] = calculations["calculations"]
+            ontology["calculation_dependencies"] = calculations["dependencies"]
+            annotate_type_equivalences(ontology, equivalence)
+            write_yaml(output / "extraction_plan.yaml", plan.model_dump())
+            write_yaml(output / "ontology.yaml", ontology)
+        write_yaml(output / "fact_field_templates.yaml", fact_schema["field_templates"])
+        write_yaml(output / "fact_schema_steps.yaml", fact_schema["steps"])
+        write_yaml(output / "fact_schema_coverage.yaml", fact_schema["coverage"])
+        manifest["fact_schema_induction"] = fact_schema["coverage"]
         binding_options = config.get("fact_type_binding", {})
         if not isinstance(binding_options, dict):
             raise ValueError("fact_type_binding must be a mapping")
@@ -558,10 +603,11 @@ async def build(config, output):
         if binding_options.get("enabled", False):
             stage = progress.task("业务事实类型绑定", 1) if progress else nullcontext(None)
             with stage as task:
-                fact_binding = await bind_fact_observations(
+                fact_binding = completed_stage("fact_binding") or await bind_fact_observations(
                     data, fact_result, plan, llm,
                     **{key: value for key, value in binding_options.items()
                        if key != "enabled"},
+                    field_templates=fact_schema["field_templates"],
                     canonical_type_map=equivalence["canonical_map"],
                     equivalence_assertions=equivalence["equivalence_assertions"])
                 if task:
@@ -604,6 +650,18 @@ async def build(config, output):
                                              item["status"] == "not_promoted" for item in
                                              group_result["concept_relation_derivations"]),
                                          "partial": group_result["partial"]}
+        if config.get("instance_bundles", {}).get("enabled", False):
+            save_state(output / "semantic_state.json", data, profile,
+                       {**group_result, "plan": plan, "stage_signature": stage_signature,
+                        "stage_outputs": {name: {key: value for key, value in result.items() if key != "plan"}
+                                          for name, result in {
+                                              "generalization": generalization,
+                                              "configuration_specs": configuration_specs,
+                                              "configuration_relations": configuration_relations,
+                                              "config_decisions": config_decisions,
+                                              "equivalence": equivalence,
+                                              "fact_schema": fact_schema,
+                                              "fact_binding": fact_binding}.items()}})
         write_yaml(output / "business_concepts.yaml", group_result["concepts"])
         write_yaml(output / "record_alignments.yaml", group_result["record_alignments"])
         write_yaml(output / "concept_relations.yaml", group_result["concept_relations"])
@@ -694,10 +752,13 @@ async def build(config, output):
             "column_roles_not_fully_inferred": bool(manifest["column_role_inference"]["partial"]),
             "fact_observation_candidates_partial": bool(manifest["fact_observations"]["partial"]),
             "fact_type_binding_partial": bool(manifest["fact_type_binding"]["partial"]),
+            "fact_schema_induction_partial": bool(fact_schema["coverage"].get("partial")),
             "association_rules_partial": bool(manifest["association_rules"]["partial"]),
             "semantic_cards_partial": bool(manifest["semantic_cards"]["partial"]),
             "instance_bundles_partial": bool(manifest["instance_bundles"]["partial"]),
+            "definition_membership_or_reference_pending": bool(memberships["coverage"].get("partial")),
             "group_incremental_partial": bool(manifest["group_incremental"]["partial"]),
+            "calculation_operands_unresolved": bool(calculations["coverage"].get("partial")),
             "type_generalization_partial": bool(manifest["type_generalization"]["partial"]),
             "type_equivalence_partial": bool(manifest["type_equivalence"]["partial"]),
             "configuration_relation_candidates_partial": bool(

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import ast
 import unicodedata
 
 
@@ -19,6 +20,22 @@ RELATION_VERBS = {
     "related_to": "related_to",
     "points_to": "points_to",
 }
+
+# Derived names are part of a small contract, not model-authored predicate prose.
+DERIVED_PREDICATES = {
+    "calculation_dependency": "depends_on",
+    "scope_constraint": "related_to",
+    "definition_reference": "points_to",
+    "has_member": "contains",
+}
+_DERIVED_CUES = {
+    "calculation_dependency": ("calculation_dependency", "计算依赖"),
+    "scope_constraint": ("scope_constraint", "维度约束", "范围约束"),
+    "definition_reference": ("definition_reference", "定义引用", "引用定义"),
+    "has_member": ("has_member", "包含成员"),
+}
+_OPERAND_ROLES = frozenset(("minuend", "subtrahend", "numerator", "denominator",
+                           "addend", "factor"))
 
 _CUES = {
     "contains": ("包含", "含有", "contains"),
@@ -32,24 +49,73 @@ def _normalized(value: str) -> str:
     return unicodedata.normalize("NFKC", str(value or "")).casefold().strip()
 
 
-def canonical_relation_label(parent: str) -> str:
-    """Use the user's English root predicate instead of model-authored prose."""
+def canonical_relation_label(parent: str, predicate_name: str | None = None) -> str:
+    """Validate a root or a registered derived predicate and return its name."""
     try:
-        return RELATION_VERBS[parent]
+        root = RELATION_VERBS[parent]
     except KeyError as exc:
         raise ValueError("Unknown object relation root") from exc
+    if predicate_name in (None, "", root):
+        return root
+    if DERIVED_PREDICATES.get(predicate_name) != parent:
+        raise ValueError("Unknown derived predicate or incompatible relation root")
+    return predicate_name
+
+
+def relation_semantic_parameters(parent, predicate_name=None, parameters=None):
+    """Only reproducible calculation roles currently qualify relation identity."""
+    name = canonical_relation_label(parent, predicate_name)
+    parameters = parameters or {}
+    if not isinstance(parameters, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in parameters.items()):
+        raise ValueError("Relation semantic parameters must be a string mapping")
+    if parameters and (name != "calculation_dependency"
+                       or set(parameters) != {"operand_role"}
+                       or parameters["operand_role"] not in _OPERAND_ROLES):
+        raise ValueError("Unsupported predicate semantic parameters")
+    return dict(sorted(parameters.items()))
+
+
+def validate_calculation_parameter_evidence(parameters, formulas, target_names):
+    """Prove an operand role from a parsed binary expression, never prose."""
+    if not parameters:
+        return
+    wanted = parameters["operand_role"]
+    side_roles = {ast.Sub: ("minuend", "subtrahend"),
+                  ast.Div: ("numerator", "denominator"),
+                  ast.Add: ("addend", "addend"), ast.Mult: ("factor", "factor")}
+    names = {str(value).strip() for value in target_names}
+    for raw in formulas:
+        expression = unicodedata.normalize("NFKC", raw).strip()
+        if "=" in expression:
+            expression = expression.split("=", 1)[1].strip()
+        try:
+            tree = ast.parse(expression, mode="eval")
+        except (SyntaxError, ValueError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.BinOp) or type(node.op) not in side_roles:
+                continue
+            for side, role in zip((node.left, node.right), side_roles[type(node.op)]):
+                if role == wanted and isinstance(side, ast.Name) and side.id in names:
+                    return
+    raise ValueError("Calculation operand role lacks parsed source formula evidence")
 
 
 def canonical_relation_id(parent: str, domain: str, range_type: str, *,
                           namespace: str = "business_relation",
-                          qualifier: list[str] | tuple[str, ...] = ()) -> str:
+                          qualifier: list[str] | tuple[str, ...] = (),
+                          predicate_name: str | None = None,
+                          semantic_parameters: dict[str, str] | None = None) -> str:
     """Generate a reproducible machine ID from a directed type signature.
 
-    A qualifier is only for a source-record plan: distinct physical rules can
-    connect the same table types. Business relations intentionally omit it, so
-    two claimed meanings for one root/signature must conflict or be merged.
+    A qualifier is only for a source-record plan. Business predicate identity
+    instead distinguishes registered derived names and evidenced operand roles.
+    Legacy root-only signatures retain their IDs.
     """
-    canonical_relation_label(parent)
+    name = canonical_relation_label(parent, predicate_name)
+    parameters = relation_semantic_parameters(parent, predicate_name, semantic_parameters)
     if namespace not in ("business_relation", "relation"):
         raise ValueError("Unknown relation namespace")
     if not domain or not range_type or not isinstance(domain, str) or not isinstance(range_type, str):
@@ -59,7 +125,10 @@ def canonical_relation_id(parent: str, domain: str, range_type: str, *,
         raise ValueError("Relation qualifier must be a list of nonempty strings")
     if namespace == "business_relation" and qualifier:
         raise ValueError("Business relation identity cannot depend on a source rule")
-    payload = json.dumps([parent, domain, range_type, list(qualifier)],
+    signature = [parent, domain, range_type, list(qualifier)]
+    if name != parent or parameters:
+        signature.extend([name, parameters])
+    payload = json.dumps(signature,
                          ensure_ascii=False, separators=(",", ":"))
     token = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
     return f"{namespace}:{parent}:{token}"
@@ -67,18 +136,20 @@ def canonical_relation_id(parent: str, domain: str, range_type: str, *,
 
 def validate_proposed_relation_label(label: str, parent: str, *,
                                      subject_label: str | None = None,
-                                     object_label: str | None = None) -> None:
+                                     object_label: str | None = None,
+                                     predicate_name: str | None = None) -> None:
     """Reject incompatible model labels before replacing them with a verb.
 
     With known business endpoints only a bare verb or the exact directed
     ``subject + verb + object`` form is accepted. This is deliberately stricter
     than matching a cue somewhere in a free-form sentence.
     """
-    canonical_relation_label(parent)
+    name = canonical_relation_label(parent, predicate_name)
     value = _normalized(label)
     if not value or len(value) > 96 or re.search(r"[\n\r:;；。]", value):
         raise ValueError("Relation label must be a short predicate phrase")
-    allowed_cues = {_normalized(item) for item in _CUES[parent]}
+    allowed_cues = {_normalized(item) for item in
+                    (_DERIVED_CUES[name] if name != parent else _CUES[parent])}
     if subject_label is not None and object_label is not None:
         subject, object_ = _normalized(subject_label), _normalized(object_label)
         if not subject or not object_:

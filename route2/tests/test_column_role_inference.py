@@ -61,13 +61,14 @@ def test_no_comments_source_checked_roles_enter_definition_cards(tmp_path):
         built = build_semantic_cards(data, tmp_path / "cards.sqlite")
         index = SemanticCardIndex(built["index_path"])
         try:
-            cards = index.search("苹果销售额", kind="uncertain")
+            cards = index.search("苹果销售额", kind="definition")
             assert any(card["name"] == "苹果销售额" for card in cards)
             assert next(card for card in cards if card["name"] == "苹果销售额")[
                 "fields"]["description"][0]["value"] == "苹果销售产生的收入"
-            assert index.search("苹果销售额", kind="definition") == []
-            assert built["coverage"]["by_table"]["fruit.opaque_one"]["row_purpose"][
-                "reason"] == "inferred_column_role_is_candidate_not_definition_proof"
+            assert index.search("苹果销售额", kind="uncertain") == []
+            assert built["coverage"]["by_table"]["fruit.opaque_one"]["row_purpose"]["purpose"] == "definition_data"
+            # Role candidates only widen recall; concept compilation and Judge
+            # still have to accept the actual definition record.
         finally:
             index.close()
         recall = recall_concept_candidates(data)
@@ -116,5 +117,31 @@ def test_disabled_missing_model_and_table_budget_report_scope(tmp_path):
             data, budget, {"enabled": True, "max_tables": 1}))
         assert capped["tables"][0]["error_type"] == "BudgetExceeded"
         assert capped["candidates"] == []
+    finally:
+        data.close()
+
+
+def test_named_column_does_not_hide_opaque_formula_scope_and_fact_values(tmp_path):
+    root = tmp_path / 'input'
+    _table(root, 'mixed', {'id': '', 'name': '', 'c1': '', 'c2': '', 'c3': ''}, [
+        {'id': '1', 'name': '苹果利润', 'c1': '收入-成本', 'c2': '北京', 'c3': '120'},
+        {'id': '2', 'name': '香蕉利润', 'c1': '收入-成本', 'c2': '上海', 'c3': '90'},
+    ])
+    work = tmp_path / 'work'
+    work.mkdir()
+    data = Dataset(root, work)
+    try:
+        llm = FakeLLM({'proposals': [
+            {'column': 'c1', 'role': 'formula', 'observations': [{'row_number': 1, 'value': '收入-成本'}]},
+            {'column': 'c2', 'role': 'dimension_coordinate', 'observations': [{'row_number': 1, 'value': '北京'}]},
+            {'column': 'c3', 'role': 'numeric_business_value', 'observations': [{'row_number': 1, 'value': '120'}]},
+        ]})
+        result = asyncio.run(infer_column_role_candidates(data, llm, {'enabled': True}))
+        assert len(llm.packets) == 1
+        assert llm.packets[0]['known_column_roles']['name'] == ['name']
+        assert _field_roles(data.tables['fruit.mixed'])['formula'] == ['c1']
+        assert {r['role'] for r in result['candidates']} == {'formula', 'dimension_coordinate', 'numeric_business_value'}
+        assert all(r['evidence_kind'] == 'source_values_supported_role_candidate' for r in result['candidates'])
+        assert not result['coverage']['partial']
     finally:
         data.close()

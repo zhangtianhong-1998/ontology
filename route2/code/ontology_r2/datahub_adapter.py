@@ -29,6 +29,12 @@ def dataset_urn(qualified_name, platform="postgres", environment="PROD"):
     return f"urn:li:dataset:(urn:li:dataPlatform:{platform},{qualified_name},{environment})"
 
 
+def schema_field_urn(qualified_name, field_path, platform="postgres", environment="PROD"):
+    """Stable DataHub schema-field identity; does not require a running server."""
+    field_path = _urn_part(field_path, "field path")
+    return f"urn:li:schemaField:({dataset_urn(qualified_name, platform, environment)},{field_path})"
+
+
 def _nullable(value):
     if isinstance(value, bool):
         return not value

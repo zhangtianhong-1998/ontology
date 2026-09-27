@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from .storage import read_yaml
+from .metadata_graph import technical_link_id
 
 
 MAX_ATTRIBUTES_PER_OBJECT = 16
@@ -36,19 +37,22 @@ def _attach_attribute_previews(db, nodes, ontology):
         placeholders = ",".join("?" for _ in batch)
         cursor = db.execute(
             "SELECT json_extract(body,'$.subject'), json_extract(body,'$.attribute'), "
-            "json_extract(body,'$.literal.value') FROM items "
+            "json_extract(body,'$.literal.value'), id, "
+            "json_extract(body,'$.evidence_ids') FROM items "
             "WHERE kind='assertions' AND json_type(body,'$.literal') IS NOT NULL "
             f"AND json_extract(body,'$.subject') IN ({placeholders})",
             batch,
         )
-        for subject, attribute, raw_value in cursor:
+        for subject, attribute, raw_value, assertion_id, evidence_json in cursor:
             node = by_id[subject]
             node["preview_attribute_count"] = node.get("preview_attribute_count", 0) + 1
             meta = catalog.get(attribute, {})
             column = meta.get("source_column") or attribute.rsplit(":", 1)[-1].rsplit(".", 1)[-1]
             value = str(raw_value) if raw_value is not None else ""
             preview = {"column": column, "value": value[:MAX_ATTRIBUTE_CHARS],
-                       "truncated": len(value) > MAX_ATTRIBUTE_CHARS}
+                       "truncated": len(value) > MAX_ATTRIBUTE_CHARS,
+                       "id": assertion_id, "attribute_id": attribute,
+                       "evidence_ids": json.loads(evidence_json or "[]")}
             if meta.get("literal_type"):
                 preview["literal_type"] = meta["literal_type"]
             if meta.get("declared_data_type"):
@@ -127,7 +131,7 @@ def _ontology_overview(ontology):
     nodes = roots + derived
     visible = {item["id"] for item in nodes}
     inheritance = [
-        {"source": item["parent"], "target": item["id"]}
+        {"source": item["id"], "target": item["parent"]}
         for item in derived if item.get("parent") in visible
     ]
     relations = []
@@ -187,9 +191,12 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                               "source": source_table, "target": target_table,
                               "source_field": str(source).rsplit(".", 1)[-1],
                               "target_field": str(target).rsplit(".", 1)[-1],
-                              "status": "declared", "evidence": edge})
+                              "status": "declared", "edge_type": "declared_fk",
+                              "source_column_id": source, "target_column_id": target,
+                              "evidence_ids": edge.get("evidence_ids", []), "evidence": edge})
     verified_whole_pairs = set()
     verified_rule_ids = set()
+    verified_link_ids = set()
     ruled_candidate_ids = set()
     for item in rule_set.get("rules", []):
         if item.get("status") not in ("checked_technical", "observed_subset"):
@@ -197,35 +204,50 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
         source, target = item.get("source", {}), item.get("target", {})
         if source.get("table") in ids and target.get("table") in ids:
             verified_rule_ids.add(item.get("rule_id"))
+            link_id = technical_link_id(item)
+            verified_link_ids.add(link_id)
             ruled_candidate_ids.add(item.get("candidate_id"))
             if (item.get("status") == "checked_technical" and not item.get("selector")
                     and not item.get("scope_bindings")):
                 verified_whole_pairs.add((source["table"], source.get("field"),
                                           target["table"], target.get("field")))
-            links.append({"id": item.get("rule_id"), "source": source["table"],
+            links.append({"id": link_id, "rule_id": item.get("rule_id"),
+                          "edge_type": "technical_link", "source": source["table"],
                           "target": target["table"], "source_field": source.get("field"),
                           "target_field": target.get("field"),
                           "status": "verified_technical" if item["status"] == "checked_technical"
                           else "observed_subset",
                           "selector": item.get("selector", {}), "scope_bindings": item.get("scope_bindings", {}),
+                          "transform": item.get("transform", {}),
+                          "source_column_id": source["table"] + "." + str(source.get("field")),
+                          "target_column_id": target["table"] + "." + str(target.get("field")),
+                          "evidence_ids": item.get("evidence_ids", []),
                           "verification": item.get("verification", {}),
                           "semantic_relation": item.get("semantic_relation", "unresolved")})
     # A saved meta_graph.yaml may be opened without its separate rule file.
     # Preserve inferred links from that graph but never label them as FKs.
     for edge in graph.get("edges", []):
-        if edge.get("type") != "inferred_technical_match" or edge.get("rule_id") in verified_rule_ids:
+        if edge.get("type") not in ("technical_link", "inferred_technical_match"):
+            continue
+        if (edge.get("id") in verified_link_ids or
+                (edge.get("type") == "inferred_technical_match" and edge.get("rule_id") in verified_rule_ids)):
             continue
         source, target = edge.get("source"), edge.get("target")
         source_table, target_table = column_owner.get(source), column_owner.get(target)
         if source_table not in ids or target_table not in ids:
             continue
-        links.append({"id": edge.get("rule_id") or f"inferred:{source}→{target}",
+        links.append({"id": edge.get("id") or edge.get("rule_id") or f"inferred:{source}→{target}",
+                      "edge_type": "technical_link", "rule_id": edge.get("rule_id"),
                       "source": source_table, "target": target_table,
                       "source_field": all_nodes.get(source, {}).get("column_name"),
                       "target_field": all_nodes.get(target, {}).get("column_name"),
                       "status": "verified_technical" if edge.get("status") == "checked_technical"
                       else "observed_subset", "selector": edge.get("selector", {}),
                       "scope_bindings": edge.get("scope_bindings", {}),
+                      "transform": edge.get("transform", {}),
+                      "verification": edge.get("verification", {}),
+                      "source_column_id": source, "target_column_id": target,
+                      "evidence_ids": edge.get("evidence_ids", []),
                       "semantic_relation": edge.get("semantic_relation", "unresolved"),
                       "evidence": edge})
     for item in candidates:
@@ -374,6 +396,13 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                 "SELECT body FROM items WHERE kind='record_alignments' ORDER BY id LIMIT ?",
                 (max_nodes,))]
             payload["unresolved"] = [json.loads(r[0]) for r in db.execute("SELECT body FROM items WHERE kind='unresolved' ORDER BY id LIMIT ?", (max_nodes,))]
+            payload["definition_membership_counts"] = dict(db.execute(
+                "SELECT json_extract(body,'$.type_id'), count(*) FROM items "
+                "WHERE kind='definition_memberships' GROUP BY json_extract(body,'$.type_id')"))
+            payload["definition_memberships"] = [json.loads(row[0]) for row in db.execute(
+                "SELECT body FROM (SELECT body, row_number() OVER (PARTITION BY "
+                "json_extract(body,'$.type_id') ORDER BY id) AS rn FROM items "
+                "WHERE kind='definition_memberships') WHERE rn <= 3 LIMIT ?", (max_nodes * 3,))]
             refs = set()
             for item in (payload["objects"] + payload["concepts"] + payload["record_alignments"]
                          + payload["relations"] + payload["unresolved"]
@@ -381,6 +410,8 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                          + payload["ontology"].get("relation_types", [])
                          + payload["ontology"].get("attributes", [])):
                 refs.update(item.get("evidence_ids", []))
+                for attribute in item.get("preview_attributes", []):
+                    refs.update(attribute.get("evidence_ids", []))
             for result in payload["knowledge"]:
                 for claim in result.get("claims", []):
                     refs.add(claim["id"])
@@ -392,21 +423,21 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
     payload["preview"] = _preview_summary(payload, database.exists(), (run / "ontology.yaml").exists())
     payload["ontology_overview"] = _ontology_overview(payload["ontology"])
     graph = read("meta_graph.yaml", {"nodes": [], "edges": []})
+    payload["evidence"].update(graph.get("evidence", {}))
     preview = _metadata_preview(
         graph, read("field_candidates.yaml", []),
         read("association_rules.yaml", {"rules": []}), max_nodes)
-    # The local association results are useful for inspection, but they are
-    # neither DataHub schema edges nor declared foreign keys. Keep them in a
-    # separate page payload so a metadata renderer cannot conflate the two.
+    # Checked field links are part of the local metadata graph, with their own
+    # edge type. Unchecked candidates remain outside the graph preview.
     payload["association_preview"] = {
-        "links": [item for item in preview["links"] if item["status"] != "declared"],
+        "links": [item for item in preview["links"] if item["status"] == "candidate"],
         "link_counts": {key: value for key, value in preview["link_counts"].items()
-                        if key != "declared"},
+                        if key == "candidate"},
     }
-    preview["links"] = [item for item in preview["links"] if item["status"] == "declared"]
+    preview["links"] = [item for item in preview["links"] if item["status"] != "candidate"]
     preview["shown_links"] = len(preview["links"])
-    preview["total_links"] = preview["link_counts"]["declared"]
-    preview["link_counts"] = {"declared": preview["link_counts"]["declared"]}
+    preview["total_links"] = sum(value for key, value in preview["link_counts"].items() if key != "candidate")
+    preview["link_counts"] = {key: value for key, value in preview["link_counts"].items() if key != "candidate"}
     payload["metadata"] = preview
     # Audit logs remain on disk. The page contains only bounded graph data and summaries.
     payload["knowledge"] = [{k: v for k, v in item.items() if k != "documents"} for item in payload["knowledge"]]

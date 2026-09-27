@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from ontology_r2.datahub_adapter import export_datahub_metadata, metadata_change_proposals
+from ontology_r2.datahub_adapter import (dataset_urn, export_datahub_metadata,
+                                        metadata_change_proposals, schema_field_urn)
 
 
 def technical_graph():
@@ -84,3 +85,11 @@ def test_invalid_urn_or_nullability_fails_closed():
     graph["nodes"][4]["is_not_null"] = "perhaps"
     with pytest.raises(ValueError, match="is_not_null"):
         metadata_change_proposals(graph)
+
+
+def test_schema_field_identity_is_stable_and_scoped_to_its_dataset():
+    assert schema_field_urn("demo.items", "id") == (
+        "urn:li:schemaField:(" + dataset_urn("demo.items") + ",id)")
+    assert schema_field_urn("demo.items", "id", environment="DEV") != schema_field_urn("demo.items", "id")
+    with pytest.raises(ValueError, match="field path"):
+        schema_field_urn("demo.items", "id,other")

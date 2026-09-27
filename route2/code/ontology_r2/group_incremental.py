@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import re
+import copy
+import inspect
 from typing import Literal
 
 from pydantic import Field, field_validator
 
-from .models import BuildPlan, Condition, DerivedType, RelationPlan, Strict
+from .models import BuildPlan, Condition, DerivedType, RelationPlan, Strict, json_null_placeholder
 from .relation_contract import (canonical_relation_id, canonical_relation_label,
+                                relation_semantic_parameters,
+                                validate_calculation_parameter_evidence,
                                 validate_proposed_relation_label)
 from .storage import digest
 from .validation import validate_plan
@@ -68,8 +72,7 @@ def _complete_classification_fragment(records, quote):
 def _named_business_object(records, label, quote):
     """Ground the operating object in an original name or definition."""
     anchor = re.sub(r"\s+", "", quote).casefold()
-    surface = re.sub(r"\s+", "", label).casefold()
-    if len(anchor) < 2 or anchor == surface or anchor not in surface:
+    if len(anchor) < 2:
         return False
     return any(
         role in ("name", "alias", "description")
@@ -106,6 +109,11 @@ class ConceptBundleDecision(Strict):
     alignments: list[RecordAlignmentDecision] = Field(default_factory=list)
     reason: str = ""
 
+    @field_validator("root_type", "aggregation_operator", mode="before")
+    @classmethod
+    def parse_nullable_tool_fields(cls, value):
+        return json_null_placeholder(value)
+
     @field_validator("scope", "scope_roles", mode="before")
     @classmethod
     def parse_object_string(cls, value):
@@ -123,16 +131,50 @@ class ConceptBundleDecision(Strict):
 class RelationBundleDecision(Strict):
     status: Literal["proposed", "no_change", "unresolved"]
     parent_relation: Literal["contains", "depends_on", "related_to", "points_to"] | None = None
+    predicate_name: str | None = None
+    semantic_parameters: dict[str, str] = Field(default_factory=dict)
     label: str = ""
     definition: str = ""
     source_quote: str = ""
     target_quote: str = ""
     reason: str = ""
 
+    @field_validator("parent_relation", "predicate_name", mode="before")
+    @classmethod
+    def parse_nullable_tool_fields(cls, value):
+        return json_null_placeholder(value)
+
 
 class BundleReview(Strict):
     accepted: bool
     errors: list[str] = Field(default_factory=list)
+
+
+class ConceptBatchItem(Strict):
+    bundle_id: str
+    decision: ConceptBundleDecision
+
+
+class ConceptBatchDecision(Strict):
+    decisions: list[ConceptBatchItem]
+
+
+class RelationBatchItem(Strict):
+    bundle_id: str
+    decision: RelationBundleDecision
+
+
+class RelationBatchDecision(Strict):
+    decisions: list[RelationBatchItem]
+
+
+class BundleBatchReviewItem(Strict):
+    bundle_id: str
+    review: BundleReview
+
+
+class BundleBatchReview(Strict):
+    reviews: list[BundleBatchReviewItem]
 
 
 def _entries(record):
@@ -179,6 +221,8 @@ def _record_map(bundle):
 
 
 def _member_or_field_record(record):
+    if record.get("kind") == "definition":
+        return False
     tokens = set(record.get("table", "").casefold().replace(".", "_").split("_"))
     return bool(tokens & {"member", "field", "column"})
 
@@ -197,6 +241,35 @@ def _supports_quote(record, quote, key_field):
         and not entry.get("truncated")
         and quote in str(entry["value"])
         for role, entry in _entries(record))
+
+
+def _source_semantics(records):
+    """Keep accepted definitions and identity grounded in complete source text."""
+    descriptions, names, formulas = set(), set(), []
+    for record in records:
+        record_formulas = set()
+        for role, entry in _entries(record):
+            if entry.get("truncated"):
+                continue
+            value = str(entry["value"]).strip()
+            if not value:
+                continue
+            if role == "description":
+                descriptions.add(value)
+            elif role == "name":
+                names.add(value)
+            elif role == "formula":
+                # Whitespace normalization is lexical, never algebraic equivalence.
+                record_formulas.add(" ".join(value.split()))
+        if record_formulas:
+            formulas.append(tuple(sorted(record_formulas)))
+    if len(set(formulas)) > 1:
+        raise ValueError("Conflicting source formulas cannot share an exact concept")
+    formula_values = list(formulas[0]) if formulas else []
+    definition = "\n".join(sorted(descriptions) or formula_values or sorted(names))
+    if not definition:
+        raise ValueError("Concept has no complete source definition, formula or name")
+    return definition, formula_values
 
 
 def compile_concept(data, profile, bundle, decision, accepted_exact):
@@ -230,14 +303,15 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         if item.mapping_kind == "unresolved":
             continue
         if item.mapping_kind == "exact":
+            if record.get("context_role") == "related_context":
+                raise ValueError("Technical related_context cannot be an exact concept definition")
             if exact_allowlist is not None and item.record_id not in exact_allowlist:
                 raise ValueError("Exact alignment is outside the representative record allowlist")
-            # Metric and Measure are distinguished by the definition's meaning,
-            # not by a table-name hint. Other root mismatches remain guarded.
+            # A table-name hint never overrides a record-grounded classification.
+            # Only a role explicitly asserted by an upstream contract is binding.
             hint = record.get("root_hint")
-            if hint and hint != decision.root_type and not (
-                    hint in ("Metric", "Measure")
-                    and decision.root_type in ("Metric", "Measure")):
+            if (record.get("root_hint_authoritative") and hint
+                    and hint != decision.root_type):
                 raise ValueError("Exact source record root differs from proposed concept root")
             if _member_or_field_record(record):
                 raise ValueError("Member or field record cannot be exact to its parent concept")
@@ -281,7 +355,7 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                 raise ValueError("Metric calculation belongs in its source formula, not a single Measure operator")
             if not _named_business_object(exact_records, decision.label,
                                           decision.business_object_quote):
-                raise ValueError("Metric requires a source-quoted business object in its label")
+                raise ValueError("Metric requires a source-quoted business object in its definition or name")
     exact_scope = {}
     for record in exact_records:
         for key, value in (record.get("scope") or {}).items():
@@ -304,16 +378,19 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         if "observation" in decision.scope_roles.values():
             raise ValueError("Observation coordinates cannot become type identity")
     normalized_label = " ".join(decision.label.casefold().split())
-    normalized_definition = " ".join(decision.definition.casefold().split())
+    grounded_definition, source_formulas = _source_semantics(exact_records)
+    normalized_definition = " ".join(grounded_definition.casefold().split())
     operator = decision.aggregation_operator if decision.root_type == "Measure" else None
     concept_id = "concept:" + digest([data.snapshot_id, decision.root_type, normalized_label,
-                                       normalized_definition, effective_scope, unit, operator])[:24]
+                                       normalized_definition, effective_scope, unit, operator,
+                                       source_formulas])[:24]
     applicability = {key: value for key, value in effective_scope.items()
                      if decision.scope_roles.get(key) == "applicability"}
     coordinates = {key: value for key, value in effective_scope.items()
                    if decision.scope_roles.get(key) == "observation"}
     type_id = ("type:" + digest([decision.root_type, normalized_label,
-                                  normalized_definition, applicability, unit, operator])[:24]
+                                  normalized_definition, applicability, unit, operator,
+                                  source_formulas])[:24]
                if decision.ontology_level == "type" else None)
     alignments, all_evidence = [], set()
     for item, record in selected:
@@ -361,7 +438,11 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         for (role, table, column), evidence_ids in sorted(property_sources.items())
     ]
     concept = {"id": concept_id, "type": decision.root_type, "label": decision.label.strip(),
-               "definition": decision.definition.strip(), "identity_scope": "snapshot_only",
+               "definition": grounded_definition,
+               "proposed_definition": decision.definition.strip(),
+               "definition_basis": "complete_source_fields",
+               "source_formulas": source_formulas,
+               "identity_scope": "snapshot_only",
                "ontology_level": decision.ontology_level,
                "ontology_type_id": type_id,
                "scope": effective_scope, "applicability_scope": applicability,
@@ -403,14 +484,17 @@ def _quoted_positive_pair(bundle, decision, source, target, source_field, target
         left = records.get(pair.get("source_record_id"))
         right = records.get(pair.get("target_record_id"))
         raw = pair.get("matching_raw_value")
+        left_raw = pair.get("source_raw_value", raw)
+        right_raw = pair.get("target_raw_value", raw)
         if (left is None or right is None or left.get("table") != source["table"]
-                or right.get("table") != target["table"] or raw in (None, "")):
+                or right.get("table") != target["table"]
+                or left_raw in (None, "") or right_raw in (None, "")):
             continue
         left_values = [str(entry["value"]) for _, entry in _entries(left)
                        if entry.get("column") == source_field]
         right_values = [str(entry["value"]) for _, entry in _entries(right)
                         if entry.get("column") == target_field]
-        if (str(raw) in left_values and str(raw) in right_values
+        if (str(left_raw) in left_values and str(right_raw) in right_values
                 and _supports_quote(left, decision.source_quote, source_field)
                 and _supports_quote(right, decision.target_quote, target_field)):
             return left, right
@@ -428,8 +512,10 @@ def compile_relation(data, profile, core, bundle, decision):
             rule.get("snapshot_id") != data.snapshot_id or
             rule.get("verification", {}).get("scan_scope") != "full_input"):
         raise ValueError("Relation bundle is not verified on this complete snapshot")
-    if rule.get("transform", {}).get("operator") != "identity":
-        raise ValueError("Relation compiler only supports identity transforms")
+    if rule.get("transform", {}).get("operator") not in (
+            "identity", "nfkc_whitespace_casefold", "source_alias_items",
+            "target_alias_items", "both_alias_items"):
+        raise ValueError("Relation compiler only supports validated transform operators")
     if decision.parent_relation not in OBJECT_RELATIONS or not decision.label.strip() or not decision.definition.strip():
         raise ValueError("Proposed relation lacks a supported kind, label or definition")
     source, target = rule["source"], rule["target"]
@@ -437,7 +523,11 @@ def compile_relation(data, profile, core, bundle, decision):
             and _child_surface(source["table"])
             and not _child_surface(target["table"])):
         raise ValueError("Contains direction is reversed for child-to-parent source")
-    validate_proposed_relation_label(decision.label, decision.parent_relation)
+    predicate_name = canonical_relation_label(decision.parent_relation, decision.predicate_name)
+    semantic_parameters = relation_semantic_parameters(
+        decision.parent_relation, decision.predicate_name, decision.semantic_parameters)
+    validate_proposed_relation_label(decision.label, decision.parent_relation,
+                                    predicate_name=decision.predicate_name)
     counts = rule.get("verification", {}).get("checks") or {}
     eligible, unique = counts.get("eligible_references"), counts.get("unique_matches")
     if (type(eligible) is not int or eligible <= 0 or type(unique) is not int
@@ -451,13 +541,16 @@ def compile_relation(data, profile, core, bundle, decision):
         bundle, decision, source, target, source_field, target_field)
     dependency_evidence = []
     if decision.parent_relation == "depends_on":
-        # A key match and two names do not prove a calculation dependency.
+        from .calculation_contracts import parse_calculation
+        # Only a parsed identifier occurrence proves arithmetic dependency.
+        # A substring in prose (including a negated claim) is not an operand.
         target_names = [str(entry["value"]) for role, entry in _entries(target_record)
                         if role in ("name", "alias") and not entry.get("truncated")]
         formula_text = [str(entry["value"]) for role, entry in _entries(source_record)
                         if role == "formula" and not entry.get("truncated")]
         supported = next(((name, formula) for name in target_names for formula in formula_text
-                          if name and name in formula), None)
+                          if name and name in {item["symbol"] for item in
+                              parse_calculation(formula).get("symbols", [])}), None)
         if supported is None:
             raise ValueError("Dependency requires a source formula naming the target")
         dependency_evidence = [
@@ -466,6 +559,8 @@ def compile_relation(data, profile, core, bundle, decision):
             _quote_evidence(data, target_record, supported[0],
                             allowed_roles=("name", "alias"), require_complete=True),
         ]
+        validate_calculation_parameter_evidence(
+            semantic_parameters, formula_text, target_names)
 
     known_types = ({item["id"] for item in profile["object_roots"]}
                    | {item.id for item in core.object_types})
@@ -494,10 +589,12 @@ def compile_relation(data, profile, core, bundle, decision):
     ]))
     relation_id = canonical_relation_id(
         decision.parent_relation, domain, range_type, namespace="relation",
-        qualifier=[source["table"], source_field, target["table"], target_field])
+        qualifier=[source["table"], source_field, target["table"], target_field],
+        predicate_name=decision.predicate_name, semantic_parameters=semantic_parameters)
     relation_type = DerivedType(id=relation_id, parent=decision.parent_relation,
                                 definition=decision.definition.strip(), evidence_ids=evidence_ids,
-                                label=canonical_relation_label(decision.parent_relation),
+                                label=predicate_name, predicate_name=decision.predicate_name,
+                                semantic_parameters=semantic_parameters,
                                 domain=[domain], range=[range_type],
                                 endpoint_basis="table_binding",
                                 evidence_scope="sample_semantic_with_full_technical_check")
@@ -510,6 +607,7 @@ def compile_relation(data, profile, core, bundle, decision):
         source_table=source["table"], target_table=target["table"], mode="identifier",
         source_column=source_field, target_column=target_field,
         scope_bindings=rule.get("scope_bindings") or {}, selector=selector,
+        transform=rule.get("transform") or {"operator": "identity"},
         predicate=relation_id, semantics="reference", evidence_ids=evidence_ids,
         evidence_scope="sample_semantic_with_full_technical_check",
         witness_snapshot_id=data.snapshot_id,
@@ -577,9 +675,12 @@ def compile_business_relation(data, profile, core, bundle, decision, plan,
     evidence_ids = sorted(set(base_type.evidence_ids)
                           | set(source_alignment["evidence_ids"])
                           | set(target_alignment["evidence_ids"]))
-    relation_id = canonical_relation_id(base_type.parent, source_type, target_type)
+    relation_id = canonical_relation_id(
+        base_type.parent, source_type, target_type, predicate_name=base_type.predicate_name,
+        semantic_parameters=base_type.semantic_parameters)
     relation_type = DerivedType(
         id=relation_id, parent=base_type.parent, label=base_type.label,
+        predicate_name=base_type.predicate_name, semantic_parameters=base_type.semantic_parameters,
         definition=base_type.definition, evidence_ids=evidence_ids,
         category="business_relation_type", domain=[source_type], range=[target_type],
         endpoint_basis="record_alignment",
@@ -635,7 +736,7 @@ def _balanced_selection(bundles, limit):
 
 
 def _type_context(core, bundle, limit=12):
-    """Prefer learned business types; only show physical types for packet tables."""
+    """Recall relevant historical types across the core, within a fixed budget."""
     tables = {record.get("table") for record in bundle.get("records", [])}
     rule = bundle.get("rule") or {}
     tables.add((rule.get("source") or {}).get("table"))
@@ -644,14 +745,32 @@ def _type_context(core, bundle, limit=12):
     related = [item for item in core.object_types if item.id in table_types]
     learned = [item for item in core.object_types if item.category == "business_type"
                and item.id not in table_types]
+    query = " ".join(str(entry["value"]) for record in bundle.get("records", [])
+                     for role, entry in _entries(record)
+                     if role in ("name", "alias", "description", "formula", "scope"))
+    def tokens(text):
+        text = text.casefold()
+        return set(re.findall(r"[a-z0-9_]+|[\u3400-\u9fff]{2}", text)) | {
+            text[index:index + 2] for index in range(len(text) - 1)
+            if all("\u3400" <= value <= "\u9fff" for value in text[index:index + 2])}
+    query_terms = tokens(query)
+    def relevance(item):
+        label = (item.label or "").casefold()
+        terms = tokens(label + " " + item.definition)
+        overlap = len(query_terms & terms) / max(1, len(terms))
+        return (-(int(bool(label and label in query.casefold())) * 2 + overlap), item.id)
+    related = related[:min(3, limit)]
     slots = max(0, limit - len(related))
-    chosen = [*(learned[-slots:] if slots else []), *related[:limit]]
+    chosen = [*sorted(learned, key=relevance)[:slots], *related]
     return [{"id": item.id, "parent": item.parent, "definition": item.definition,
-             "category": item.category} for item in chosen]
+             "label": item.label, "applicability_scope": item.applicability_scope,
+             "unit": item.unit, "category": item.category} for item in chosen]
 
 
 async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *, review=True,
-                                 max_bundles=20, max_repairs_per_bundle=0, progress=None):
+                                 max_bundles=20, max_repairs_per_bundle=0, progress=None,
+                                 prior_result=None, on_checkpoint=None, concept_batch_size=1,
+                                 relation_batch_size=1):
     """One bounded group pass; failures do not change accepted plan or objects."""
     from .llm import BudgetExceeded
 
@@ -659,28 +778,154 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
         raise ValueError("max_bundles must be nonnegative")
     if type(max_repairs_per_bundle) is not int or not 0 <= max_repairs_per_bundle <= 2:
         raise ValueError("max_repairs_per_bundle must be an integer in 0..2")
-    accepted_exact, concepts, alignments, steps = {}, {}, [], []
-    accepted_record_relations = []
-    selected = _balanced_selection(bundles, max_bundles)
-    skipped = max(0, len(bundles) - len(selected))
+    if type(concept_batch_size) is not int or not 1 <= concept_batch_size <= 12:
+        raise ValueError("concept_batch_size must be an integer in 1..12")
+    if type(relation_batch_size) is not int or not 1 <= relation_batch_size <= 12:
+        raise ValueError("relation_batch_size must be an integer in 1..12")
+    prior = copy.deepcopy(prior_result or {})
+    if prior and prior.get("snapshot_id") != data.snapshot_id:
+        raise ValueError("Incremental checkpoint snapshot differs from current input")
+    concepts = {item["id"]: item for item in prior.get("concepts", [])}
+    alignments = prior.get("record_alignments", [])
+    accepted_exact = {item["source_record_id"]: item["concept_id"] for item in alignments
+                      if item["mapping_kind"] == "exact"}
+    steps = prior.get("steps", [])
+    reused_ids = {item["bundle_id"] for item in steps
+                  if item["status"] in ("accepted", "no_change")}
+    # The caller loads the saved plan/evidence together; incomplete checkpoints
+    # must not silently suppress the model calls that would rebuild missing types.
+    current_type_ids = {item.id for item in core.object_types}
+    if any(item.get("ontology_type_id") and item["ontology_type_id"] not in current_type_ids
+           for item in concepts.values()):
+        raise ValueError("Incremental checkpoint concepts are absent from the supplied core")
+    accepted_record_relations = [
+        (item["bundle"], RelationBundleDecision.model_validate(item["decision"]),
+         RelationPlan.model_validate(item["plan"]))
+        for item in prior.get("pending_record_relations", [])]
+    concept_relations = {item["id"]: item for item in prior.get("concept_relations", [])}
+    relation_derivations = prior.get("concept_relation_derivations", [])
+    batch_decisions = prior.get("pending_concept_decisions", {})
+    batch_reviews = prior.get("pending_concept_reviews", {})
+    relation_batch_decisions = prior.get("pending_relation_decisions", {})
+    relation_batch_reviews = prior.get("pending_relation_reviews", {})
+    remaining = [item for item in bundles if item["bundle_id"] not in reused_ids]
+    selected = _balanced_selection(remaining, max_bundles)
+    skipped = max(0, len(remaining) - len(selected))
+    run_step_count = 0
+
+    def state():
+        return {"snapshot_id": data.snapshot_id, "plan": core,
+                "concepts": list(concepts.values()), "record_alignments": alignments,
+                "concept_relations": list(concept_relations.values()),
+                "concept_relation_derivations": relation_derivations, "steps": steps,
+                "pending_concept_decisions": batch_decisions,
+                "pending_concept_reviews": batch_reviews,
+                "pending_relation_decisions": relation_batch_decisions,
+                "pending_relation_reviews": relation_batch_reviews,
+                "pending_record_relations": [
+                    {"bundle": bundle, "decision": decision.model_dump(), "plan": plan.model_dump()}
+                    for bundle, decision, plan in accepted_record_relations]}
+
+    async def checkpoint():
+        if on_checkpoint:
+            pending = on_checkpoint(state())
+            if inspect.isawaitable(pending):
+                await pending
+
+    def packet_payload(bundle):
+        return {"bundle": bundle, "root_model": {
+            "object_roots": profile["object_roots"], "relation_roots": profile["relation_roots"]},
+            "current_types": _type_context(core, bundle),
+            "current_relations": [{"id": item.id, "parent": item.parent}
+                                  for item in core.relation_types[-12:]]}
+
+    async def prepare_batch(position, kind, size):
+        """One request can carry independent decisions without merging evidence."""
+        is_concept = kind == "concept_induction"
+        cache = batch_decisions if is_concept else relation_batch_decisions
+        review_cache = batch_reviews if is_concept else relation_batch_reviews
+        chosen, packets = [], []
+        # Leave room for the system prompt, structured schema and tool wrapper.
+        max_bytes = getattr(llm, "config", {}).get("max_input_bytes", 100000)
+        payload_limit = max(1024, int(max_bytes * .65))
+        for possible in selected[position:]:
+            if (possible.get("task_kind") != kind or possible["bundle_id"] in cache):
+                continue
+            packet = packet_payload(possible)
+            byte_count = len(json.dumps({"packets": [*packets, packet]},
+                                        ensure_ascii=False, default=str).encode("utf-8"))
+            if byte_count > payload_limit and chosen:
+                break
+            chosen.append(possible)
+            packets.append(packet)
+            if len(chosen) >= size:
+                break
+        if len(chosen) < 2:
+            return
+        response = await llm.ask("concept_batch" if is_concept else "relation_batch",
+                                 {"packets": packets},
+                                 ConceptBatchDecision if is_concept else RelationBatchDecision)
+        expected = {item["bundle_id"] for item in chosen}
+        returned = [item.bundle_id for item in response.decisions]
+        if len(returned) != len(set(returned)) or set(returned) != expected:
+            raise ValueError("Batch must return every requested bundle_id exactly once")
+        by_id = {item.bundle_id: item.decision for item in response.decisions}
+        review_packets = []
+        for bundle, packet in zip(chosen, packets):
+            bundle_id = bundle["bundle_id"]
+            decision = by_id[bundle_id]
+            cache[bundle_id] = {"decision": decision.model_dump(),
+                               "batch_size": len(chosen), "payload": packet}
+            if not review or decision.status != "proposed":
+                continue
+            try:
+                if is_concept:
+                    compile_concept(data, profile, bundle, decision, accepted_exact)
+                else:
+                    compile_relation(data, profile, core, bundle, decision)
+            except ValueError:
+                continue  # Invalid proposals are repaired individually below.
+            review_packets.append({**packet, "candidate": decision.model_dump()})
+        # Persist paid-for proposals before the optional reviewer can fail.
+        await checkpoint()
+        if review_packets:
+            checked = await llm.ask("group_review_batch", {"packets": review_packets}, BundleBatchReview)
+            review_ids = {item["bundle"]["bundle_id"] for item in review_packets}
+            checked_ids = [item.bundle_id for item in checked.reviews]
+            if len(checked_ids) != len(set(checked_ids)) or set(checked_ids) != review_ids:
+                raise ValueError("Batch review must return each requested bundle_id exactly once")
+            for item in checked.reviews:
+                review_cache[item.bundle_id] = {
+                    "review": item.review.model_dump(),
+                    "decision_digest": digest(by_id[item.bundle_id].model_dump()),
+                    "batch_size": len(review_packets)}
+            await checkpoint()
     stage = progress.task("语义组增量抽取", len(selected)) if progress else None
     if stage:
         stage.__enter__()
     try:
-        for bundle in selected:
+        for position, bundle in enumerate(selected):
             step = {"bundle_id": bundle["bundle_id"], "task_kind": bundle["task_kind"],
                     "status": "unresolved", "core_before": digest(core.model_dump())}
             try:
-                payload = {"bundle": bundle, "root_model": {
-                    "object_roots": profile["object_roots"], "relation_roots": profile["relation_roots"]},
-                    "current_types": _type_context(core, bundle),
-                    "current_relations": [{"id": item.id, "parent": item.parent}
-                                          for item in core.relation_types[-12:]]}
+                payload = packet_payload(bundle)
                 if bundle["task_kind"] == "concept_induction":
+                    if concept_batch_size > 1 and bundle["bundle_id"] not in batch_decisions:
+                        try:
+                            await prepare_batch(position, "concept_induction", concept_batch_size)
+                        except ValueError as exc:
+                            # Invalid batch envelopes fall back to bounded per-
+                            # packet decisions; no packet borrows another's ID.
+                            step["batch_fallback_reason"] = str(exc)
+                    cached_decision = batch_decisions.get(bundle["bundle_id"])
                     concept_payload = payload
                     for attempt in range(max_repairs_per_bundle + 1):
-                        decision = await llm.ask(
-                            "concept_bundle", concept_payload, ConceptBundleDecision)
+                        if attempt == 0 and cached_decision:
+                            decision = ConceptBundleDecision.model_validate(cached_decision["decision"])
+                            step["proposal_batch_size"] = cached_decision["batch_size"]
+                        else:
+                            decision = await llm.ask(
+                                "concept_bundle", concept_payload, ConceptBundleDecision)
                         try:
                             compiled = compile_concept(
                                 data, profile, bundle, decision, accepted_exact)
@@ -696,7 +941,9 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                     "evidence bundle. A proposed new concept requires an exact "
                                     "alignment to one of exact_alignment_record_ids with a "
                                     "verbatim quote; otherwise return unresolved. Do not invent "
-                                    "records, scope, units, or facts."),
+                                    "records, scope, units, or facts. related_context is technical "
+                                    "association context, never identity or permission to copy its "
+                                    "formula onto the seed. Conflicting formula ownership is unresolved."),
                             }
                             step["repair_calls"] = attempt + 1
                     if compiled:
@@ -709,18 +956,17 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                 and old["ontology_level"] != concept["ontology_level"]):
                             raise ValueError("Conflicting ontology levels for one concept ID")
                         if review:
-                            check = await llm.ask("group_review", {**payload, "candidate": decision.model_dump()}, BundleReview)
+                            cached_review = batch_reviews.get(bundle["bundle_id"])
+                            if cached_review and cached_review["decision_digest"] == digest(decision.model_dump()):
+                                check = BundleReview.model_validate(cached_review["review"])
+                                step["review_batch_size"] = cached_review["batch_size"]
+                            else:
+                                check = await llm.ask("group_review", {**payload, "candidate": decision.model_dump()}, BundleReview)
                             if not check.accepted or check.errors:
                                 raise ValueError("Group review rejected: " + "; ".join(check.errors))
                         candidate = core.model_copy(deep=True)
                         new_type = _compiled_object_type(concept)
                         if new_type is not None:
-                            if any(item.category == "business_type" and item.id != new_type.id
-                                   and item.parent == "Measure" and new_type.parent == "Measure"
-                                   and (item.label or "").casefold().strip() == new_type.label.casefold().strip()
-                                   for item in candidate.object_types):
-                                raise ValueError(
-                                    "Same-name Measure has a different definition, unit or scope; unresolved")
                             existing = next((item for item in candidate.object_types
                                              if item.id == new_type.id), None)
                             if existing is None:
@@ -790,12 +1036,27 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                     else:
                         step.update(status=decision.status, reason=decision.reason)
                 elif bundle["task_kind"] == "relation_meaning":
-                    decision = await llm.ask("relation_bundle", payload, RelationBundleDecision)
+                    if relation_batch_size > 1 and bundle["bundle_id"] not in relation_batch_decisions:
+                        try:
+                            await prepare_batch(position, "relation_meaning", relation_batch_size)
+                        except ValueError as exc:
+                            step["batch_fallback_reason"] = str(exc)
+                    cached_decision = relation_batch_decisions.get(bundle["bundle_id"])
+                    if cached_decision:
+                        decision = RelationBundleDecision.model_validate(cached_decision["decision"])
+                        step["proposal_batch_size"] = cached_decision["batch_size"]
+                    else:
+                        decision = await llm.ask("relation_bundle", payload, RelationBundleDecision)
                     compiled = compile_relation(data, profile, core, bundle, decision)
                     if compiled:
                         candidate, plan = compiled
                         if review:
-                            check = await llm.ask("group_review", {**payload, "candidate": decision.model_dump()}, BundleReview)
+                            cached_review = relation_batch_reviews.get(bundle["bundle_id"])
+                            if cached_review and cached_review["decision_digest"] == digest(decision.model_dump()):
+                                check = BundleReview.model_validate(cached_review["review"])
+                                step["review_batch_size"] = cached_review["batch_size"]
+                            else:
+                                check = await llm.ask("group_review", {**payload, "candidate": decision.model_dump()}, BundleReview)
                             if not check.accepted or check.errors:
                                 raise ValueError("Group review rejected: " + "; ".join(check.errors))
                         core = candidate
@@ -808,19 +1069,26 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
             except BudgetExceeded as exc:
                 step.update(status="budget_exhausted", error_type=type(exc).__name__)
                 steps.append(step)
-                skipped += len(selected) - len(steps)
+                run_step_count += 1
+                skipped += len(selected) - run_step_count
+                await checkpoint()
                 break
             except Exception as exc:
                 step.update(status="unresolved", error_type=type(exc).__name__,
                             reason=str(exc) if isinstance(exc, ValueError) else "See trace")
             step["core_after"] = digest(core.model_dump())
             steps.append(step)
+            batch_decisions.pop(bundle["bundle_id"], None)
+            batch_reviews.pop(bundle["bundle_id"], None)
+            relation_batch_decisions.pop(bundle["bundle_id"], None)
+            relation_batch_reviews.pop(bundle["bundle_id"], None)
+            run_step_count += 1
+            await checkpoint()
             if stage:
                 stage.advance(detail=step["status"])
     finally:
         if stage:
             stage.__exit__(None, None, None)
-    concept_relations, relation_derivations = {}, []
     for bundle, decision, plan in accepted_record_relations:
         derivation = {"bundle_id": bundle["bundle_id"], "source_relation_plan_id": plan.id,
                       "status": "not_promoted", "core_before": digest(core.model_dump())}
@@ -844,13 +1112,14 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
             derivation["reason"] = str(exc)
         derivation["core_after"] = digest(core.model_dump())
         relation_derivations.append(derivation)
-    statuses = {status: sum(item["status"] == status for item in steps)
+    latest_steps = {item["bundle_id"]: item for item in steps}
+    statuses = {status: sum(item["status"] == status for item in latest_steps.values())
                 for status in ("accepted", "no_change", "unresolved", "budget_exhausted")}
     coverage = {"bundles_available": len(bundles), "bundles_selected": len(selected),
+                "bundles_reused": len(bundles) - len(remaining),
+                "steps_this_run": run_step_count,
                 "bundles_not_attempted": skipped, "statuses": statuses,
                 "partial": bool(skipped or statuses["unresolved"] or statuses["budget_exhausted"])}
-    return {"plan": core, "concepts": list(concepts.values()), "record_alignments": alignments,
-            "concept_relations": list(concept_relations.values()),
-            "concept_relation_derivations": relation_derivations,
-            "steps": steps, "bundles_selected": len(selected), "bundles_skipped": skipped,
+    await checkpoint()
+    return {**state(), "bundles_selected": len(selected), "bundles_skipped": skipped,
             "coverage": coverage, "partial": coverage["partial"]}

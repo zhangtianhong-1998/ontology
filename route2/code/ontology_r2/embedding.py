@@ -124,6 +124,11 @@ class LocalEmbedder:
         self.queries_encoded += 1
         return self._encode([text], query=True)[0]
 
+    def queries(self, texts):
+        """Encode a bounded seed window together, preserving the query prompt."""
+        self.queries_encoded += len(texts)
+        return self._encode(texts, query=True)
+
     def report(self):
         dimension = (self.model.get_embedding_dimension() if hasattr(self.model, "get_embedding_dimension")
                      else self.model.get_sentence_embedding_dimension())

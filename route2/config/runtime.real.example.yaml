@@ -17,14 +17,14 @@ progress:
 profiling:
   sql_columns_per_group: 32
 # Optional shared-budget table-level role suggestions for columns whose
-# name/comment heuristics find no definition-name field. The model sees at
+# name/comment rules do not establish a usable semantic role. The model sees at
 # most 8 actual rows per table; source values are checked before card recall.
 # Candidate roles remain unjudged; disable this stage to avoid the extra
 # bounded model calls when column metadata is already sufficient.
 column_role_inference:
   enabled: true
-  max_tables: 12
-  max_columns_per_table: 16
+  max_tables: 32
+  max_columns_per_table: 64
   max_sample_rows: 8
   max_value_chars: 128
 # Fact candidates are observed CSV tuples only. Exact DISTINCT scans the
@@ -41,6 +41,12 @@ fact_observations:
   max_exact_group_tuples: 50000
 # One model decision per fact value field; accepted tuples are re-read from the
 # imported snapshot before becoming typed observations. No per-row LLM calls.
+fact_schema_induction:
+  enabled: true
+  max_calls: 30
+  max_samples_per_field: 5
+  max_packet_bytes: 16000
+# Optional fact_templates_from: ../runs/previous/fact_field_templates.yaml
 fact_type_binding:
   enabled: true
   max_type_candidates_per_field: 8
@@ -57,7 +63,7 @@ discovery:
   max_indexed_fields: 0
   max_candidate_validations: 50
   max_evidence_per_unit: 3
-  # Only checked raw-equality candidates currently support joined examples.
+  # Checked raw and allowlisted alias transforms support joined examples.
   max_joint_pairs_per_candidate: 1
   max_joint_example_bytes: 16000
 # Bounded definition-record evidence enters the per-table LLM packet; pairs remain unjudged.
@@ -69,7 +75,7 @@ concept_recall:
   max_candidates: 60
   max_field_chars: 160
   max_candidates_per_unit: 2
-# Diagnostic alias leads only; no relation plan is generated from sample matches.
+# Sample alias leads are rechecked over full input before executable rules.
 alias_recall:
   enabled: true
   max_fields: 64
@@ -83,6 +89,7 @@ association_rules:
   agent_enabled: true
   max_rules: 60
   max_explicit_validations: 8
+  max_alias_validations: 16
   max_agent_candidates: 6
   max_agent_model_calls: 3
   max_agent_tool_calls: 8
@@ -104,8 +111,7 @@ instance_bundles:
   # Keep the window at the concept budget so every pattern has a reachable page.
   # A larger request is automatically capped to max_concept_bundles.
   max_pattern_seed_pool: 80
-  # Later pages visit other patterns, but separate runs do not combine ontology
-  # results or resume accepted types from earlier runs.
+  # Use --resume-from previous_run to retain accepted types across pattern pages.
   seed_window_index: 0
   lexical_top_k: 8
   max_candidates_per_bundle: 3
@@ -114,8 +120,11 @@ instance_bundles:
   max_vector_cards: 20000
   vector_top_k: 8
   max_joint_pairs_per_rule: 2
-  # At most 120 packet decisions + 120 reviews; shared llm.max_calls remains 800.
+  # Packet decisions and reviews may be batched; the shared call budget remains 800.
   max_llm_bundles: 120
+  concept_batch_size: 4
+  relation_batch_size: 4
+  max_definition_memberships: 100000
   # One correction attempt for a structured proposal rejected by the compiler.
   max_repairs_per_bundle: 1
   review: true

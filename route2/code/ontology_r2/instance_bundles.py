@@ -9,6 +9,7 @@ from collections import defaultdict
 from .concept_candidates import _field_roles
 from .embedding import top_cosine
 from .row_bundles import joint_examples
+from .joined_definition_context import JoinedDefinitionContext
 from .semantic_cards import _context_table, _norm, _root_hint
 from .storage import digest
 
@@ -22,7 +23,9 @@ def _limits(options):
                 "max_seeds_per_table": 8, "lexical_top_k": 8,
                 "max_candidates_per_bundle": 3, "max_bundle_bytes": 16000,
                 "max_vector_cards": 20000, "vector_top_k": 8,
-                "max_joint_pairs_per_rule": 2, "max_pattern_seed_pool": 1000}
+                "max_joint_pairs_per_rule": 2, "max_pattern_seed_pool": 1000,
+                "max_joined_context_records": 3, "max_joined_context_rules": 64,
+                "max_joined_context_value_chars": 2048}
     limits = {key: options.get(key, value) for key, value in defaults.items()}
     if any(type(value) is not int or value < 0 for value in limits.values()):
         raise ValueError("Instance bundle limits must be nonnegative integers")
@@ -85,12 +88,8 @@ def _compatible(seed, candidate):
         return False
     if seed.get("pattern_id") and seed.get("pattern_id") == candidate.get("pattern_id"):
         return False
-    a, b = seed.get("root_hint"), candidate.get("root_hint")
-    # A metric may refer to measures, and table-name hints are not a business
-    # classification. Cross-root retrieval is candidate context only.
-    if {a, b} == {"Metric", "Measure"}:
-        return True
-    return not (a and b and a != "GeneralObject" and b != "GeneralObject" and a != b)
+    return True  # Weak table-name root hints must not suppress cross-domain recall.
+
 
 
 def _vector_pool(index, limits, embedding, enabled):
@@ -121,15 +120,20 @@ def _vector_pool(index, limits, embedding, enabled):
         report["status"] = "no_definition_cards"
         return None, report
     vectors = embedding.documents([_card_text(card) for card in cards])
+    queries = ({card["card_id"]: vector for card, vector in zip(
+        cards, embedding.queries([_card_text(card) for card in cards]))}
+               if hasattr(embedding, "queries") else {})
     report.update(status="complete", cards_encoded=len(cards))
-    return (cards, vectors), report
+    return (cards, vectors, queries), report
 
 
 def _vector_hits(seed, pool, embedding, limit):
     if pool is None:
         return []
-    cards, vectors = pool
-    query = embedding.query(_card_text(seed))
+    cards, vectors, queries = pool
+    query = queries.get(seed["card_id"])
+    if query is None:
+        query = embedding.query(_card_text(seed))
     # Filter after an enlarged local pool; exact ties keep indexed card order.
     ranked = top_cosine(vectors, query, min(len(cards), max(limit * 8, 32)))
     result = []
@@ -237,9 +241,27 @@ def _select_seeds(pool, limit, *, population_by_root=None, population_by_table=N
     return selected
 
 
-def _concept_bundle(data, seed, candidates, byte_limit):
-    records = [seed]
-    retrieval = []
+def _metadata_context(data, records):
+    graph = getattr(data, "metadata_graph", None)
+    if graph is None:
+        return {"available": False}
+    fields = {record["table"] + "." + entry["column"] for record in records
+              for entries in record.get("fields", {}).values() for entry in entries}
+    tables = sorted({record["table"] for record in records})
+    links = graph.field_link_context(tables, fields, statuses={"checked_technical"})
+    table_nodes = [(name, graph.table(name) or {}) for name in tables]
+    return {"tables": [{"id": name, "description": node.get("table_comment"),
+                        "datahub_urn": node.get("datahub_urn")}
+                       for name, node in table_nodes],
+            "field_links": links,
+            "scope": "selected_record_fields_only; checked_links_are_not_business_predicates"}
+
+
+def _concept_bundle(data, seed, candidates, byte_limit, related_context=(), context_coverage=None):
+    records = [seed, *related_context]
+    retrieval = [{"candidate_id": card["card_id"], "channels": ["verified_direct_association"],
+                  "candidate_status": "related_context_not_identity", "connection": card["connection"]}
+                 for card in related_context]
     for candidate in candidates:
         card = candidate["card"]
         records.append(card)
@@ -257,15 +279,27 @@ def _concept_bundle(data, seed, candidates, byte_limit):
                           "status": "candidate_only_not_business_identity"},
               "exact_alignment_record_ids": [seed["record_id"]],
               "retrieval": retrieval,
-              "examples": {"candidate_only": [card["card_id"] for card in records[1:]],
+              "examples": {"candidate_only": [card["card_id"] for card in records[1:]
+                                                if card.get("context_role") != "related_context"],
+                           "related_context": [card["card_id"] for card in related_context],
                            "validated_edges": []},
+              "context_contract": {"related_context_may_be_exact": False,
+                                   "conflicting_definition_or_formula": "unresolved",
+                                   "technical_link_does_not_establish_semantic_identity": True},
               "limits": {"semantic_similarity_is_identity": False,
                          "pattern_same_is_identity": False,
                          "only_representative_record_may_be_exact": True}}
+    if context_coverage is not None:
+        bundle["joined_context_coverage"] = context_coverage
+    bundle["metadata_context"] = _metadata_context(data, records)
     while _size(bundle) > byte_limit and len(records) > 1:
         records.pop()
         retrieval.pop()
-        bundle["examples"]["candidate_only"] = [card["card_id"] for card in records[1:]]
+        bundle["metadata_context"] = _metadata_context(data, records)
+        bundle["examples"]["candidate_only"] = [card["card_id"] for card in records[1:]
+                                                 if card.get("context_role") != "related_context"]
+        bundle["examples"]["related_context"] = [card["card_id"] for card in records[1:]
+                                                  if card.get("context_role") == "related_context"]
     if _size(bundle) > byte_limit:
         return None, "seed_over_budget"
     if len(records) < 2 and not _sufficient_single_definition(seed):
@@ -304,7 +338,7 @@ def _example_record(data, item, key):
 
 def _relation_bundle(data, rule, limits):
     source, target = rule["source"], rule["target"]
-    if rule["status"] != "checked_technical" or rule.get("transform", {}).get("operator") != "identity":
+    if rule["status"] != "checked_technical":
         return None, "rule_not_compilable"
     source_info, target_info = data.tables[source["table"]], data.tables[target["table"]]
     source_root, target_root = _root_hint(source_info), _root_hint(target_info)
@@ -317,7 +351,7 @@ def _relation_bundle(data, rule, limits):
                                (_context_table(target_info["table_name"]) and source_root != "GeneralObject"))
     if (same_definition_surface and source["field"] == target["field"]
             and not ({"member", "value", "item", "child"} & (source_tokens | target_tokens))):
-        return None, "same_concept_key_requires_alignment"
+        return None, "same_concept_key_routed_to_joined_context"
     # Equal descriptive literals (unit/definition/formula) describe or align
     # records; they are not an executable reference between business objects.
     non_reference_roles = ("unit", "description", "formula")
@@ -329,7 +363,7 @@ def _relation_bundle(data, rule, limits):
                      for source_field, target_field in rule.get("scope_bindings", {}).items()}
     check = {"candidate_id": rule["candidate_id"], "snapshot_id": data.snapshot_id,
              "source": source, "target": target, "decision": {"status": "checked"},
-             "scan_scope": "full_input", "normalization": "identity",
+             "scan_scope": "full_input", "normalization": rule.get("transform", {}).get("operator", "identity"),
              "selector": rule.get("selector") or {}, "scope_bindings": inverse_scope,
              "checks": rule["verification"]["checks"]}
     candidate = {"candidate_id": rule["candidate_id"], "source": source, "target": target}
@@ -346,7 +380,10 @@ def _relation_bundle(data, rule, limits):
         records[right["record_id"]] = right
         positives.append({"source_record_id": left["record_id"],
                           "target_record_id": right["record_id"],
-                          "matching_raw_value": pair["matching_raw_value"]})
+                          "matching_raw_value": pair["matching_raw_value"],
+                          "source_raw_value": pair.get("source_raw_value", pair["matching_raw_value"]),
+                          "target_raw_value": pair.get("target_raw_value", pair["matching_raw_value"]),
+                          "transform": pair.get("transform", "identity")})
     if not positives:
         return None, "no_unique_example"
     negatives = []
@@ -363,6 +400,7 @@ def _relation_bundle(data, rule, limits):
                              "channels": rule.get("retrieval_channels", []),
                              "candidate_status": "checked_technical"}],
               "limits": {"technical_match_is_business_relation": False}}
+    bundle["metadata_context"] = _metadata_context(data, bundle["records"])
     # Prefer preserving a positive pair and its counterexample over a second pair.
     while _size(bundle) > limits["max_bundle_bytes"] and len(positives) > 1:
         removed = positives.pop()
@@ -463,6 +501,10 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
     concept_bundles = 0
     exact_duplicate_seeds = 0
     singleton_bundles = 0
+    joined = JoinedDefinitionContext(data, index, association, seeds,
+        max_records_per_seed=limits["max_joined_context_records"],
+        max_rules=limits["max_joined_context_rules"],
+        max_value_chars=limits["max_joined_context_value_chars"])
     for seed in seeds:
         if concept_bundles >= limits["max_concept_bundles"]:
             break
@@ -480,14 +522,25 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
                                limits["vector_top_k"]) if vector_pool else []
         selected = _select_candidates(seed, lexical, vectors,
                                       limits["max_candidates_per_bundle"])
-        bundle, reason = _concept_bundle(data, seed, selected, limits["max_bundle_bytes"])
+        context_records, context_coverage = joined.for_seed(seed)
+        context_ids = {card["record_id"] for card in context_records}
+        selected = [item for item in selected if item["card"]["record_id"] not in context_ids]
+        context_coverage.update(records_in_prompt=len(context_records), records_omitted_from_prompt=0)
+        bundle, reason = _concept_bundle(data, seed, selected, limits["max_bundle_bytes"], context_records, context_coverage)
+        retained_context = sum(card.get("context_role") == "related_context" for card in bundle["records"]) if bundle else 0
+        context_coverage["records_in_prompt"] = retained_context
+        context_coverage["records_omitted_from_prompt"] = len(context_records)-retained_context
+        context_coverage["partial"] |= retained_context < len(context_records)
         if bundle:
+            bundle["joined_context_coverage"] = context_coverage
             bundles.append(bundle)
             concept_signatures.add(signature)
             concept_bundles += 1
             singleton_bundles += bundle["input_mode"] == "single_definition"
         else:
             skipped.append({"seed_id": seed["card_id"], "reason": reason})
+    joined_coverage = joined.coverage()
+    joined.close()
     checked_rules = sum(item["status"] == "checked_technical"
                         for item in association.get("rules", []))
     # Inspect additional checked rules when an earlier one is only a concept
@@ -524,7 +577,8 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
                 bundled_pattern_by_table[bundle["records"][0]["table"]].add(
                     bundle["pattern"]["pattern_id"])
             for card in bundle["records"]:
-                packet_cards_by_table[card["table"]].add(card["card_id"])
+                if card.get("context_role") != "related_context":
+                    packet_cards_by_table[card["table"]].add(card["card_id"])
     window_pattern_by_table = defaultdict(int)
     window_reference_variants = defaultdict(int)
     for pattern in seed_pool:
@@ -608,9 +662,9 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
                 "bundles_built": len(bundles), "bundles_by_task": {
                     kind: sum(item["task_kind"] == kind for item in bundles)
                     for kind in ("concept_induction", "relation_meaning")},
-                "skipped": skipped, "vector": vector_report,
+                "skipped": skipped, "vector": vector_report, "joined_definition_context": joined_coverage,
                 "max_bundle_bytes": limits["max_bundle_bytes"],
-                "partial": bool(skipped or pattern_window["total_patterns"] > concept_bundles
+                "partial": bool(skipped or joined_coverage["partial"] or pattern_window["total_patterns"] > concept_bundles
                                 or checked_rules > len(rules)
                                 or vector_report["status"] in ("over_pattern_cap", "model_unavailable"))}
     return {"bundles": bundles, "coverage": coverage}

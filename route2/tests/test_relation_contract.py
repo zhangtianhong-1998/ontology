@@ -41,3 +41,26 @@ def test_model_label_must_be_a_directed_predicate_not_a_new_ontology_name():
                 invalid, "depends_on", subject_label="经营利润", object_label="收入")
     with pytest.raises(ValueError, match="Unknown object relation root"):
         canonical_relation_label("drives")
+
+
+def test_registered_derived_predicate_and_evidenced_roles_have_distinct_identity():
+    from ontology_r2.relation_contract import validate_calculation_parameter_evidence
+    base = canonical_relation_id("depends_on", "profit", "revenue")
+    left = canonical_relation_id("depends_on", "profit", "revenue",
+                                 predicate_name="calculation_dependency",
+                                 semantic_parameters={"operand_role": "minuend"})
+    right = canonical_relation_id("depends_on", "profit", "revenue",
+                                  predicate_name="calculation_dependency",
+                                  semantic_parameters={"operand_role": "subtrahend"})
+    assert len({base, left, right}) == 3
+    assert canonical_relation_label("depends_on", "calculation_dependency") == "calculation_dependency"
+    validate_proposed_relation_label("计算依赖", "depends_on", predicate_name="calculation_dependency")
+    validate_calculation_parameter_evidence({"operand_role": "minuend"}, ["利润 = 收入 - 成本"], ["收入"])
+    with pytest.raises(ValueError, match="parsed source formula"):
+        validate_calculation_parameter_evidence({"operand_role": "subtrahend"}, ["利润 = 收入 - 成本"], ["收入"])
+    with pytest.raises(ValueError, match="parsed source formula"):
+        validate_calculation_parameter_evidence({"operand_role": "minuend"}, ["收入不是利润的被减数"], ["收入"])
+    with pytest.raises(ValueError, match="Unsupported predicate semantic parameters"):
+        canonical_relation_id("depends_on", "a", "b", semantic_parameters={"arbitrary": "claim"})
+    with pytest.raises(ValueError, match="incompatible"):
+        canonical_relation_label("contains", "calculation_dependency")

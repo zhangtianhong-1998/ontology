@@ -311,6 +311,37 @@ def test_absent_full_source_definition_and_scope_mismatch_are_not_silently_bound
         data.close()
 
 
+def test_internal_scope_key_requires_an_explicit_observed_coordinate_binding(tmp_path):
+    data, core = _fixture(tmp_path, comment="EAST 经营利润金额（元）")
+    try:
+        core.object_types[0].applicability_scope = {"region": "EAST"}
+        unbound = _bind(data, core, _LLM())
+        assert unbound["instances"] == []
+        assert unbound["coverage"]["skipped_reasons"]["applicability_scope_unverified_or_conflicting"] == 2
+
+        class ExplicitScope(_LLM):
+            async def ask(self, task, payload, schema):
+                result = await super().ask(task, payload, schema)
+                result.scope_bindings = {"region": "region_code"}
+                return result
+
+        bound = _bind(data, core, ExplicitScope())
+        assert len(bound["instances"]) == 1
+        assert bound["instances"][0]["binding_decision"]["bound_scope_values"] == {"region": "EAST"}
+
+        class UnknownScope(ExplicitScope):
+            async def ask(self, task, payload, schema):
+                result = await super().ask(task, payload, schema)
+                result.scope_bindings = {"region": "missing_column"}
+                return result
+
+        invalid = _bind(data, core, UnknownScope())
+        assert invalid["instances"] == []
+        assert invalid["coverage"]["skipped_reasons"]["scope_binding_not_a_unique_coordinate_column"] == 2
+    finally:
+        data.close()
+
+
 def test_wrong_definition_quote_is_rejected_even_if_type_id_matches(tmp_path):
     data, core = _fixture(tmp_path)
     try:

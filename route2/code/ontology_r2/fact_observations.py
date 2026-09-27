@@ -205,11 +205,11 @@ def _query_seeded(data, table, coordinates, value_column, limit):
     projection = ", ".join(f"m.{qi(field)}" for field in coordinates)
     sql = f"""
         WITH sampled AS (
-            SELECT {coordinate_sql}, {qi(value_column)} AS observation_value,
+            SELECT DISTINCT {coordinate_sql}, {qi(value_column)} AS observation_value,
                    {priority_sql} AS candidate_rank
             FROM {qi(table['sql_name'])}
             WHERE {complete}
-            ORDER BY candidate_rank, __r2_row LIMIT ?
+            ORDER BY candidate_rank LIMIT ?
         ), seeds AS (
             SELECT DISTINCT {coordinate_sql}, observation_value, candidate_rank
             FROM sampled ORDER BY candidate_rank LIMIT ?

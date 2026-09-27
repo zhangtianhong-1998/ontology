@@ -17,7 +17,8 @@ from .concept_candidates import _field_roles
 from .storage import qi
 
 
-_ROLES = ("name", "alias", "description", "formula", "unit", "scope")
+_ROLES = ("name", "alias", "description", "formula", "unit", "scope",
+          "business_time", "dimension_coordinate", "numeric_business_value")
 _SENSITIVE_VALUE = re.compile(
     r"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
     r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b|"
@@ -37,7 +38,8 @@ class ObservedValue(_Strict):
 
 class ColumnRoleProposal(_Strict):
     column: str
-    role: Literal["name", "alias", "description", "formula", "unit", "scope"]
+    role: Literal["name", "alias", "description", "formula", "unit", "scope",
+                  "business_time", "dimension_coordinate", "numeric_business_value"]
     observations: list[ObservedValue] = Field(default_factory=list)
     rationale: str = ""
 
@@ -68,8 +70,6 @@ def _safe_columns(table):
         numeric = profile.get("numeric_shape_count")
         if (item["role"] in blocked or name in already_named
                 or type(usable) is not int or usable <= 0):
-            continue
-        if type(numeric) is int and numeric / usable >= 0.9:
             continue
         selected.append(name)
     return selected
@@ -153,6 +153,7 @@ def _validate_response(data, table_name, response, eligible, observed):
                          "status": "source_verified_role_candidate",
                          "semantic_status": "unjudged",
                          "schema_evidence_id": f"schema:{table_name}:{column}",
+                         "evidence_kind": "source_values_supported_role_candidate",
                          "observations": evidence})
     return accepted, rejected
 
@@ -192,11 +193,11 @@ async def infer_column_role_candidates(data, llm, config=None):
     attempted = 0
     calls = 0
     for table_name, table in sorted(data.tables.items()):
-        if _field_roles(table).get("name"):
-            continue
+        # Existing names do not settle other columns: opaque formulas, aliases
+        # and scope fields still need bounded inspection.
         eligible = _safe_columns(table)
         if not eligible:
-            tables.append({"table": table_name, "status": "unresolved",
+            tables.append({"table": table_name, "status": "no_unclassified_columns",
                            "reason": "no_safe_nonempty_unclassified_column", "candidates": []})
             continue
         if attempted >= limits["max_tables"]:
@@ -215,7 +216,8 @@ async def infer_column_role_candidates(data, llm, config=None):
                 "sampled_row_numbers": [item["row_number"] for item in sampled],
                 "sample_selection": "fixed_evenly_spaced_source_row_numbers",
                 "sample_fragment_omissions": omissions,
-                "input_rows": table["rows"], "candidates": [], "rejected": []}
+                "input_rows": table["rows"], "candidates": [], "rejected": [],
+                "known_roles": _field_roles(table)}
         if not observed:
             tables.append({**base, "reason": "no_safe_observed_value_in_bounded_rows"})
             continue
@@ -232,6 +234,7 @@ async def infer_column_role_candidates(data, llm, config=None):
                          "approx_distinct": next(p.get("approx_distinct") for p in table["profiles"]
                                                  if p["column"] == column)}
                         for column in selected],
+            "known_column_roles": _field_roles(table),
             "sample_rows": sampled, "allowed_roles": list(_ROLES),
             "contract": "proposals are uncertain column-role candidates, not business types; "
                         "cite exact sampled row_number and original value for each proposal",
@@ -248,17 +251,26 @@ async def infer_column_role_candidates(data, llm, config=None):
             continue
         accepted, rejected = _validate_response(data, table_name, response,
                                                  set(selected), observed)
-        table["inferred_semantic_roles"] = accepted
+        prior = table.get("inferred_semantic_roles", [])
+        table["inferred_semantic_roles"] = [item for item in prior
+            if item.get("column") not in {new["column"] for new in accepted}] + accepted
         consumed_roles = _field_roles(table)
         for item in accepted:
             item["used_in_candidate_recall"] = item["column"] in consumed_roles.get(
-                item["role"], ())
+                item["role"], ()) or item["role"] in {
+                    "business_time", "dimension_coordinate", "numeric_business_value"}
+            item["consumer"] = ("row_semantics" if item["role"] in {
+                "business_time", "dimension_coordinate", "numeric_business_value"}
+                else "semantic_card_recall")
         all_candidates.extend({"table": table_name, **item} for item in accepted)
         tables.append({**base, "status": "source_verified_candidates" if accepted else "unresolved",
                        "reason": "sample_support_only_not_semantic_truth" if accepted else "no_valid_proposal",
                        "candidates": accepted, "rejected": rejected,
-                       "model_unresolved_columns": [column for column in response.unresolved_columns
-                                                    if column in selected]})
+                       "model_unresolved_columns": [column for column in response.unresolved_columns if column in selected],
+                       "unresolved_columns": sorted(set(
+                           [column for column in response.unresolved_columns if column in selected]
+                           + [column for column in selected
+                              if column not in {item["column"] for item in accepted}]))})
     return {"source_snapshot": data.snapshot_id,
             "candidates": all_candidates, "tables": tables,
             "coverage": {"status": "candidate_only", "scope": "imported_csv_snapshot_only",
@@ -269,6 +281,8 @@ async def infer_column_role_candidates(data, llm, config=None):
                          "unresolved_tables": sum(item["status"] == "unresolved" for item in tables),
                          "partial": any(item["status"] == "unresolved" or
                                         item.get("eligible_columns_omitted") or
+                                        item.get("unresolved_columns") or item.get("rejected") or
+                                        any(item.get("sample_fragment_omissions", {}).values()) or
                                         any(not candidate["used_in_candidate_recall"]
                                             for candidate in item["candidates"])
                                         for item in tables),

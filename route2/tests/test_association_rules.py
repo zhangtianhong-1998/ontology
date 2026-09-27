@@ -197,6 +197,25 @@ def test_explicit_field_pair_can_survive_bounded_discovery_omission():
         data.close()
 
 
+def test_validation_progress_reports_counts_without_record_values():
+    data = Rows({
+        "demo.source": (["ref"], [("sensitive-example",)]),
+        "demo.target": (["code"], [("sensitive-example",)]),
+    })
+    events = []
+    try:
+        result = asyncio.run(build_association_rules(data, {"candidates": [], "checks": []},
+            {"proposals": [{"source": {"table": "demo.source", "field": "ref"},
+                            "target": {"table": "demo.target", "field": "code"}}]},
+            progress=events.append))
+        assert result["rules"][0]["status"] == "checked_technical"
+        assert [event["status"] for event in events] == ["started", "completed"]
+        assert events[-1]["full_input_validations"] == 1
+        assert "sensitive-example" not in str(events)
+    finally:
+        data.close()
+
+
 def test_scripted_agentscope_react_uses_read_only_tools_then_program_verifies():
     class ScriptLLM:
         mode = "mock"
@@ -321,5 +340,129 @@ def test_missing_scope_prevents_global_technical_status():
         assert rule["verification"]["checks"]["unique_matches"] == 1
         assert rule["verification"]["checks"]["missing_scope"] == 1
         assert rule["status"] == "observed_subset"
+    finally:
+        data.close()
+
+
+def test_alias_transform_validates_all_rows_and_keeps_normalization_collisions():
+    from ontology_r2.discovery import association_match_sql
+    data = Rows({
+        "demo.source": (["ref"], [(" 销售额 ",), ("A",), ("Ｂ",), ("unknown",)]),
+        "demo.target": (["code"], [("收入;销售额",), ("a;b",), ("A",)]),
+    })
+    try:
+        check = validate_candidate(data, candidate(), transform="target_alias_items")
+        assert check["normalization"] == "target_alias_items"
+        assert check["checks"]["unique_matches"] == 2
+        assert check["checks"]["ambiguous_matches"] == 1
+        assert check["checks"]["missing_in_input"] == 1
+        query, params = association_match_sql(data, candidate(), transform="target_alias_items")
+        assert set(data.db.execute(query, params).fetchall()) == {(1, 1), (3, 2)}
+    finally:
+        data.close()
+
+
+def test_alias_recall_compiles_reusable_transforms_not_identity_certificates():
+    from ontology_r2.value_aliases import propose_value_alias_candidates
+    data = Rows({
+        "demo.source": (["ref"], [("销售额",), ("收入",)]),
+        "demo.target": (["code"], [("营收;销售额;收入",)]),
+    })
+    for info in data.tables.values():
+        info["rows"] = data.db.execute(f"SELECT count(*) FROM {qi(info['sql_name'])}").fetchone()[0]
+    try:
+        aliases = propose_value_alias_candidates(data)
+        assert aliases["candidates"]
+        found = {"candidates": [], "checks": []}
+        result = asyncio.run(build_association_rules(data, found, alias_candidates=aliases))
+        forward = next(r for r in result["rules"] if r["source"]["table"] == "demo.source")
+        assert forward["transform"] == {"operator": "target_alias_items"}
+        assert forward["verification"]["scan_scope"] == "full_input"
+        assert forward["verification"]["checks"]["unique_matches"] == 2
+        assert forward["semantic_relation"] == "unresolved"
+        reverse = next(r for r in result["rules"] if r["source"]["table"] == "demo.target")
+        assert reverse["verification"]["checks"]["ambiguous_matches"] == 1
+        assert result["coverage"]["partial"]
+    finally:
+        data.close()
+
+
+def test_different_transform_cannot_reuse_raw_check():
+    data = Rows({"demo.source": (["ref"], [("APPLE",)]),
+                 "demo.target": (["code"], [("apple",)])})
+    try:
+        lead = candidate()
+        check = validate_candidate(data, lead)
+        result = asyncio.run(build_association_rules(data, {"candidates": [lead], "checks": [check]},
+            {"proposals": [{"candidate_id": "lead-1", "transform": "nfkc_whitespace_casefold"}]}))
+        transformed = next(r for r in result["rules"] if r["transform"]["operator"] != "identity")
+        assert transformed["verification"]["checks"]["unique_matches"] == 1
+        assert result["coverage"]["new_full_input_validations"] == 1
+    finally:
+        data.close()
+
+
+def test_duplicate_alias_tokens_in_one_target_are_one_row_not_ambiguous():
+    data = Rows({"demo.source": (["ref"], [("a",)]),
+                 "demo.target": (["code"], [("A;a;Ａ",)])})
+    try:
+        check = validate_candidate(data, candidate(), transform="target_alias_items")
+        assert check["checks"]["unique_matches"] == 1
+        assert check["checks"]["ambiguous_matches"] == 0
+    finally:
+        data.close()
+
+
+def test_agent_counterexamples_does_not_reuse_other_selector_cache():
+    import json
+    class ScriptLLM:
+        mode = 'mock'
+        config = {'max_input_bytes': 100000, 'max_output_tokens': 4096}
+        responses = {'association_react_script': [
+            {'calls': [{'name': 'counterexamples', 'input': {'candidate_id': 'lead-1'}}]},
+            {'calls': [{'name': 'GenerateStructuredOutput', 'input': {
+                'proposals': [], 'remaining_gaps': ['unconditional check not run']}}]},
+        ]}
+        def __init__(self):
+            self.requests = []
+        def admit(self, request):
+            self.requests.append(request)
+        def trace(self, event):
+            pass
+    data = Rows({'demo.source': (['kind', 'ref'], [('API', 'A'), ('CARD', 'B')]),
+                 'demo.target': (['code'], [('A',)])})
+    try:
+        lead = {**candidate(), 'suggested_selector': {'kind': 'API'}}
+        checked = validate_candidate(data, lead, selector={'kind': 'API'})
+        llm = ScriptLLM()
+        result = asyncio.run(build_association_rules(data, {'candidates': [lead], 'checks': [checked]},
+            {'agent_enabled': True, 'max_agent_model_calls': 2}, llm))
+        assert result['agent']['status'] == 'completed'
+        assert 'test_match_required' in json.dumps(llm.requests, ensure_ascii=False, default=str)
+    finally:
+        data.close()
+
+
+def test_transform_many_repeated_values_never_joins_record_cartesian_product():
+    """10k equal sources and 10k equal targets are 10k ambiguous rows, not 100M links."""
+    from time import monotonic
+    from ontology_r2.discovery import association_match_sql
+    data = Rows({'demo.source': (['ref'], [(' apple ',)]),
+                 'demo.target': (['code'], [('苹果;APPLE',)])})
+    try:
+        for table, column, value in [('demo.source', 'ref', ' apple '),
+                                     ('demo.target', 'code', '苹果;APPLE')]:
+            sql = data.tables[table]['sql_name']
+            data.db.execute(f'DELETE FROM {qi(sql)}')
+            data.db.execute(f'INSERT INTO {qi(sql)} SELECT i, ? FROM range(1,10001) t(i)', [value])
+        started = monotonic()
+        result = validate_candidate(data, candidate(), transform='target_alias_items')
+        assert result['checks']['ambiguous_matches'] == 10000
+        assert result['checks']['target_max_multiplicity'] == 10000
+        assert result['checks']['unique_matches'] == 0
+        sql, params = association_match_sql(data, candidate(), transform='target_alias_items')
+        assert data.db.execute('SELECT count(*) FROM (' + sql + ')', params).fetchone()[0] == 0
+        # This generous bound is a complexity regression, not a speed target.
+        assert monotonic()-started < 10
     finally:
         data.close()

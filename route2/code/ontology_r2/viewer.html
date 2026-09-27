@@ -6,8 +6,8 @@
 <style>
 :root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;color:#1f3043;background:#f6f8fb}*{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}
 header{background:white;border-bottom:1px solid #dce5ee;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:17px 24px}h1{font-size:20px;margin:0 0 5px}header p{font-size:12px;color:#708095;margin:0}.switch{display:flex;gap:4px;padding:4px;background:#ecf1f6;border-radius:8px}.switch button{border:0;background:transparent;padding:8px 13px;border-radius:6px;color:#53687f;white-space:nowrap}.switch button.active{background:#fff;color:#175487;box-shadow:0 1px 4px #2343;font-weight:600}.status{border:1px solid #d7e1eb;border-radius:40px;padding:6px 10px;font-size:12px;white-space:nowrap}.status.partial,.status.failed{border-color:#e1bd87;color:#946e30}
-main{max-width:1800px;margin:auto;padding:15px}.notice{padding:10px 13px;border-left:3px solid #8fb0d0;background:#edf4fb;margin:0 0 12px;font-size:12px;line-height:1.55;color:#52677d}.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:12px;min-height:calc(100vh - 145px)}.graph-pane,.details{min-width:0;border:1px solid #dce5ee;background:#fff;border-radius:9px}.graph-pane{position:relative;display:flex;flex-direction:column;overflow:hidden}.search-toggle{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;padding:7px 10px}.search-toggle:hover{background:#eff5fa}.search-panel{position:absolute;z-index:5;top:58px;left:14px;width:min(320px,calc(100% - 28px));max-height:65vh;overflow:auto;background:white;border:1px solid #dce5ee;box-shadow:0 8px 22px #16365425;border-radius:8px;padding:11px}.search-panel[hidden]{display:none}.search-panel input{width:100%;border:1px solid #d4e0eb;border-radius:6px;padding:8px 9px;outline:none}.search-panel input:focus,button:focus-visible{outline:2px solid #77a8d8;outline-offset:2px}.group-title{font-size:11px;font-weight:600;color:#7c8999;margin:17px 5px 6px}.index-item{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:6px;padding:8px 9px;color:#34516a;line-height:1.35;overflow-wrap:anywhere}.index-item:hover{background:#eff5fa}.index-item.active{background:#e6f1fc;color:#175386;font-weight:600}.index-item small{display:block;font-size:10px;color:#7c8ca0;margin-top:2px;font-weight:400}
-.graph-head{padding:13px 15px 10px;border-bottom:1px solid #e6edf4;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}.graph-head h2{font-size:17px;margin:0 0 5px}.graph-head p{font-size:12px;color:#708093;line-height:1.55;margin:0}.graph-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;flex-shrink:0}.view-control{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;min-width:31px;height:31px;padding:3px 7px}.view-control:hover{background:#eff5fa}.zoom-level{min-width:39px;text-align:center;color:#667d92;font-size:11px;font-variant-numeric:tabular-nums}.graph-viewport{overflow:hidden;flex:1;min-height:520px;background:radial-gradient(#e4ebf2 .7px,transparent .7px);background-size:18px 18px;touch-action:none}.graph-viewport svg{display:block;width:100%;height:100%;min-height:520px;cursor:grab;touch-action:none}.graph-viewport.is-panning svg{cursor:grabbing}.graph-foot{border-top:1px solid #e6edf4;color:#728396;font-size:12px;padding:11px 16px;line-height:1.55}.node{cursor:pointer}.node circle{stroke:#b7c9d9;stroke-width:1.1}.node.selected circle,.node:hover circle,.node:focus circle{stroke:#1a619a;stroke-width:2}.node text{font-size:11.5px;fill:#27445d;pointer-events:none;font-weight:600}.edge{stroke:#a1b3c5;stroke-width:1.2;fill:none}.edge.relation{stroke:#8c69ad;stroke-dasharray:5 3;stroke-width:2;cursor:pointer}.edge.relation:hover,.edge.relation.selected{stroke:#593783;stroke-width:3}.edge.declared{stroke:#469370;stroke-width:2}.edge-label{fill:#6c7e91;font-size:10px;font-weight:600;pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}.edge-label.relation{fill:#724d97}
+main{max-width:1800px;margin:auto;padding:15px}.notice{padding:10px 13px;border-left:3px solid #8fb0d0;background:#edf4fb;margin:0 0 12px;font-size:12px;line-height:1.55;color:#52677d}.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:12px;min-height:calc(100vh - 145px)}.graph-pane,.details{min-width:0;border:1px solid #dce5ee;background:#fff;border-radius:9px}.graph-pane{position:relative;display:flex;flex-direction:column;overflow:hidden;height:calc(100vh - 165px);min-height:640px}.search-toggle{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;padding:7px 10px}.search-toggle:hover{background:#eff5fa}.search-panel{position:absolute;z-index:5;top:58px;left:14px;width:min(320px,calc(100% - 28px));max-height:65vh;overflow:auto;background:white;border:1px solid #dce5ee;box-shadow:0 8px 22px #16365425;border-radius:8px;padding:11px}.search-panel[hidden]{display:none}.search-panel input{width:100%;border:1px solid #d4e0eb;border-radius:6px;padding:8px 9px;outline:none}.search-panel input:focus,button:focus-visible{outline:2px solid #77a8d8;outline-offset:2px}.group-title{font-size:11px;font-weight:600;color:#7c8999;margin:17px 5px 6px}.index-item{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:6px;padding:8px 9px;color:#34516a;line-height:1.35;overflow-wrap:anywhere}.index-item:hover{background:#eff5fa}.index-item.active{background:#e6f1fc;color:#175386;font-weight:600}.index-item small{display:block;font-size:10px;color:#7c8ca0;margin-top:2px;font-weight:400}
+.graph-head{padding:13px 15px 10px;border-bottom:1px solid #e6edf4;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}.graph-head h2{font-size:17px;margin:0 0 5px}.graph-head p{font-size:12px;color:#708093;line-height:1.55;margin:0}.graph-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;flex-shrink:0}.view-control{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;min-width:31px;height:31px;padding:3px 7px}.view-control:hover{background:#eff5fa}.zoom-level{min-width:39px;text-align:center;color:#667d92;font-size:11px;font-variant-numeric:tabular-nums}.graph-viewport{overflow:hidden;position:relative;flex:1;min-height:420px;background:radial-gradient(#e4ebf2 .7px,transparent .7px);background-size:18px 18px;touch-action:none}.graph-viewport svg{display:block;position:absolute;inset:0;width:100%;height:100%;min-height:0;cursor:grab;touch-action:none}.graph-viewport.is-panning svg{cursor:grabbing}.graph-foot{border-top:1px solid #e6edf4;color:#728396;font-size:12px;padding:11px 16px;line-height:1.55}.node{cursor:pointer}.node circle{stroke:#b7c9d9;stroke-width:1.1}.node.selected circle,.node:hover circle,.node:focus circle{stroke:#1a619a;stroke-width:2}.node text{font-size:11.5px;fill:#27445d;pointer-events:none;font-weight:600}.edge{stroke:#a1b3c5;stroke-width:1.2;fill:none}.edge.relation{stroke:#8c69ad;stroke-dasharray:5 3;stroke-width:2;cursor:pointer}.edge.relation:hover,.edge.relation.selected{stroke:#593783;stroke-width:3}.edge.declared{stroke:#469370;stroke-width:2}.edge.technical_link{stroke:#407ba9;stroke-width:2;stroke-dasharray:6 4}.edge.technical_link.observed_subset{stroke:#b38136}.edge.table_has_column{stroke:#c6d3df}.edge[role="button"]{cursor:pointer}.edge-label{fill:#6c7e91;font-size:10px;font-weight:600;pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}.edge-label.relation{fill:#724d97}.edge.quiet{stroke-width:1;opacity:.25}.edge.hovered,.edge:focus{opacity:1;stroke-width:2.6}.edge-label.label-hidden{opacity:0}.edge-label.hovered{opacity:1}.edge-hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}.node .table-caption{font-size:9px;font-weight:400;fill:#688198}.node .table-label{font-size:11px}.graph-viewport svg.is-node-hover .edge:not(.hovered){opacity:.08}
 .details{max-height:calc(100vh - 135px);overflow:auto;padding:17px}.details h2{font-size:17px;margin:0 0 6px;line-height:1.4;overflow-wrap:anywhere}.kind{font-size:11px;color:#38648c;background:#eaf2fb;border-radius:4px;padding:3px 6px;display:inline-block;margin-bottom:9px}.id{font-size:11px;color:#75879a;overflow-wrap:anywhere}.label{font-size:11px;font-weight:600;color:#79899a;margin:15px 0 5px}.value{font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.section{border-top:1px solid #e5edf3;padding-top:13px;margin-top:17px}.section h3,.evidence h3{font-size:13px;margin:0 0 9px}.item{display:block;width:100%;text-align:left;border:1px solid #e2eaf1;background:#fbfdff;border-radius:6px;padding:8px 9px;margin:5px 0;color:#34516b;overflow-wrap:anywhere;line-height:1.4}.item:hover{background:#edf5fb}.item small{display:block;color:#798a9c;font-size:10px;margin-top:3px}.empty{font-size:12px;color:#79899a;line-height:1.55}.evidence{border-top:1px solid #e5edf3;padding-top:13px;margin-top:20px}.quote{padding:9px 10px;border-left:3px solid #97b7d7;background:#f5f9fc;font-size:12px;line-height:1.6;margin:7px 0;overflow-wrap:anywhere}.quote small{display:block;color:#72869a;margin-top:4px}.plain{font-size:12px;color:#596d80;line-height:1.6;overflow-wrap:anywhere}footer{font-size:11px;color:#8391a0;padding:12px 1px 0}
 @media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr)}.details{max-height:none}}@media(max-width:580px){header{flex-wrap:wrap;padding:14px}.switch{order:3;width:100%}.switch button{flex:1}.layout{display:block}.graph-pane,.details{max-height:none;margin-bottom:10px}.graph-head{flex-wrap:wrap}.graph-actions{justify-content:flex-start}main{padding:10px}}
 </style>
@@ -25,8 +25,9 @@ const T=new Map(types.map(x=>[x.id,x])),R=new Map(relations.map(x=>[x.id,x])),A=
 const rootNames={GeneralObject:'一般对象',Measure:'度量',Metric:'指标',Dimension:'维度',Term:'术语'};
 const rootOf=x=>{let current=x,seen=new Set();while(current&&current.parent&&!seen.has(current.id)){seen.add(current.id);current=T.get(current.parent)}return current?.id||x?.parent||x?.id};
 const typeKind=x=>x?.category==='source_record_type'?'源记录结构':rootNames[rootOf(x)]||'对象类型';
-const name=x=>rootNames[x?.id]||x?.label||x?.column_name||x?.table_name||x?.constraint_name||x?.id||'未命名';
+const name=x=>rootNames[x?.id]||x?.label||x?.table_comment||x?.column_name||x?.table_name||x?.constraint_name||x?.id||'未命名';
 let mode='ontology',selected=null,tableId=(M.tables||[])[0]?.id||null;
+const expandedTables=new Set();
 const text=x=>x==null?'—':typeof x==='object'?JSON.stringify(x,null,2):String(x);
 const clip=(x,n=19)=>String(x||'').length>n?String(x).slice(0,n-1)+'…':String(x||'');
 function el(tag,content,cls){const node=document.createElement(tag);if(content!==undefined)node.textContent=String(content);if(cls)node.className=cls;return node}
@@ -37,9 +38,12 @@ function section(panel,title,items,fn,empty='无'){const s=el('section',undefine
 function evidence(panel,item){const ids=item?.evidence_ids||[],s=el('section',undefined,'evidence');s.append(el('h3',`证据 · ${ids.length}`));if(!ids.length)s.append(el('p','没有单独保存证据原文。','empty'));
 ids.forEach(id=>{const e=D.evidence?.[id];if(e){const box=el('div',e.raw_fragment||'原文未保存','quote'),src=e.source_ref||{};box.append(el('small',[src.table,src.column,src.row&&`第 ${src.row} 行`,src.document_id].filter(Boolean).join(' · ')||id));s.append(box)}else s.append(el('p',`证据标识：${id}（原文未进入页面预览）`,'plain'))});panel.append(s)}
 function select(kind,id){selected={kind,id};if(mode==='metadata'&&kind==='table')tableId=id;$('search-panel').hidden=true;$('search-toggle').setAttribute('aria-expanded','false');renderGraph();renderDetails()}
-function objectRels(id){return (O.relation_types||[]).filter(r=>r.category==='business_relation_type'&&((r.domain||[]).includes(id)||(r.range||[]).includes(id)))}
-function objectAttrs(id){return attrs.filter(a=>(a.domain||[]).includes(id))}
-function objectInstances(id){const found=new Map();[...(D.objects||[]).filter(x=>x.type===id||x.ontology_type_id===id),...(D.concepts||[]).filter(x=>x.ontology_type_id===id)].forEach(x=>found.set(x.id,x));return [...found.values()]}
+// Inherited properties retain their declaring type and evidence in details.
+function typeAncestors(id){const result=new Set();let current=T.get(id);while(current&&!result.has(current.id)){result.add(current.id);current=T.get(current.parent)}return result}
+function objectRels(id){const ancestors=typeAncestors(id);return (O.relation_types||[]).filter(r=>r.category==='business_relation_type'&&[...(r.domain||[]),...(r.range||[])].some(type=>ancestors.has(type)))}
+function objectAttrs(id){const ancestors=typeAncestors(id);return attrs.filter(a=>(a.domain||[]).some(type=>ancestors.has(type)))}
+function objectInstances(id){const found=new Map();[...(D.objects||[]),...(D.concepts||[])].filter(x=>typeAncestors(x.ontology_type_id||x.type).has(id)).forEach(x=>found.set(x.id,x));return [...found.values()]}
+function inheritedFrom(item,id){return (item.domain||[]).includes(id)?'':(item.domain||[]).filter(type=>typeAncestors(id).has(type)).map(type=>name(T.get(type))).join('、')}
 function verifiedEquivalentTypes(x){return [...new Set(x.equivalent_type_ids||[])].filter(id=>id!==x.id&&T.has(id)).map(id=>T.get(id))}
 function equivalenceEvidence(x){return (O.type_equivalences||[]).filter(a=>a.source_type_id===x.id||a.target_type_id===x.id)}
 function mappedRecordType(table,detail){const id=table.source_record_type||detail.record_types?.[0]?.id||`source_record_type:${table.id}`;return T.get(id)||detail.record_types?.find(x=>x.id===id)||null}
@@ -54,7 +58,7 @@ for(const [title,items,kind] of groups){const found=items.filter(x=>`${name(x)} 
 function renderDetails(){const p=$('details'),point=selected;p.replaceChildren();if(!point?.id){p.append(el('h2',mode==='ontology'?'整体本体结构':'元数据图'));p.append(el('p',mode==='ontology'?'点击对象节点或关系连线，查看属性、关系、实例和证据。':'点击物理表或声明外键，查看元数据和来源。','empty'));return}
 if(mode==='ontology'){
 if(point.kind==='object'){const x=T.get(point.id);if(!x)return;const children=(O.object_types||[]).filter(y=>y.parent===x.id),as=objectAttrs(x.id),rs=objectRels(x.id),samples=objectInstances(x.id);
-p.append(el('h2',name(x)),el('span',typeKind(x),'kind'),el('div',x.id,'id'));field(p,'定义',x.definition);if(x.parent)field(p,'上位类型',name(T.get(x.parent))||x.parent);field(p,'适用范围',Object.keys(x.applicability_scope||{}).length?x.applicability_scope:undefined);
+p.append(el('h2',name(x)),el('span',typeKind(x),'kind'),el('div',x.id,'id'));field(p,'定义',x.definition);if(x.parent)field(p,'上位类型',name(T.get(x.parent))||x.parent);field(p,'适用范围',Object.keys(x.applicability_scope||{}).length?x.applicability_scope:undefined);field(p,'单位',x.unit);field(p,'计算运算',x.aggregation_operator);
 if(x.category==='business_type'&&(x.canonical_type_id||x.equivalent_type_ids?.length)){
 const canonical=T.get(x.canonical_type_id||x.id),equivalents=verifiedEquivalentTypes(x),judgements=equivalenceEvidence(x);
 section(p,'规范类型',canonical?[canonical]:[],y=>button(name(y),y.id,()=>select('object',y.id)),'规范类型未进入页面预览');
@@ -62,44 +66,52 @@ section(p,'已验证等价来源类型',equivalents,y=>button(name(y),y.id,()=>s
 if(judgements.length)section(p,'等价判定依据',judgements,y=>{const card=el('div',undefined,'quote');card.append(el('div',`${name(T.get(y.source_type_id))} ↔ ${name(T.get(y.target_type_id))}`));if(y.semantic_equivalence_explanation)card.append(el('div',y.semantic_equivalence_explanation,'plain'));[['来源定义',y.source_description_quote],['目标定义',y.target_description_quote],['来源公式',y.source_formula_quote],['目标公式',y.target_formula_quote]].forEach(([label,value])=>{if(value)card.append(el('div',`${label}：${clip(value,400)}`,'plain'))});card.append(el('small',`${(y.evidence_ids||[]).length} 条来源证据 · ${y.id}`));return card});
 }
 section(p,'下位类型',children,y=>button(name(y),y.id,()=>select('object',y.id)));
-section(p,'数据属性',as,y=>button(y.label||y.source_column||y.id,`${y.literal_type||'未知类型'} · ${y.mapping_status==='definition_record_only'?'仅定义记录':y.source_table||'来源未记录'}`,()=>select('attribute',y.id)),x.category==='business_type'?'尚未构建该对象的数据属性映射':'没有映射的数据属性');
+section(p,'数据属性',as,y=>button(y.label||y.source_column||y.id,`${y.literal_type||'未知类型'} · ${inheritedFrom(y,x.id)?'继承自 '+inheritedFrom(y,x.id)+' · ':''}${y.mapping_status==='definition_record_only'?'仅定义记录':y.source_table||'来源未记录'}`,()=>select('attribute',y.id)),x.category==='business_type'?'尚未构建该对象的数据属性映射':'没有映射的数据属性');
 if(x.category==='business_type'&&(x.source_properties||[]).length)section(p,'定义来源字段',x.source_properties,y=>el('p',`${y.role||'字段'} · ${y.source_table||y.table||'—'}.${y.source_column||y.column||'—'}（仅支持类型定义）`,'plain'));
-section(p,'对象属性与连接',rs,y=>{const out=(y.domain||[]).includes(x.id),others=out?y.range||[]:y.domain||[];return button(name(y),`${out?'指向':'来自'} ${others.map(id=>name(T.get(id))||id).join('、')||'端点未确定'} · ${y.parent||'未分类'}`,()=>select('relation',y.id))},'尚无已接受对象关系');
+section(p,'对象属性与连接',rs,y=>{const ancestors=typeAncestors(x.id),out=(y.domain||[]).some(id=>ancestors.has(id)),others=out?y.range||[]:y.domain||[];return button(name(y),`${out?'指向':'来自'} ${others.map(id=>name(T.get(id))||id).join('、')||'端点未确定'} · ${inheritedFrom(y,x.id)?'继承自 '+inheritedFrom(y,x.id)+' · ':''}${y.parent||'未分类'}`,()=>select('relation',y.id))},'尚无已接受对象关系');
+const computations=(O.calculations||[]).filter(y=>y.source_type_id===x.id);
+if(computations.length)section(p,'计算定义',computations,y=>{const box=el('div',undefined,'quote');field(box,'原式',y.raw_formula);field(box,'绑定状态',y.status);if(y.reason)field(box,'未决原因',y.reason);for(const operand of y.bindings||[])box.append(button(`${operand.symbol} · ${operand.operand_role}`,operand.target_type_id?name(T.get(operand.target_type_id)):operand.reason||'未绑定',()=>operand.target_type_id&&select('object',operand.target_type_id)));evidence(box,y);return box});
+const membershipCount=(D.definition_membership_counts||{})[x.id]||0,members=(D.definition_memberships||[]).filter(y=>y.type_id===x.id);
+if(membershipCount){section(p,`同定义类型的源记录 · 共 ${membershipCount} 条`,members,y=>button(`${y.table} · 第 ${y.row_number} 行`,y.record_id,()=>select('definition_membership',y.id)));p.append(el('p','此处保留各记录身份，仅复用定义类型。引用差异须单独核验。','empty'))}
 section(p,'实例预览',samples.slice(0,8),y=>button(name(y),y.id,()=>select('instance',y.id)),'当前页面没有此类型的实例预览');if(samples.length>8)p.append(el('p',`另有 ${samples.length-8} 条已载入实例未列出。`,'empty'));
 if(x.category==='source_record_type'){const sourceTable=x.id.replace(/^source_record_type:/,'');if(TABLE.has(sourceTable))section(p,'物理来源',[TABLE.get(sourceTable)],y=>button(name(y),y.id,()=>{tableId=y.id;switchMode('metadata')}))}
 evidence(p,x);return}
+if(point.kind==='definition_membership'){const x=(D.definition_memberships||[]).find(y=>y.id===point.id);if(!x)return;p.append(el('h2','定义类型记录'),el('div',x.record_id,'id'));field(p,'源表',x.table);field(p,'原始行号',x.row_number);field(p,'复用类型',name(T.get(x.type_id)));field(p,'核验方法',x.verification);field(p,'独立引用取值',x.reference_values);if(x.reference_variants_pending)p.append(el('p','这些引用与代表记录不同，其业务关系尚待核验。','empty'));evidence(p,x);return}
 if(point.kind==='attribute'){const x=A.get(point.id);if(!x)return;p.append(el('h2',name(x)),el('span','数据属性','kind'),el('div',x.id,'id'));field(p,'定义',x.definition);field(p,'值类型',x.literal_type);field(p,'源字段类型',x.declared_data_type);field(p,'源列',x.source_table&&x.source_column?`${x.source_table}.${x.source_column}`:undefined);field(p,'证据适用范围',x.evidence_scope);field(p,'映射状态',x.mapping_status);field(p,'源字段绑定',x.source_bindings);section(p,'所属对象类型',x.domain||[],id=>button(name(T.get(id))||id,id,()=>select('object',id)));if(x.mapping_status==='definition_record_only')p.append(el('p','此属性来自定义记录；并不表示每条业务事实实例都已填入该值。','empty'));evidence(p,x);return}
-if(point.kind==='relation'){const x=R.get(point.id);if(!x)return;p.append(el('h2',name(x)),el('span',(O.relation_roots||[]).some(y=>y.id===x.id)?'一级关系':'对象属性','kind'),el('div',x.id,'id'));field(p,'定义',x.definition);field(p,'上位关系',x.parent&&name(R.get(x.parent))||x.parent);field(p,'端点依据',x.endpoint_basis);field(p,'证据适用范围',x.evidence_scope);section(p,'定义域',x.domain||[],id=>button(name(T.get(id))||id,id,()=>select('object',id)));section(p,'值域',x.range||[],id=>button(name(T.get(id))||id,id,()=>select('object',id)));evidence(p,x);return}
-if(point.kind==='instance'){const x=[...(D.objects||[]),...(D.concepts||[])].find(y=>y.id===point.id);if(!x)return;p.append(el('h2',name(x)),el('span',x.id.startsWith('fact_observation:')?'业务事实观测实例':'实例预览','kind'),el('div',x.id,'id'));field(p,'定义',x.definition);field(p,'所属本体对象',x.type&&name(T.get(x.type))||undefined);field(p,'源记录',x.source_ref);field(p,'观察坐标',x.observation_coordinates);field(p,'观测值',x.observed_value);field(p,'单位',x.unit);field(p,'绑定依据',x.binding_decision);section(p,'数据值',x.preview_attributes||[],y=>el('p',`${y.column}: ${y.value}${y.truncated?'…':''}`,'plain'));
+if(point.kind==='relation'){const x=R.get(point.id);if(!x)return;p.append(el('h2',name(x)),el('span',(O.relation_roots||[]).some(y=>y.id===x.id)?'一级关系':'对象属性','kind'),el('div',x.id,'id'));field(p,'定义',x.definition);field(p,'上位关系',x.parent&&name(R.get(x.parent))||x.parent);field(p,'关系参数',Object.keys(x.semantic_parameters||{}).length?x.semantic_parameters:undefined);field(p,'端点依据',x.endpoint_basis);field(p,'证据适用范围',x.evidence_scope);section(p,'定义域',x.domain||[],id=>button(name(T.get(id))||id,id,()=>select('object',id)));section(p,'值域',x.range||[],id=>button(name(T.get(id))||id,id,()=>select('object',id)));evidence(p,x);return}
+if(point.kind==='instance'){const x=[...(D.objects||[]),...(D.concepts||[])].find(y=>y.id===point.id);if(!x)return;p.append(el('h2',name(x)),el('span',x.id.startsWith('fact_observation:')?'业务事实观测实例':'实例预览','kind'),el('div',x.id,'id'));field(p,'定义',x.definition);field(p,'所属本体对象',x.type&&name(T.get(x.type))||undefined);field(p,'源记录',x.source_ref);field(p,'观察坐标',x.observation_coordinates);field(p,'观测值',x.observed_value);field(p,'单位',x.unit);field(p,'绑定依据',x.binding_decision);section(p,'数据值',x.preview_attributes||[],y=>button(`${y.column}: ${y.value}${y.truncated?'…':''}`,'查看原文和来源',()=>select('literal_assertion',y.id)));
 const pairs=(D.relations||[]).filter(y=>y.subject===x.id||y.object===x.id);section(p,'对象关系实例',pairs,y=>button(name(R.get(y.predicate)||{id:y.predicate}),`${y.subject} → ${y.object}`,()=>select('instance_relation',y.id)),'当前预览没有对象关系实例');evidence(p,x);return}
+if(point.kind==='literal_assertion'){const x=(D.objects||[]).flatMap(item=>item.preview_attributes||[]).find(item=>item.id===point.id);if(!x)return;p.append(el('h2',x.column),el('span','数据属性值','kind'));field(p,'值',x.value);field(p,'值类型',x.literal_type);if(x.truncated)p.append(el('p','此处显示值的前段，完整原文见下方证据。','empty'));section(p,'属性定义',[x.attribute_id],id=>button(name(A.get(id)),id,()=>select('attribute',id)));evidence(p,x);return}
 if(point.kind==='instance_relation'){const x=(D.relations||[]).find(y=>y.id===point.id);if(!x)return;p.append(el('h2',name(R.get(x.predicate)||{id:x.predicate})),el('span',x.viewer_layer==='business_type'?'本体对象关系实例':'记录关系实例','kind'),el('div',x.id,'id'));field(p,'源对象',x.subject);field(p,'目标对象',x.object);field(p,'适用条件',x.condition);field(p,'来源记录对',x.source_record_pair);evidence(p,x);return}
 }
 const table=TABLE.get(tableId),detail=M.details?.[tableId]||{};
-if(point.kind==='table'){const x=TABLE.get(point.id);if(!x)return;p.append(el('h2',name(x)),el('span','物理表 · 本地元数据图','kind'),el('div',x.id,'id'));field(p,'表说明',x.table_comment);field(p,'DataHub URN',x.datahub_urn);field(p,'声明主键',x.declared_primary_key);field(p,'观察行数',x.observed_rows);
+if(point.kind==='table_link_group'){const x=metadataLinkGroups.get(point.id);if(!x)return;p.append(el('h2',`${name(TABLE.get(x.source))} ${x.bidirectional?'↔':'→'} ${name(TABLE.get(x.target))}`));section(p,'字段关联',x.links,y=>button(`${y.source_field} → ${y.target_field}`,`${TABLE.get(y.source)?.table_name||y.source} → ${TABLE.get(y.target)?.table_name||y.target} · ${linkLabel(y.status)}`,()=>select('technical_link',y.id)));p.append(button('恢复元数据全图','',()=>{selected=null;render()}));return}
+if(point.kind==='table'){const x=TABLE.get(point.id);if(!x)return;p.append(button('恢复元数据全图','',()=>{selected=null;render()}));p.append(el('h2',name(x)),el('span','物理表 · 本地元数据图','kind'),el('div',x.id,'id'));field(p,'表说明',x.table_comment);field(p,'DataHub URN',x.datahub_urn);field(p,'声明主键',x.declared_primary_key);field(p,'观察行数',x.observed_rows);
 const sourceType=mappedRecordType(x,detail);if(sourceType)section(p,'源行结构映射',[sourceType],y=>button(name(y),y.id,()=>select('metadata_record_type',y.id)));
+p.append(button(expandedTables.has(x.id)?'收起图中的字段':'在图中展开字段',`${detail.columns?.length||0} 个字段进入页面预览`,()=>{if(expandedTables.has(x.id))expandedTables.delete(x.id);else expandedTables.add(x.id);renderGraph();renderDetails()}));
 section(p,`列预览 ${detail.columns?.length||0}/${detail.total_columns??0}`,detail.columns||[],y=>button(y.column_name,y.column_comment||y.data_type,()=>select('column',y.id)));
 section(p,'声明约束',detail.constraints||[],y=>button(y.constraint_name||y.definition||y.id,y.definition,()=>select('constraint',y.id)));
 section(p,'来源文件',detail.sources||[],y=>button(y.path||y.id,'',()=>select('source',y.id)));
-const declared=(M.links||[]).filter(y=>y.source===x.id||y.target===x.id);
+const declared=(M.links||[]).filter(y=>y.status==='declared'&&(y.source===x.id||y.target===x.id));
 section(p,'声明外键',declared.slice(0,25),y=>button(`${y.source_field||'?'} → ${y.target_field||'?'}`,`${y.source} → ${y.target}`,()=>select('technical_link',y.id)),'此表没有声明外键');
-const local=(X.links||[]).filter(y=>y.source===x.id||y.target===x.id);
-if(local.length){const fold=el('details');fold.append(el('summary',`本地关联分析结果 · ${local.length}（不属于 DataHub 元数据图）`));for(const [status,title] of [['verified_technical','已核验技术匹配'],['observed_subset','部分命中'],['candidate','待核验候选']]){const items=local.filter(y=>y.status===status);if(items.length)section(fold,title,items.slice(0,25),y=>button(`${y.source_field||'?'} → ${y.target_field||'?'}`,`${y.source} → ${y.target}`,()=>select('technical_link',y.id)))}p.append(fold)}
+const local=[...(M.links||[]).filter(y=>y.status!=='declared'),...(X.links||[])].filter(y=>y.source===x.id||y.target===x.id);
+if(local.length){const fold=el('details');fold.append(el('summary',`字段关联 · ${local.length}`));for(const [status,title] of [['verified_technical','已核验技术匹配'],['observed_subset','部分命中'],['candidate','待核验候选']]){const items=local.filter(y=>y.status===status);if(items.length)section(fold,title,items.slice(0,25),y=>button(`${y.source_field||'?'} → ${y.target_field||'?'}`,`${y.source} → ${y.target}`,()=>select('technical_link',y.id)))}p.append(fold)}
 const ev=el('section',undefined,'evidence');ev.append(el('h3','元数据来源'));(detail.sources||[]).forEach(y=>ev.append(el('p',y.path||y.id,'plain')));p.append(ev);return}
-if(point.kind==='technical_link'){const x=[...(M.links||[]),...(X.links||[])].find(y=>y.id===point.id);if(!x)return;p.append(el('h2',`${x.source_field||'?'} → ${x.target_field||'?'}`),el('span',x.status==='declared'?'声明外键':`本地关联分析 · ${linkLabel(x.status)}`,'kind'),el('div',x.id,'id'));field(p,'源列',`${x.source}.${x.source_field}`);field(p,'目标列',`${x.target}.${x.target_field}`);field(p,'条件',Object.keys(x.selector||{}).length?x.selector:undefined);field(p,'作用域',Object.keys(x.scope_bindings||{}).length?x.scope_bindings:undefined);field(p,'核验',x.verification);field(p,'语义状态',x.semantic_relation);if(x.status!=='declared')p.append(el('p','这是本地关联分析结果，不是 DataHub 元数据结构边或声明外键。','empty'));section(p,'连接的表',[x.source,x.target],id=>button(name(TABLE.get(id))||id,id,()=>select('table',id)));const ev=el('section',undefined,'evidence');ev.append(el('h3',x.status==='declared'?'声明依据':'分析依据'),el('p',text(x.evidence||x.decision||x.verification||'完整记录见运行目录。'),'plain'));p.append(ev);return}
+if(point.kind==='technical_link'){const x=[...(M.links||[]),...(X.links||[])].find(y=>y.id===point.id);if(!x)return;p.append(el('h2',`${x.source_field||'?'} → ${x.target_field||'?'}`),el('span',x.status==='declared'?'声明外键':`本地关联分析 · ${linkLabel(x.status)}`,'kind'),el('div',x.id,'id'));field(p,'源列',`${x.source}.${x.source_field}`);field(p,'目标列',`${x.target}.${x.target_field}`);field(p,'条件',Object.keys(x.selector||{}).length?x.selector:undefined);field(p,'作用域',Object.keys(x.scope_bindings||{}).length?x.scope_bindings:undefined);field(p,'字段转换',Object.keys(x.transform||{}).length?x.transform:undefined);field(p,'核验',x.verification);field(p,'语义状态',x.semantic_relation);if(x.status!=='declared')p.append(el('p',x.status==='candidate'?'候选尚未核验。':'此边表示已核验的字段匹配；业务关系含义仍需来源定义支持。','empty'));section(p,'连接的表',[x.source,x.target],id=>button(name(TABLE.get(id))||id,id,()=>select('table',id)));const ev=el('section',undefined,'evidence');ev.append(el('h3',x.status==='declared'?'声明依据':'分析依据'),el('p',text(x.evidence||x.decision||x.verification||'完整记录见运行目录。'),'plain'));p.append(ev);if(x.evidence_ids?.length)evidence(p,x);return}
 if(point.kind==='metadata_record_type'){const x=(detail.record_types||[]).find(y=>y.id===point.id);if(!x)return;p.append(el('h2',name(x)),el('span','源行结构 · 元数据节点','kind'),el('div',x.id,'id'));field(p,'定义',x.definition);section(p,'对应物理表',table?[table]:[],y=>button(name(y),y.id,()=>select('table',y.id)));evidence(p,x);return}
-const x=[...(detail.columns||[]),...(detail.constraints||[]),...(detail.sources||[])].find(y=>y.id===point.id);if(!x)return;p.append(el('h2',name(x)),el('span',({column:'列',constraint:'声明约束',source:'来源文件'})[point.kind]||'元数据节点','kind'),el('div',x.id,'id'));if(point.kind==='column'){field(p,'列说明',x.column_comment);field(p,'数据类型',x.data_type);field(p,'非空',x.is_not_null);field(p,'列序号',x.ordinal_position);field(p,'声明主键',x.is_declared_primary_key)}if(point.kind==='constraint')field(p,'定义',x.definition);if(point.kind==='source'){field(p,'路径',x.path);field(p,'SHA-256',x.sha256)}section(p,'所属表',table?[table]:[],y=>button(name(y),y.id,()=>select('table',y.id)));const ev=el('section',undefined,'evidence');ev.append(el('h3','元数据来源'),el('p',(detail.sources||[]).map(y=>y.path).filter(Boolean).join('、')||'来源未进入页面预览','plain'));p.append(ev)
+const x=[...(detail.columns||[]),...(detail.constraints||[]),...(detail.sources||[])].find(y=>y.id===point.id);if(!x)return;p.append(el('h2',name(x)),el('span',({column:'列',constraint:'声明约束',source:'来源文件'})[point.kind]||'元数据节点','kind'),el('div',x.id,'id'));if(point.kind==='column'){field(p,'列说明',x.column_comment);field(p,'DataHub URN',x.datahub_urn);field(p,'数据类型',x.data_type);field(p,'非空',x.is_not_null);field(p,'列序号',x.ordinal_position);field(p,'声明主键',x.is_declared_primary_key)}if(point.kind==='constraint')field(p,'定义',x.definition);if(point.kind==='source'){field(p,'路径',x.path);field(p,'SHA-256',x.sha256)}section(p,'所属表',table?[table]:[],y=>button(name(y),y.id,()=>select('table',y.id)));const ev=el('section',undefined,'evidence');ev.append(el('h3','元数据来源'),el('p',(detail.sources||[]).map(y=>y.path).filter(Boolean).join('、')||'来源未进入页面预览','plain'));p.append(ev)
 }
 function node(id,label,kind,x,y,action,active=false,subtitle='',root=''){return{id,label,kind,x,y,action,active,subtitle,root}}
-const graphState={key:null,bounds:null,fit:null,view:null,drag:null};
+const graphState={key:null,bounds:null,fit:null,view:null,drag:null,userViewChanged:false};
 const NODE_RADIUS=40;
 function circleLabel(value){
   const chars=[...String(value||'')];let width=0,label='';
   for(const char of chars){const next=/[\u2e80-\u9fff]/u.test(char)?12:7;if(width+next>NODE_RADIUS*1.7)return [...label].slice(0,-1).join('')+'…';width+=next;label+=char}
   return label
 }
-function viewportSize(){const rect=$('graph').getBoundingClientRect();return{width:Math.max(rect.width,320),height:Math.max(rect.height,320)}}
-function fittedView(bounds){
-  const size=viewportSize(),ratio=size.width/size.height;
+function viewportSize(){const rect=$('graph-viewport').getBoundingClientRect();return{width:Math.max(rect.width,1),height:Math.max(rect.height,1)}}
+function fittedView(bounds,size=viewportSize()){
+  const ratio=size.width/size.height;
   let width=Math.max(bounds.width,bounds.height*ratio),height=width/ratio;
   if(height<bounds.height){height=bounds.height;width=height*ratio}
   return{x:bounds.x+(bounds.width-width)/2,y:bounds.y+(bounds.height-height)/2,width,height}
@@ -109,11 +121,13 @@ function applyView(){
   const v=graphState.view;$('graph').setAttribute('viewBox',`${v.x} ${v.y} ${v.width} ${v.height}`);
   $('zoom-level').textContent=`${Math.round(graphState.fit.width/v.width*100)}%`
 }
-function fitGraph(){if(!graphState.bounds)return;graphState.fit=fittedView(graphState.bounds);graphState.view={...graphState.fit};applyView()}
+function fitGraph(){if(!graphState.bounds)return;graphState.userViewChanged=false;graphState.fit=fittedView(graphState.bounds);graphState.view={...graphState.fit};applyView()}
 function zoomGraph(factor,clientX,clientY){
   if(!graphState.view||!graphState.fit)return;
   const rect=$('graph').getBoundingClientRect(),v=graphState.view;
-  const px=Math.min(1,Math.max(0,(clientX-rect.left)/rect.width)),py=Math.min(1,Math.max(0,(clientY-rect.top)/rect.height));
+  const pixelScale=Math.min(rect.width/v.width,rect.height/v.height);
+  const px=Math.min(1,Math.max(0,(clientX-rect.left-(rect.width-v.width*pixelScale)/2)/(v.width*pixelScale))),py=Math.min(1,Math.max(0,(clientY-rect.top-(rect.height-v.height*pixelScale)/2)/(v.height*pixelScale)));
+  graphState.userViewChanged=true;
   const oldScale=graphState.fit.width/v.width,newScale=Math.min(8,Math.max(.6,oldScale*factor));
   const width=graphState.fit.width/newScale,height=graphState.fit.height/newScale;
   graphState.view={x:v.x+px*v.width-px*width,y:v.y+py*v.height-py*height,width,height};applyView()
@@ -122,13 +136,13 @@ function zoomAtCenter(factor){const rect=$('graph').getBoundingClientRect();zoom
 $('zoom-in').onclick=()=>zoomAtCenter(1.25);$('zoom-out').onclick=()=>zoomAtCenter(.8);$('zoom-fit').onclick=fitGraph;
 $('graph').addEventListener('wheel',event=>{event.preventDefault();zoomGraph(Math.exp(-event.deltaY*.0012),event.clientX,event.clientY)},{passive:false});
 $('graph').addEventListener('pointerdown',event=>{
-  if(event.button!==0||graphState.drag||event.target.closest('.node,.edge[role="button"]')||!graphState.view)return;
+  if(event.button!==0||graphState.drag||event.target.closest('.node,.edge-hit,.edge[role="button"]')||!graphState.view)return;
   graphState.drag={id:event.pointerId,x:event.clientX,y:event.clientY,view:{...graphState.view}};
   $('graph').setPointerCapture(event.pointerId);$('graph-viewport').classList.add('is-panning')
 });
 $('graph').addEventListener('pointermove',event=>{
   const drag=graphState.drag;if(!drag||drag.id!==event.pointerId)return;
-  const size=viewportSize();graphState.view={...drag.view,x:drag.view.x-(event.clientX-drag.x)*drag.view.width/size.width,y:drag.view.y-(event.clientY-drag.y)*drag.view.height/size.height};applyView()
+  graphState.userViewChanged=true;const size=viewportSize();graphState.view={...drag.view,x:drag.view.x-(event.clientX-drag.x)*drag.view.width/size.width,y:drag.view.y-(event.clientY-drag.y)*drag.view.height/size.height};applyView()
 });
 function stopPan(event){if(graphState.drag?.id!==event.pointerId)return;graphState.drag=null;$('graph-viewport').classList.remove('is-panning')}
 $('graph').addEventListener('pointerup',stopPan);$('graph').addEventListener('pointercancel',stopPan);$('graph').addEventListener('lostpointercapture',stopPan);
@@ -137,39 +151,51 @@ if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>{
   const scale=graphState.fit.width/graphState.view.width,cx=graphState.view.x+graphState.view.width/2,cy=graphState.view.y+graphState.view.height/2;
   graphState.fit=fittedView(graphState.bounds);
   const width=graphState.fit.width/scale,height=graphState.fit.height/scale;
-  graphState.view=scale===1?{...graphState.fit}:{x:cx-width/2,y:cy-height/2,width,height};applyView()
+  graphState.view=!graphState.userViewChanged?{...graphState.fit}:{x:cx-width/2,y:cy-height/2,width,height};applyView()
 }).observe($('graph-viewport'));
 function drawGraph(nodes,edges){
   const svg=$('graph'),key=`${mode}:${nodes.map(x=>x.id).join('|')}:${edges.map(x=>x.id||`${x.from}>${x.to}`).join('|')}`;
-  const xs=nodes.map(x=>x.x),ys=nodes.map(x=>x.y),paddingX=44,paddingY=edges.some(e=>e.from===e.to)?115:66;
+  const xs=nodes.map(x=>x.x),ys=nodes.map(x=>x.y),paddingX=mode==='metadata'?100:44,paddingY=edges.some(e=>e.from===e.to)?115:80;
   const bounds=nodes.length?{x:Math.min(...xs)-NODE_RADIUS-paddingX,y:Math.min(...ys)-NODE_RADIUS-paddingY,width:Math.max(...xs)-Math.min(...xs)+2*(NODE_RADIUS+paddingX),height:Math.max(...ys)-Math.min(...ys)+2*(NODE_RADIUS+paddingY)}:{x:0,y:0,width:600,height:400};
-  const preserve=graphState.key===key&&graphState.view;
+  const preserve=graphState.key===key&&graphState.view&&graphState.userViewChanged;
   graphState.key=key;graphState.bounds=bounds;graphState.fit=fittedView(bounds);
-  if(!preserve)graphState.view={...graphState.fit};applyView();svg.replaceChildren();
-  const defs=svgEl('defs'),marker=svgEl('marker',{id:'arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:6,markerHeight:6,orient:'auto'});
+  if(!preserve){graphState.view={...graphState.fit};graphState.userViewChanged=false}applyView();svg.replaceChildren();
+  requestAnimationFrame(()=>{if(!graphState.userViewChanged&&graphState.key===key)fitGraph()});
+  const defs=svgEl('defs'),marker=svgEl('marker',{id:'arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:6,markerHeight:6,orient:'auto-start-reverse'});
   marker.append(svgEl('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#8797aa'}));defs.append(marker);svg.append(defs);
   const map=new Map(nodes.map(x=>[x.id,x]));
+  const parallel=new Map();edges.forEach((edge,index)=>{const key=[edge.from,edge.to].sort().join('|');if(!parallel.has(key))parallel.set(key,[]);parallel.get(key).push(index)});
+  const renderedEdges=[];
   edges.forEach((e,index)=>{
     const a=map.get(e.from),b=map.get(e.to);if(!a||!b)return;
     const dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy)||1,ux=dx/distance,uy=dy/distance,nx=-uy,ny=ux;
     const sx=a.x+ux*NODE_RADIUS,sy=a.y+uy*NODE_RADIUS,tx=b.x-ux*NODE_RADIUS,ty=b.y-uy*NODE_RADIUS;
-    const relation=e.kind==='relation',self=a.id===b.id,curve=relation?Math.min(38,distance*.22):0,cx=(sx+tx)/2+nx*curve,cy=(sy+ty)/2+ny*curve;
-    const path=self?`M ${a.x+28} ${a.y-28} C ${a.x+98} ${a.y-112}, ${a.x-98} ${a.y-112}, ${a.x-28} ${a.y-28}`:relation?`M ${sx} ${sy} Q ${cx} ${cy} ${tx} ${ty}`:`M ${sx} ${sy} L ${tx} ${ty}`;
-    const line=svgEl('path',{d:path,class:`edge ${e.kind||''} ${e.status||''} ${selected?.kind==='relation'&&selected.id===e.id?'selected':''}`,'marker-end':'url(#arrow)','data-edge-index':index});
+    const relation=e.kind==='relation',self=a.id===b.id,siblings=parallel.get([e.from,e.to].sort().join('|')),rank=siblings.indexOf(index);
+    const curve=siblings.length>1?(rank-(siblings.length-1)/2)*38*(e.from<e.to?1:-1):relation?Math.min(38,distance*.22):0,cx=(sx+tx)/2+nx*curve,cy=(sy+ty)/2+ny*curve,loop=rank*28;
+    const path=self?`M ${a.x+28} ${a.y-28} C ${a.x+98+loop} ${a.y-112-loop}, ${a.x-98-loop} ${a.y-112-loop}, ${a.x-28} ${a.y-28}`:curve?`M ${sx} ${sy} Q ${cx} ${cy} ${tx} ${ty}`:`M ${sx} ${sy} L ${tx} ${ty}`;
+    const line=svgEl('path',{d:path,class:`edge ${e.kind||''} ${e.status||''} ${e.quiet?'quiet':''} ${selected?.id===e.id?'selected':''}`,'marker-end':'url(#arrow)','marker-start':e.bidirectional?'url(#arrow)':'none','data-edge-index':index});
     if(e.action){line.setAttribute('role','button');line.setAttribute('tabindex','0');line.setAttribute('aria-label',e.label||e.id);line.onclick=e.action;line.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();e.action()}}}
     const title=svgEl('title');title.textContent=e.label||e.kind||'连接';line.append(title);svg.append(line);
+    const hit=e.action?svgEl('path',{d:path,class:'edge-hit','aria-hidden':'true'}):null;
+    if(hit){hit.onclick=e.action;svg.append(hit)}
+    let textNode=null;
     if(e.label){
-      const midX=self?a.x:(relation?(sx+2*cx+tx)/4:(sx+tx)/2)+nx*(relation?0:12);
-      const midY=self?a.y-94:(relation?(sy+2*cy+ty)/4:(sy+ty)/2)+ny*(relation?0:12)-6;
-      const textNode=svgEl('text',{x:midX,y:midY,'text-anchor':'middle',class:`edge-label ${e.kind||''}`,'data-edge-label-for':index});
+      const midX=self?a.x:(curve?(sx+2*cx+tx)/4:(sx+tx)/2)+nx*(curve?0:12);
+      const midY=self?a.y-94-loop:(curve?(sy+2*cy+ty)/4:(sy+ty)/2)+ny*(curve?0:12)-6;
+      textNode=svgEl('text',{x:midX,y:midY,'text-anchor':'middle',class:`edge-label ${e.kind||''} ${e.showLabel===false?'label-hidden':''}`,'data-edge-label-for':index});
       textNode.textContent=clip(e.label,16);const labelTitle=svgEl('title');labelTitle.textContent=e.label;textNode.append(labelTitle);svg.append(textNode)
     }
+    const highlight=active=>{line.classList.toggle('hovered',active);textNode?.classList.toggle('hovered',active)};
+    [line,hit].filter(Boolean).forEach(item=>{item.onmouseenter=()=>highlight(true);item.onmouseleave=()=>highlight(false);item.onfocus=()=>highlight(true);item.onblur=()=>highlight(false)});
+    renderedEdges.push({edge:e,highlight});
   });
   nodes.forEach(n=>{
     const g=svgEl('g',{class:`node ${n.active?'selected':''}`,role:'button',tabindex:0,'aria-label':`${n.kind}：${n.label}`,'data-node-id':n.id});
     const fill=n.kind==='物理表'?'#e5f0fc':({Metric:'#e4f0fc',Measure:'#e7f4eb',Dimension:'#fff2df',Term:'#f4eafd',GeneralObject:'#e8f0f4'})[n.root]||'#f1f5f8';
     g.append(svgEl('circle',{cx:n.x,cy:n.y,r:NODE_RADIUS,fill}));
-    const t=svgEl('text',{x:n.x,y:n.y+4,'text-anchor':'middle'});t.textContent=circleLabel(n.label);g.append(t);
+    const t=svgEl('text',{x:n.x,y:n.y+4,'text-anchor':'middle',class:n.kind==='物理表'?'table-label':''});
+    if(n.kind==='物理表'){const lines=tableLabelLines(n.label);lines.forEach((line,i)=>{const span=svgEl('tspan',{x:n.x,y:n.y+(i-(lines.length-1)/2)*15+4});span.textContent=line;t.append(span)});const caption=svgEl('text',{x:n.x,y:n.y+NODE_RADIUS+16,'text-anchor':'middle',class:'table-caption'});caption.textContent=clip(n.subtitle,28);g.append(caption)}else t.textContent=circleLabel(n.label);g.append(t);
+    const highlightNode=active=>{svg.classList.toggle('is-node-hover',active&&mode==='metadata');renderedEdges.forEach(({edge,highlight})=>highlight(active&&(edge.from===n.id||edge.to===n.id)))};g.onmouseenter=()=>highlightNode(true);g.onmouseleave=()=>highlightNode(false);g.onfocus=()=>highlightNode(true);g.onblur=()=>highlightNode(false);
     const title=svgEl('title');title.textContent=`${n.label}${n.subtitle?` · ${n.subtitle}`:''}\n${n.id}`;g.append(title);g.onclick=n.action;g.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();n.action()}};svg.append(g)
   })
 }
@@ -211,17 +237,65 @@ function ontologyGraph(){
   $('graph-foot').textContent=`数据属性、实例和证据在右侧详情；源行结构留在元数据模式。另有 ${OV.omitted_relation_type_ids?.length||0} 个关系类型未画成端点连线，因为端点未确定或涉及源行结构。`;
   drawGraph(nodes,edges)
 }
+// Layout depends on checked graph topology, not business names or file order.
+function tableLabelLines(value){
+  const chars=[...String(value||'')],lines=[];let line='',width=0;
+  for(const char of chars){const next=/[\u2e80-\u9fff]/u.test(char)?11:6;if(width+next>68){lines.push(line);line='';width=0;if(lines.length===2){lines[1]=lines[1].slice(0,-1)+'…';return lines}}line+=char;width+=next}
+  if(line)lines.push(line);return lines.slice(0,2)
+}
+function metadataPositions(tables,links,focus=null,focusRadius=225){
+  const ids=new Set(tables.map(t=>t.id)),degree=new Map(tables.map(t=>[t.id,0])),pairs=new Map();
+  links.forEach(e=>{if(e.source===e.target||!ids.has(e.source)||!ids.has(e.target))return;const key=[e.source,e.target].sort().join('|');if(!pairs.has(key)){pairs.set(key,e);degree.set(e.source,degree.get(e.source)+1);degree.set(e.target,degree.get(e.target)+1)}});
+  const order=[...tables].sort((a,b)=>degree.get(b.id)-degree.get(a.id)||a.id.localeCompare(b.id));
+  if(focus&&ids.has(focus)){const rest=order.filter(t=>t.id!==focus),radius=Math.max(focusRadius,rest.length*26),out=new Map([[focus,{x:0,y:0}]]);rest.forEach((t,i)=>{const a=-Math.PI/2+2*Math.PI*i/rest.length;out.set(t.id,{x:radius*Math.cos(a),y:radius*Math.sin(a)})});return out}
+  const points=order.map((t,i)=>({id:t.id,x:Math.cos(i*2.399963)*Math.sqrt(i)*145,y:Math.sin(i*2.399963)*Math.sqrt(i)*145})),byId=new Map(points.map(p=>[p.id,p]));
+  // Bound browser work for large previews; still place every visible table.
+  if(points.length>120)return new Map(points.map(p=>[p.id,{x:p.x,y:p.y}]));
+  for(let step=0;step<220;step++){
+    const force=new Map(points.map(p=>[p.id,{x:-p.x*.0015,y:-p.y*.0015}]));
+    for(let i=0;i<points.length;i++)for(let j=i+1;j<points.length;j++){const a=points[i],b=points[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.max(1,Math.hypot(dx,dy)),power=11000/(d*d)+Math.max(0,155-d)*.22,fx=dx/d*power,fy=dy/d*power;force.get(a.id).x-=fx;force.get(a.id).y-=fy;force.get(b.id).x+=fx;force.get(b.id).y+=fy}
+    for(const e of pairs.values()){const a=byId.get(e.source),b=byId.get(e.target),dx=b.x-a.x,dy=b.y-a.y,d=Math.max(1,Math.hypot(dx,dy)),power=(d-195)*.008,fx=dx/d*power,fy=dy/d*power;force.get(a.id).x+=fx;force.get(a.id).y+=fy;force.get(b.id).x-=fx;force.get(b.id).y-=fy}
+    for(const p of points){const f=force.get(p.id),length=Math.max(1,Math.hypot(f.x,f.y)),speed=Math.min(5,Math.max(.4,(220-step)/35));p.x+=f.x/length*Math.min(length,speed);p.y+=f.y/length*Math.min(length,speed)}
+  }
+  return new Map(points.map(p=>[p.id,{x:p.x,y:p.y}]))
+}
+let metadataLinkGroups=new Map();
 function metadataGraph(){
-  const tables=M.tables||[],nodes=[],edges=[],cols=Math.min(tables.length>12?4:3,Math.max(1,tables.length));
-  tables.forEach((t,index)=>nodes.push(node(t.id,name(t),'物理表',105+(index%cols)*184,82+Math.floor(index/cols)*106,()=>select('table',t.id),selected?.kind==='table'&&selected.id===t.id,t.schema||'')));
-  (M.links||[]).filter(x=>x.status==='declared'&&TABLE.has(x.source)&&TABLE.has(x.target)).forEach(link=>edges.push({id:link.id,from:link.source,to:link.target,kind:'declared',label:`${link.source_field||'?'} → ${link.target_field||'?'}`,action:()=>select('technical_link',link.id)}));
-  $('graph-title').textContent='物理元数据图';
-  $('graph-subtitle').textContent=`${tables.length} 张物理表 · ${edges.length} 条声明外键。列、约束和来源在选中表的详情中查看。`;
-  $('graph-foot').textContent=`本地 schema/CSV 快照图；只在画布上显示声明关系。技术匹配和未核验候选不等于外键或本体关系，可在选表详情中检查。${M.total_tables>tables.length?'页面表预览已截断。':''}`;
+  const allTables=M.tables||[],nodes=[],edges=[];
+  const focus=selected&&['table','column','technical_link','table_link_group','metadata_record_type'].includes(selected.kind)?tableId:null;
+  const allLinks=(M.links||[]).filter(x=>TABLE.has(x.source)&&TABLE.has(x.target));
+  const visibleLinks=allLinks.filter(x=>!focus||x.source===focus||x.target===focus);
+  const neighborIds=new Set([focus,...visibleLinks.flatMap(x=>[x.source,x.target])]);
+  const tables=focus?allTables.filter(t=>neighborIds.has(t.id)):allTables;
+  const focusColumns=expandedTables.has(focus)?(M.details?.[focus]?.columns?.length||0):0;
+  const positions=metadataPositions(tables,visibleLinks,focus,focusColumns?210+Math.ceil(focusColumns/10)*110:225);
+  for(const t of tables){const pos=positions.get(t.id),detail=M.details?.[t.id]||{},columns=expandedTables.has(t.id)?detail.columns||[]:[];
+    nodes.push(node(t.id,name(t),'物理表',pos.x,pos.y,()=>select('table',t.id),selected?.kind==='table'&&selected.id===t.id,t.table_name||t.id));
+    columns.forEach((column,i)=>{const angle=-Math.PI/2+2*Math.PI*(i%10)/Math.min(10,columns.length),radius=130+Math.floor(i/10)*110,x=pos.x+Math.cos(angle)*radius,y=pos.y+Math.sin(angle)*radius;
+      nodes.push(node(column.id,name(column),'字段',x,y,()=>{tableId=t.id;select('column',column.id)},selected?.kind==='column'&&selected.id===column.id,column.column_comment||column.data_type||''));
+      edges.push({from:t.id,to:column.id,kind:'table_has_column',label:'含字段',showLabel:false,quiet:true});
+    });
+  }
+  const visibleNodeIds=new Set(nodes.map(x=>x.id));metadataLinkGroups=new Map();
+  for(const link of visibleLinks){
+    const from=visibleNodeIds.has(link.source_column_id)?link.source_column_id:link.source,to=visibleNodeIds.has(link.target_column_id)?link.target_column_id:link.target;
+    if(from===link.source&&to===link.target){
+      const key='table_pair:'+([from,to].sort().join(':')),group=metadataLinkGroups.get(key)||{id:key,source:from,target:to,links:[]};group.links.push(link);metadataLinkGroups.set(key,group);
+    }else edges.push({id:link.id,from,to,kind:link.status==='declared'?'declared':'technical_link',status:link.status,label:`${link.source_field||'?'} → ${link.target_field||'?'}`,showLabel:!!focus,action:()=>{tableId=link.source;select('technical_link',link.id)}});
+  }
+  const important=new Set([...metadataLinkGroups.values()].sort((a,b)=>b.links.length-a.links.length||a.id.localeCompare(b.id)).filter(g=>g.links.length>=3).slice(0,4).map(g=>g.id));
+  for(const group of metadataLinkGroups.values()){
+    const declared=group.links.every(x=>x.status==='declared'),subset=group.links.every(x=>x.status==='observed_subset');group.bidirectional=group.links.some(x=>x.source===group.target&&x.target===group.source);
+    const prominent=!!focus||declared||important.has(group.id);
+    edges.push({id:group.id,from:group.source,to:group.target,kind:declared?'declared':'technical_link',status:declared?'declared':subset?'observed_subset':'verified_technical',bidirectional:group.bidirectional,label:`${group.links.length} ${declared?'声明外键':'字段关联'}`,showLabel:prominent,quiet:!prominent,action:()=>{tableId=group.source;select('table_link_group',group.id)}});
+  }
+  $('graph-title').textContent=focus?'元数据图 · 关联邻域':'元数据图';
+  $('graph-subtitle').textContent=`${tables.length} / ${allTables.length} 张表 · ${visibleLinks.length} 条字段关联，合并为 ${metadataLinkGroups.size} 组表间连接。点击表聚焦，悬停节点或连线查看关系。`;
+  $('graph-foot').textContent=`绿色为声明外键，蓝色为技术匹配，棕色为部分命中。双箭头表示两个方向均有字段关联，具体条件见右侧。${focus?`当前聚焦 ${name(TABLE.get(focus))}，右侧可恢复全图。`:'默认仅显示主要连线标签，所有细线仍可点击。'}${M.total_tables>allTables.length?'页面仅显示部分表。':''}`;
   drawGraph(nodes,edges)
 }
 function renderGraph(){if(mode==='ontology')ontologyGraph();else metadataGraph()}
 function render(){if(mode==='ontology'){const derived=(OV.nodes||[]).filter(x=>!(O.object_roots||[]).some(root=>root.id===x.id));const counts=Object.fromEntries(Object.keys(rootNames).map(root=>[root,derived.filter(x=>rootOf(x)===root).length]));$('notice').textContent=`已接受派生对象：指标 ${counts.Metric||0}、度量 ${counts.Measure||0}、维度 ${counts.Dimension||0}、术语 ${counts.Term||0}、一般对象 ${counts.GeneralObject||0}。图中只画继承和明确端点的对象关系；属性、实例与证据请选中对象查看。${D.preview?.notice||''}`}
-else $('notice').textContent=`本地物理元数据图：${M.node_kinds?.DatasetSnapshot||0} 个快照、${M.total_tables||0} 张表、${M.node_kinds?.Column||0} 列、声明外键 ${M.link_counts?.declared||0}。画布不混入源行结构、字段节点和候选连接。这是本地 DataHub 兼容交换视图，不是 DataHub 服务端关系图。${D.preview?.notice||''}`;
+else $('notice').textContent=`本地快照：${M.total_tables||0} 张表、${M.node_kinds?.Column||0} 列。字段默认收起，条件和转换规则保留在关联详情中。技术匹配不代表业务依赖或数据血缘。${D.preview?.notice||''}`;
 renderIndex();renderGraph();renderDetails()}render();
 </script></body></html>

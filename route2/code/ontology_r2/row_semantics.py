@@ -69,22 +69,31 @@ def classify_row_purpose(table, *, accepted_dimension_fields=()):
     times = []
     dimensions = []
     values = []
+    inferred = {}
+    for item in table.get("inferred_semantic_roles", ()):
+        if item.get("status") == "source_verified_role_candidate":
+            inferred.setdefault(item["column"], set()).add(item["role"])
     for name in table["column_names"]:
         if name not in safe or name in pk:
             continue
         column = columns[name]
         comment = str(column.get("column_comment") or "")
-        text = name + " " + comment
-        numeric_business_value = bool(_VALUE.search(text) and
+        proposed = inferred.get(name, set())
+        # Match each source independently: appending an empty comment changes
+        # the boundary of plain names such as "value" and "region".
+        numeric_business_value = bool((_VALUE.search(name) or _VALUE.search(comment)
+                                      or "numeric_business_value" in proposed) and
                                       _numeric_value(column, profiles.get(name, {})))
         temporal_shape = _temporal_value(column, profiles.get(name, {}))
         # A value column may be described as "按月统计的销售金额". The comment
         # specifies its grain, not the column's own values. Prefer observed
         # temporal shape over lexical time words in a comment.
-        time_candidate = bool(_TIME.search(name) or (_TIME.search(comment) and temporal_shape))
+        time_candidate = bool(_TIME.search(name) or (_TIME.search(comment) and temporal_shape)
+                              or "business_time" in proposed)
         if time_candidate and (temporal_shape or not numeric_business_value):
             times.append(name)
-        if _DIMENSION.search(text) or name in accepted_dimension_fields:
+        if (_DIMENSION.search(name) or _DIMENSION.search(comment) or name in accepted_dimension_fields
+                or "dimension_coordinate" in proposed):
             dimensions.append(name)
         if numeric_business_value and name not in times:
             values.append(name)
@@ -93,7 +102,12 @@ def classify_row_purpose(table, *, accepted_dimension_fields=()):
     tokens = set(table["table_name"].casefold().split("_"))
     has_definition_text = bool(roles.get("description") or roles.get("formula"))
     fact_shape = bool(times and dimensions and values)
-    if tokens & _CONTROL and fact_shape:
+    model_fact_shape = all(any(role in rs for rs in inferred.values()) for role in
+                           ("business_time", "dimension_coordinate", "numeric_business_value"))
+    if fact_shape and model_fact_shape:
+        purpose = "business_fact"
+        reason = "observed_shapes_and_source_checked_field_role_candidates"
+    elif tokens & _CONTROL and fact_shape:
         purpose = "unresolved"
         reason = "control_table_name_and_business_fact_evidence_coexist"
     elif tokens & _CONTROL:
@@ -117,8 +131,8 @@ def classify_row_purpose(table, *, accepted_dimension_fields=()):
                                  "business_time": times, "dimension_coordinate": dimensions,
                                  "numeric_business_value": values},
             "scope": "imported_csv_snapshot_only",
-            "classification_granularity": "table_level_heuristic",
-            "authority": "heuristic_candidate_not_business_fact_proof",
+            "classification_granularity": "table_level_candidate_from_column_evidence",
+            "authority": "candidate_not_business_fact_proof",
             "accepted_dimension_fields_used": sorted(accepted_dimension_fields & set(dimensions))}
 
 

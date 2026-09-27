@@ -245,16 +245,8 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
     for table_name, table in data.tables.items():
         roles, reference, fallback, report = _columns(table, max_unknown_fields_per_table)
         row_purpose = classify_row_purpose(table)
-        # A sample-backed model suggestion can widen retrieval, but it cannot
-        # alone establish that every row in an opaque table is a definition.
-        # Keep those cards uncertain until independent row-purpose evidence is
-        # available; do not silently promote them to exact type seeds.
-        if table.get("inferred_semantic_roles") and row_purpose["purpose"] == "definition_data":
-            prior = {**table, "inferred_semantic_roles": []}
-            if not _field_roles(prior).get("name"):
-                row_purpose = {**row_purpose, "purpose": "unresolved",
-                               "reason": "inferred_column_role_is_candidate_not_definition_proof",
-                               "authority": "source_checked_role_candidate_only"}
+        # Candidate roles widen recall. The later record-level compiler and
+        # Judge still decide whether a particular row really defines a type.
         quality = (4 if roles.get("name") and any(roles.get(role) for role in
                    ("description", "formula", "unit", "scope")) else
                    3 if roles.get("name") else 2 if roles.get("description") or roles.get("formula") else 1)

@@ -113,14 +113,8 @@ def _value_index_eligibility(data, field, max_length):
         if (isinstance(longest, int) and longest > max_length
                 and isinstance(short, int) and short / usable < 0.05):
             return False, "predominantly_long_text"
-        numeric = profile.get("numeric_shape_count")
-        distinct = profile.get("approx_distinct_usable")
-        # Approximate cardinality only excludes an obviously continuous field;
-        # a short snapshot or an identifier-like name is never excluded here.
-        if (usable >= 100 and isinstance(numeric, int)
-                and isinstance(distinct, (int, float))
-                and numeric / usable >= 0.98 and distinct / usable >= 0.95):
-            return False, "high_cardinality_numeric_without_key_cue"
+        # A high-cardinality integer may be an undocumented business code.
+        # Keep it in bounded value recall and mark numeric coincidence as risk.
     return True, "short_or_unknown_value_shape"
 
 
@@ -140,7 +134,7 @@ def _compatible_value_pair(data, source, target, *, nonnumeric_shared=False):
     # Distinct, nonnumeric raw values can recall differently named fields.
     # This is only a technical lead; validate_candidate checks full rows and
     # leaves its semantic_relation unresolved.
-    return nonnumeric_shared and source[0] != target[0]
+    return source[0] != target[0]
 
 
 def _full_value_pairs(data, fields, max_length, max_fanout, *, on_step=None,
@@ -264,6 +258,101 @@ def _conditioned_pairs(data, fields, max_values):
     return proposals, truncated
 
 
+def _fair_source_order(items, source_of, quality):
+    """Interleave source tables and fields before applying a global budget."""
+    tables = defaultdict(lambda: defaultdict(list))
+    for item in items:
+        table, field = source_of(item)
+        tables[table][field].append(item)
+    for fields in tables.values():
+        for values in fields.values():
+            values.sort(key=quality, reverse=True)
+    uses = defaultdict(int)
+    ordered = []
+    while tables:
+        for table in sorted(list(tables)):
+            fields = tables[table]
+            field = min(fields, key=lambda f: (uses[(table, f)], quality(fields[f][-1]), f))
+            ordered.append(fields[field].pop())
+            uses[(table, field)] += 1
+            if not fields[field]:
+                del fields[field]
+            if not fields:
+                del tables[table]
+    return ordered
+
+
+def _value_conditioned_pairs(data, fields, shared, *, max_values, max_pairs=64,
+                             max_selector_fields=4):
+    """Find discriminator branches from observed containment, without a literal vocabulary.
+
+    Candidate pairs come from the inverted value index, not all field products.
+    A branch is proposed only when its hit rate exceeds the remaining rows.
+    Numeric/Chinese discriminators are treated as opaque original literals.
+    """
+    fields_by_table = defaultdict(list)
+    for table, field in fields:
+        fields_by_table[table].append(field)
+    selectors, selector_omissions = {}, []
+    for table, names in fields_by_table.items():
+        info = data.tables[table]
+        choices = []
+        profiles = {p['column']: p for p in info.get('profiles', [])}
+        for field in names:
+            if field in info.get('pk', []):
+                continue
+            profile = profiles.get(field, {})
+            approximate = profile.get('approx_distinct_usable')
+            if isinstance(approximate, (int, float)) and approximate > max_values * 2:
+                continue
+            st, sf = _checked_field(data, table, field)
+            values = data.db.execute(f"SELECT DISTINCT {sf} FROM {st} WHERE {sf} IS NOT NULL "
+                                     f"AND trim({sf}) <> '' LIMIT ?", [max_values + 1]).fetchall()
+            if 2 <= len(values) <= max_values:
+                usable = profile.get('usable_count')
+                if type(usable) is not int:
+                    usable = data.db.execute(f"SELECT count(*) FROM {st} WHERE {sf} IS NOT NULL AND trim({sf}) <> ''").fetchone()[0]
+                # A unique ID/value would select individual rows, not a reusable
+                # discriminator. Explicit type names remain bounded hints.
+                if len(values) < usable or set(_tokens(field)) & {'type', 'kind', 'category'}:
+                    choices.append(field)
+        choices.sort(key=lambda name: (not bool(set(_tokens(name)) & {'type', 'kind', 'category'}), name))
+        selectors[table] = choices[:max_selector_fields]
+        selector_omissions.extend(f'{table}.{field}' for field in choices[max_selector_fields:])
+    ranked = _fair_source_order(
+        [(source, target) for source, target in shared
+         if source[0] != target[0] and selectors[source[0]]], lambda pair: pair[0],
+        lambda pair: (pair[0][1] in data.tables[pair[0][0]].get('pk', []),
+                      -shared[pair][0], pair))
+    results = []
+    for source, target in ranked[:max_pairs]:
+        st, sk = _checked_field(data, *source)
+        tt, tk = _checked_field(data, *target)
+        for discriminator in selectors[source[0]]:
+            if discriminator == source[1]:
+                continue
+            rows = data.db.execute(f"""WITH keys AS (
+                SELECT DISTINCT {tk} AS ref FROM {tt} WHERE {tk} IS NOT NULL AND trim({tk}) <> ''
+            ) SELECT s.{qi(discriminator)}, count(*), count(t.ref)
+              FROM {st} s LEFT JOIN keys t ON s.{sk}=t.ref
+              WHERE s.{sk} IS NOT NULL AND trim(s.{sk}) <> ''
+              GROUP BY s.{qi(discriminator)}""").fetchall()
+            total, matches = sum(r[1] for r in rows), sum(r[2] for r in rows)
+            for literal, count, matched in rows:
+                outside, outside_match = total - count, matches - matched
+                if (literal is None or not str(literal).strip() or not matched or not outside
+                        or matched / count <= outside_match / outside):
+                    continue
+                results.append({'source': source, 'target': target,
+                    'suggested_selector': {discriminator: literal}, 'suggested_scope_bindings': {},
+                    'target_role_priority': 1, 'condition_discovery': 'observed_value_containment',
+                    'condition_evidence': {'branch_rows': count, 'branch_matches': matched,
+                                           'outside_rows': outside, 'outside_matches': outside_match}})
+    return results, {'conditional_pair_checks': min(len(ranked), max_pairs),
+                     'conditional_pairs_not_probed': max(0, len(ranked)-max_pairs),
+                     'conditional_selector_fields_not_probed': selector_omissions}
+
+
 def propose_candidates(data, *, max_candidates_total=2000,
                        max_per_source_per_channel=20,
                        max_indexed_fields=64,
@@ -271,7 +360,8 @@ def propose_candidates(data, *, max_candidates_total=2000,
                        max_value_length=96,
                        max_fields_per_common_value=32,
                        value_index_mode="sample", max_condition_values_per_field=64,
-                       max_conditional_candidates=128,
+                       max_conditional_candidates=128, max_conditional_pair_checks=64,
+                       max_condition_fields_per_table=4,
                        on_step=None, on_note=None):
     """Recall directional field pairs from declarations, names and raw values.
 
@@ -288,7 +378,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
     limits = (max_candidates_total, max_per_source_per_channel,
               max_indexed_values_per_field, max_value_length,
               max_fields_per_common_value, max_condition_values_per_field,
-              max_conditional_candidates)
+              max_conditional_candidates, max_conditional_pair_checks, max_condition_fields_per_table)
     if any(not isinstance(x, int) or x <= 0 for x in limits):
         raise ValueError("Discovery limits must be positive integers")
     all_fields = _fields(data)
@@ -308,11 +398,34 @@ def propose_candidates(data, *, max_candidates_total=2000,
                 declared.add((source, target))
                 proposals[(source, target)]["channels"].add("declared_fk")
 
+    # Blocking indexes avoid an all-fields squared metadata comparison. Only
+    # exact/stem blocks and explicitly mentioned qualified targets are checked.
+    by_stem, by_name, generic_by_table = defaultdict(set), defaultdict(set), defaultdict(set)
+    qualified = defaultdict(set)
+    for target in fields:
+        by_stem[_stem(target[1])].add(target)
+        by_name[target[1].casefold()].add(target)
+        info = data.tables[target[0]]
+        qualified[(info.get("table_name", target[0].rsplit(".", 1)[-1]) + "." + target[1]).casefold()].add(target)
+        qualified[(target[0] + "." + target[1]).casefold()].add(target)
+        if _tokens(target[1]) in (("id",), ("code",), ("key",), ("uuid",)):
+            name = _table_stem(info)
+            generic_by_table[name].add(target)
+            generic_by_table[name[:-1]].add(target)
     metadata_by_source = defaultdict(list)
     for source in fields:
-        for target in fields:
-            if _metadata_pair(source, target, data):
-                metadata_by_source[source].append(target)
+        stem = _stem(source[1])
+        block = set(by_stem.get(stem, ())) if stem else set()
+        block.update(by_name.get(source[1].casefold(), ()))
+        if stem:
+            block.update(generic_by_table.get(stem, ()))
+        comment = next((c.get("column_comment") or "" for c in data.tables[source[0]].get("columns", [])
+                        if c.get("column_name") == source[1]), "").casefold()
+        for ref in re.findall(r"\w+(?:\.\w+){1,2}", comment):
+            if ref in qualified:
+                block.update(qualified[ref])
+        metadata_by_source[source] = [target for target in block
+                                      if _metadata_pair(source, target, data)]
         if on_step is not None:
             on_step(f"字段名 {source[0]}.{source[1]}")
     omitted_metadata = 0
@@ -416,9 +529,23 @@ def propose_candidates(data, *, max_candidates_total=2000,
     conditional, truncated_conditions = (
         _conditioned_pairs(data, fields, max_condition_values_per_field)
         if value_index_mode == "full_distinct" else ([], []))
+    learned, learned_coverage = (_value_conditioned_pairs(
+        data, fields, shared, max_values=max_condition_values_per_field,
+        max_pairs=max_conditional_pair_checks, max_selector_fields=max_condition_fields_per_table)
+        if value_index_mode == "full_distinct" else ([], {}))
+    seen_conditions = {(item["source"], item["target"], tuple(sorted(item["suggested_selector"].items())))
+                       for item in conditional}
+    conditional.extend(item for item in learned if
+        (item["source"], item["target"], tuple(sorted(item["suggested_selector"].items()))) not in seen_conditions)
     conditional.sort(key=lambda item: (
+        item.get("condition_discovery") == "observed_value_containment",
+
         item["source"], tuple(sorted(item["suggested_selector"].items())),
         item["target_role_priority"], item["target"]))
+    conditional = _fair_source_order(conditional, lambda item: item["source"],
+        lambda item: (item.get("condition_discovery") == "observed_value_containment",
+                      item["target_role_priority"], tuple(sorted(item["suggested_selector"].items())),
+                      item["target"]))
     retained_conditioned = conditional[:min(max_conditional_candidates, max_candidates_total)]
     retained = ranked[:max(0, max_candidates_total - len(retained_conditioned))]
     # Never silently lose a declared FK behind a global candidate budget.
@@ -440,8 +567,11 @@ def propose_candidates(data, *, max_candidates_total=2000,
             "shared_sample_value_count": shared.get((source, target), (0, False))[0],
             "shared_value_count_scope": value_index_mode,
             "numeric_overlap_only": shared.get((source, target), (0, False))[1],
+            "risk_flags": (["numeric_value_coincidence"] if shared.get((source, target), (0, False))[1] else []),
             "target_declared_pk": target[1] in data.tables[target[0]].get("pk", []),
             "target_role_priority": item["target_role_priority"],
+            "condition_discovery": item.get("condition_discovery", "name_hint_and_observed_literal"),
+            "condition_evidence": item.get("condition_evidence", {}),
             "decision": {"status": "proposed", "semantic_relation": "unresolved"},
         })
     for source, target in retained:
@@ -455,6 +585,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
             "shared_sample_value_count": count,
             "shared_value_count_scope": value_index_mode,
             "numeric_overlap_only": entry.get("numeric_overlap_only", False),
+            "risk_flags": (["numeric_value_coincidence"] if entry.get("numeric_overlap_only") else []),
             "target_declared_pk": target[1] in data.tables[target[0]].get("pk", []),
             "decision": {"status": "proposed", "semantic_relation": "unresolved"},
         })
@@ -478,7 +609,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
             if eligibility and not eligibility[(table, column)][0]},
         "value_index_eligibility_policy": (
             "all nonempty nonsensitive nonaudit fields unless complete profile proves "
-            "oversized text or high-cardinality numeric without a key cue"
+            "oversized text; numeric coincidences remain risk-marked candidates"
             if value_index_mode == "full_distinct" else "sampled field budget"),
         "value_index_mode": value_index_mode,
         "oversized_distinct_values_by_field": {key: count for key, count in oversized_values.items()
@@ -491,6 +622,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
         "condition_values_truncated": truncated_conditions,
         "conditional_candidates_queued": len(conditional) - len(retained_conditioned),
         "conditional_candidates_recalled": len(retained_conditioned),
+        **learned_coverage,
         "candidate_count": len(candidates),
     }}
 
@@ -499,14 +631,178 @@ def _ratio(numerator, denominator):
     return numerator / denominator if denominator else None
 
 
+TRANSFORMS = {"identity", "nfkc_whitespace_casefold", "source_alias_items",
+              "target_alias_items", "both_alias_items"}
+
+
+def _match_keys(value, operator):
+    """The executable meaning of the allowlisted transform DSL."""
+    from .value_aliases import _forms
+    if value is None:
+        return []
+    if operator == "identity":
+        return [value] if value.strip() else []
+    return sorted({part["canonical"] for part in _forms(value, operator == "alias_items")})
+
+
+def _matching_ctes(data, candidate, selector=None, scope_bindings=None, transform="identity"):
+    """Build fixed SQL; caller inputs select fields/literals, never SQL text.
+
+    scope_bindings uses target->source as in validate_candidate. Multiple alias
+    tokens matching one target row count once; two target rows remain ambiguous.
+    """
+    if transform not in TRANSFORMS:
+        raise ValueError("Unsupported association transform")
+    selector, scope_bindings = selector or {}, scope_bindings or {}
+    if not isinstance(selector, dict) or not isinstance(scope_bindings, dict):
+        raise ValueError("selector and scope_bindings must be mappings")
+    source, target = candidate["source"], candidate["target"]
+    st, sk = _checked_field(data, source["table"], source["field"])
+    tt, tk = _checked_field(data, target["table"], target["field"])
+    for field, literal in selector.items():
+        _checked_field(data, source["table"], field)
+        if literal is not None and not isinstance(literal, str):
+            raise ValueError("selector values must be strings or null")
+    pairs = sorted(scope_bindings.items())
+    for target_col, source_col in pairs:
+        _checked_field(data, source["table"], source_col)
+        _checked_field(data, target["table"], target_col)
+    if not data.db.execute("SELECT count(*) FROM duckdb_functions() WHERE function_name='__r2_match_keys'").fetchone()[0]:
+        data.db.create_function("__r2_match_keys", _match_keys,
+                                ["VARCHAR", "VARCHAR"], "VARCHAR[]")
+    source_op = "alias_items" if transform in {"source_alias_items", "both_alias_items"} else (
+        "identity" if transform == "identity" else "normalized")
+    target_op = "alias_items" if transform in {"target_alias_items", "both_alias_items"} else (
+        "identity" if transform == "identity" else "normalized")
+    source_scope = ''.join(f', s.{qi(sc)} AS scope_{i}' for i, (_, sc) in enumerate(pairs))
+    target_scope = ''.join(f', t.{qi(tc)} AS scope_{i}' for i, (tc, _) in enumerate(pairs))
+    source_usable = ' AND '.join(f"s.{qi(sc)} IS NOT NULL AND trim(s.{qi(sc)}) <> ''"
+                                 for _, sc in pairs) or 'TRUE'
+    target_usable = ' AND '.join(f"t.{qi(tc)} IS NOT NULL AND trim(t.{qi(tc)}) <> ''"
+                                 for tc, _ in pairs) or 'TRUE'
+    selected = ' AND '.join(f's.{qi(col)} = ?' for col in selector) or 'TRUE'
+    scope_group = ''.join(f', scope_{i}' for i in range(len(pairs)))
+    join_scope = ''.join(f' AND s.scope_{i} = t.scope_{i}' for i in range(len(pairs)))
+    source_groups = ''.join(f', s.scope_{i}' for i in range(len(pairs)))
+    join_match_scope = ''.join(f' AND s.scope_{i} = m.scope_{i}' for i in range(len(pairs)))
+    sql = f"""WITH source_rows AS (
+        SELECT s.__r2_row AS row_number, s.{sk} AS ref,
+               ({selected}) AS selected, ({source_usable}) AS scope_usable,
+               (s.{sk} IS NOT NULL AND trim(s.{sk}) <> '') AS usable {source_scope}
+        FROM {st} s
+    ), target_rows AS (
+        SELECT t.__r2_row AS row_number, t.{tk} AS ref,
+               ({target_usable}) AS scope_usable {target_scope} FROM {tt} t
+    ), source_values AS MATERIALIZED (
+        SELECT DISTINCT ref {scope_group}, TRUE AS usable, TRUE AS scope_usable
+        FROM source_rows WHERE usable AND scope_usable
+    ), target_values AS MATERIALIZED (
+        SELECT ref {scope_group}, count(*) AS multiplicity, min(row_number) AS row_number
+        FROM target_rows WHERE scope_usable AND ref IS NOT NULL AND trim(ref) <> ''
+        GROUP BY ref {scope_group}
+    ), source_tokens AS (
+        SELECT *, unnest(__r2_match_keys(ref, '{source_op}')) AS key FROM source_values
+    ), target_tokens AS (
+        SELECT *, unnest(__r2_match_keys(ref, '{target_op}')) AS key FROM target_values
+    ), target_keys AS (
+        SELECT key {scope_group}, sum(multiplicity) AS multiplicity,
+               min(row_number) AS target_row_number
+        FROM target_tokens WHERE key <> '' GROUP BY key {scope_group}
+    ), value_matches AS (
+        SELECT s.ref {source_groups},
+               CASE WHEN max(t.multiplicity) > 1 THEN 2
+                    ELSE nullif(count(DISTINCT t.target_row_number), 0) END AS multiplicity,
+               min(t.target_row_number) AS matched_target_row
+        FROM source_tokens s LEFT JOIN target_keys t ON s.key = t.key {join_scope}
+        GROUP BY s.ref {source_groups}
+    ), joined AS (
+        SELECT s.*, m.multiplicity, m.matched_target_row FROM source_rows s
+        LEFT JOIN value_matches m ON s.ref = m.ref {join_match_scope}
+    ), links AS (
+        SELECT row_number AS source_row_number, matched_target_row AS target_row_number
+        FROM joined WHERE multiplicity = 1
+    ) """
+    return sql, list(selector.values()), scope_group
+
+
+def association_match_sql(data, candidate, *, selector=None, scope_bindings=None,
+                          transform="identity"):
+    """Return a bounded-consumer-compatible SQL query for unique checked links.
+
+    Returns ``(sql, parameters)`` with source_row_number,target_row_number.
+    Consumer may append ORDER BY/LIMIT or paginate original source row numbers.
+    Ambiguous targets are excluded. No semantic relation is implied.
+    """
+    ctes, params, _ = _matching_ctes(data, candidate, selector, scope_bindings, transform)
+    return ctes + """SELECT l.source_row_number, l.target_row_number
+        FROM links l JOIN joined s ON s.row_number = l.source_row_number
+        WHERE s.selected IS TRUE AND s.multiplicity = 1""", params
+
+
+def _validate_transformed_candidate(data, candidate, *, selector, scope_bindings,
+                                    sample_limit, transform):
+    ctes, params, scope_group = _matching_ctes(data, candidate, selector, scope_bindings, transform)
+    names = ("source_rows", "selector_true", "selector_false", "selector_unknown",
+             "null_references", "empty_references", "whitespace_references", "missing_scope",
+             "eligible_references", "matched_references", "unique_matches", "ambiguous_matches",
+             "missing_in_input", "outside_eligible_references", "outside_matched_references")
+    conditions = [None, 'selected IS TRUE', 'selected IS FALSE', 'selected IS NULL',
+        'selected IS TRUE AND ref IS NULL', "selected IS TRUE AND ref = ''",
+        "selected IS TRUE AND ref <> '' AND trim(ref) = ''",
+        'selected IS TRUE AND usable AND NOT scope_usable',
+        'selected IS TRUE AND usable AND scope_usable',
+        'selected IS TRUE AND usable AND scope_usable AND multiplicity > 0',
+        'selected IS TRUE AND usable AND scope_usable AND multiplicity = 1',
+        'selected IS TRUE AND usable AND scope_usable AND multiplicity > 1',
+        'selected IS TRUE AND usable AND scope_usable AND multiplicity IS NULL',
+        'selected IS FALSE AND usable AND scope_usable',
+        'selected IS FALSE AND usable AND scope_usable AND multiplicity > 0']
+    aggregates = ', '.join('count(*)' + (f' FILTER (WHERE {c})' if c else '') for c in conditions)
+    result = dict(zip(names, data.db.execute(ctes + 'SELECT ' + aggregates + ' FROM joined', params).fetchone()))
+    distinct = data.db.execute(ctes + f"""SELECT count(*), count(*) FILTER (WHERE multiplicity > 0)
+        FROM (SELECT DISTINCT ref{scope_group}, multiplicity FROM joined
+              WHERE selected IS TRUE AND usable AND scope_usable)""", params).fetchone()
+    result['distinct_eligible_keys'], result['distinct_keys_matched'] = distinct
+    whole = data.db.execute(ctes + """SELECT count(*), count(*) FILTER (WHERE matched)
+        FROM (SELECT ref, bool_or(EXISTS(SELECT 1 FROM target_tokens t WHERE t.key=s.key)) AS matched
+              FROM source_tokens s WHERE usable GROUP BY ref)""", params).fetchone()
+    result['distinct_source_values'], result['distinct_source_values_in_target'] = whole
+    target = data.db.execute(ctes + """SELECT
+        (SELECT count(*) FROM target_rows WHERE scope_usable AND ref IS NOT NULL AND trim(ref) <> ''),
+        count(*), count(*) FILTER (WHERE multiplicity > 1), coalesce(max(multiplicity), 0)
+        FROM target_keys""", params).fetchone()
+    for name, value in zip(('target_rows_with_complete_key', 'target_distinct_keys',
+                            'target_duplicate_key_groups', 'target_max_multiplicity'), target):
+        result[name] = value
+    examples = data.db.execute(ctes + """SELECT row_number,
+        CASE WHEN multiplicity IS NULL THEN 'missing_in_input' ELSE 'ambiguous_target' END
+        FROM joined WHERE selected IS TRUE AND usable AND scope_usable
+        AND (multiplicity IS NULL OR multiplicity > 1) ORDER BY row_number LIMIT ?""",
+        [*params, sample_limit]).fetchall()
+    result['counterexample_rows'] = [{'row_number': row, 'reason': reason} for row, reason in examples]
+    result['distinct_key_inclusion_ratio'] = _ratio(result['distinct_keys_matched'], result['distinct_eligible_keys'])
+    result['whole_column_distinct_value_inclusion_ratio'] = _ratio(result['distinct_source_values_in_target'], result['distinct_source_values'])
+    result['unique_match_ratio'] = _ratio(result['unique_matches'], result['eligible_references'])
+    return {'candidate_id': candidate['candidate_id'], 'snapshot_id': data.snapshot_id,
+            'source': candidate['source'], 'target': candidate['target'],
+            'selector': selector or {}, 'scope_bindings': scope_bindings or {},
+            'normalization': transform, 'scan_scope': 'full_input', 'checks': result,
+            'decision': {'status': 'checked', 'semantic_relation': 'unresolved'}}
+
+
 def validate_candidate(data, candidate, *, selector=None, scope_bindings=None,
-                       sample_limit=5):
+                       sample_limit=5, transform="identity"):
     """Exactly check one raw-value field pair over the imported CSV snapshot.
 
     ``selector`` is a mapping of source fields to literal values, combined by
     SQL three-valued AND. ``scope_bindings`` maps target columns to source
     columns. Identity comparison only; no transformation or semantic claim.
     """
+    if type(sample_limit) is not int or sample_limit < 0:
+        raise ValueError("sample_limit must be nonnegative")
+    if transform != "identity":
+        return _validate_transformed_candidate(data, candidate, selector=selector,
+            scope_bindings=scope_bindings, sample_limit=sample_limit, transform=transform)
     source, target = candidate["source"], candidate["target"]
     source_table, source_key = _checked_field(data, source["table"], source["field"])
     target_table, target_key = _checked_field(data, target["table"], target["field"])
@@ -661,7 +957,8 @@ def discover_and_check(data, options=None, progress=None):
                "max_indexed_fields", "max_indexed_values_per_field",
                "max_value_length", "max_fields_per_common_value",
                "value_index_mode", "max_condition_values_per_field",
-               "max_conditional_candidates")
+               "max_conditional_candidates", "max_conditional_pair_checks",
+               "max_condition_fields_per_table")
     fields = len(_fields(data))
     index_limit = options.get("max_indexed_fields", 64)
     total = fields + min(fields, index_limit) if isinstance(index_limit, int) and index_limit > 0 else None
@@ -713,6 +1010,7 @@ def discover_and_check(data, options=None, progress=None):
     for reference, branches in conditioned_by_reference.items():
         for values in branches.values():
             values.sort(key=lambda c: (
+                c.get("condition_discovery") == "observed_value_containment",
                 -c["shared_sample_value_count"] if reference[1].endswith("_field") else 0,
                 c.get("target_role_priority", 2), rank(c)))
         order = []
@@ -806,10 +1104,13 @@ def discover_and_check(data, options=None, progress=None):
                             "scope are exact-checked where selected; JSON paths and semantic relation unverified"),
     })
     coverage["partial"] = bool(
-        coverage["fields_not_value_indexed"] or
+        coverage["fields_not_value_indexed"] or coverage["fields_not_index_eligible"] or
+        coverage["high_fanout_values_skipped"] or
         coverage["oversized_distinct_values_by_field"] or
         coverage["fields_with_truncated_value_samples"] or
         coverage["condition_values_truncated"] or
+        coverage.get("conditional_pairs_not_probed") or
+        coverage.get("conditional_selector_fields_not_probed") or
         coverage["conditional_candidates_queued"] or
         coverage["metadata_pairs_queued"] or coverage["value_pairs_queued"] or
         coverage["candidates_queued_global"] or

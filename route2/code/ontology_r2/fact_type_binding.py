@@ -16,7 +16,9 @@ from decimal import Decimal, InvalidOperation
 from itertools import combinations
 from typing import Literal
 
-from .column_roles import classify_columns
+from pydantic import Field
+
+from .column_roles import classify_columns, is_sensitive_column
 from .models import BuildPlan, DerivedType, Strict
 from .storage import digest, qi
 from .type_equivalence import _formula_key
@@ -25,12 +27,14 @@ from .type_equivalence import _formula_key
 class FactFieldBindingDecision(Strict):
     status: Literal["bind", "unresolved"]
     type_id: str | None = None
-    # Full, unabridged column comment.  A fragment could hide a conflicting
-    # qualifier or unit, so the compiler requires the whole original comment.
+    # Quote the complete comment, or the exact declared field name when the
+    # comment is absent. A numeric example never supplies business identity.
     source_column_quote: str = ""
     type_definition_quote: str = ""
     source_definition_evidence_id: str = ""
     type_source_quote: str = ""
+    scope_bindings: dict[str, str] = Field(default_factory=dict)
+    unit_column: str | None = None
     reason: str = ""
 
 
@@ -68,6 +72,28 @@ def _source_definition_evidence(item, data, *, max_chars):
     result = []
     cited = set(item.evidence_ids)
     for source in item.source_properties:
+        if item.evidence_scope == "source_schema" and source.role in ("name", "description"):
+            table = data.tables.get(source.source_table, {})
+            column = next((value for value in table.get("columns", [])
+                           if value["column_name"] == source.source_column), None)
+            for evidence_id in source.evidence_ids:
+                evidence = data.evidence.get(evidence_id) or {}
+                ref = evidence.get("source_ref") or {}
+                raw = evidence.get("raw_fragment")
+                kind = evidence.get("declaration_kind")
+                expected = ((column.get("column_comment") or "").strip()
+                            if column and kind == "column_comment" else
+                            column["column_name"] if column and kind == "column_name" else None)
+                if (evidence_id not in cited or evidence.get("origin") != "declared_metadata"
+                        or ref.get("snapshot_id") != data.snapshot_id
+                        or ref.get("table") != source.source_table
+                        or ref.get("column") != source.source_column
+                        or not expected or raw != expected or len(raw) > max_chars):
+                    return [], "source_field_declaration_invalid"
+                result.append({"evidence_id": evidence_id, "role": "description", "value": raw,
+                               "source_table": source.source_table, "source_column": source.source_column,
+                               "evidence_scope": "source_schema"})
+            continue
         if source.role not in ("description", "formula"):
             continue
         if not source.evidence_ids:
@@ -126,11 +152,17 @@ def _recall_types(data, core, table, column, *, max_candidates, max_definition_c
                 or _root_of(item, by_id) != "Metric"
                 or not item.label or not item.definition):
             continue
+        if item.evidence_scope == "source_schema" and not any(
+                source.source_table == table["name"] and source.source_column == column["column_name"]
+                for source in item.source_properties):
+            # A field declaration is scoped to its own source, not a cross-table
+            # identity assertion between equally named columns.
+            continue
         label = _norm(item.label)
         if not label:
             continue
         overlap = source_terms & _terms(item.label)
-        score = (100 if label in source_norm else 0) + 2 * len(overlap)
+        score = (100 if label in source_norm or item.evidence_scope == "source_schema" else 0) + 2 * len(overlap)
         if score == 0:
             continue
         evidence, invalid_reason = _source_definition_evidence(
@@ -146,13 +178,16 @@ def _recall_types(data, core, table, column, *, max_candidates, max_definition_c
     return found[:max_candidates], max(0, len(found) - max_candidates), dict(excluded)
 
 
-def _scope_consistent(item, table, column_comment, coordinates):
-    context = _norm((table.get("table_comment") or "") + " " + column_comment)
+def _scope_consistent(item, table, column_comment, coordinates, scope_bindings=None):
+    scope_bindings = scope_bindings or {}
     for key, value in item.applicability_scope.items():
-        if key in coordinates:
-            if _norm(coordinates[key]) != _norm(value):
+        field = scope_bindings.get(key, key)
+        if field in coordinates:
+            if _norm(coordinates[field]) != _norm(value):
                 return False
-        elif _norm(value) not in context:
+        else:
+            # Text mentioning a place is not a binding to the row's coordinate.
+            # Differently named coordinates require an explicit field mapping.
             return False
     return True
 
@@ -165,8 +200,43 @@ def _unit_consistent(item, column_comment):
     return not observed
 
 
+def field_unit_evidence(data, table, column):
+    """Read a declared/source-checked unit column over the current snapshot.
+
+    The returned singleton is usable only when every source row has the same
+    nonblank unit. A bounded sample cannot certify units for a whole field.
+    """
+    metadata = next((item for item in table["columns"] if item["column_name"] == column), None)
+    if (metadata is None or is_sensitive_column(metadata)
+            or column in table.get("semantic_excluded_columns", ())):
+        return None
+    role_supported = any(item.get("column") == column and item.get("role") == "unit"
+                         and item.get("status") == "source_verified_role_candidate"
+                         for item in table.get("inferred_semantic_roles", []))
+    if not role_supported and not re.search(r"(?:^|[_\s])(?:unit|uom)(?:[_\s]|$)|单位", column + " " + str(metadata.get("column_comment") or ""), re.I):
+        return None
+    sql = f"SELECT {qi(column)}, count(*), min(__r2_row) FROM {qi(table['sql_name'])} GROUP BY {qi(column)} ORDER BY {qi(column)} LIMIT 3"
+    values = data.db.execute(sql).fetchall()
+    if len(values) != 1 or values[0][0] is None or not str(values[0][0]).strip():
+        return {"column": column, "status": "mixed_or_missing_units"}
+    raw, count, row_number = values[0]
+    if count != table["rows"] or len(str(raw)) > 64:
+        return {"column": column, "status": "incomplete_unit_column"}
+    evidence_id = "unit_observation:" + digest([data.snapshot_id, table["name"], column, row_number])[:24]
+    data.evidence[evidence_id] = {
+        "id": evidence_id, "origin": "observed_record", "raw_fragment": str(raw),
+        "raw_fragment_truncated": False,
+        "source_ref": {"table": table["name"], "column": column, "row": row_number,
+                       "snapshot_id": data.snapshot_id},
+        "verification": {"scan_scope": "full_input", "same_nonblank_unit_rows": count},
+    }
+    return {"column": column, "status": "verified_single_unit", "value": str(raw),
+            "evidence_id": evidence_id}
+
+
 def _business_name_in_comment(item, comment, data):
-    surface = _norm(comment)
+    # Spaces and identifier separators do not distinguish a declared name.
+    surface = _norm(comment).replace("_", "")
     if not surface:
         return False
     names = [item.label]
@@ -177,11 +247,12 @@ def _business_name_in_comment(item, comment, data):
             evidence = data.evidence.get(evidence_id)
             if evidence and not evidence.get("raw_fragment_truncated"):
                 names.append(evidence.get("raw_fragment") or "")
-    return any(len(_norm(name)) >= 2 and _norm(name) in surface for name in names)
+    return any(len(_norm(name)) >= 2 and _norm(name).replace("_", "") in surface for name in names)
 
 
 def _validate_binding(decision, choices, data, table, column_comment,
-                      canonical_type_map, verified_equivalence_pairs):
+                      canonical_type_map, verified_equivalence_pairs, *, column_name="",
+                      coordinate_columns=(), unit_sources=()):
     if decision.status != "bind":
         return None, "llm_unresolved"
     matches = [(item, evidence) for _, item, evidence in choices
@@ -189,10 +260,18 @@ def _validate_binding(decision, choices, data, table, column_comment,
     if len(matches) != 1:
         return None, "unknown_or_unrecalled_type"
     item, evidence = matches[0]
-    if not column_comment or decision.source_column_quote != column_comment:
+    declaration = column_comment or column_name
+    if not declaration or decision.source_column_quote != declaration:
         return None, "column_comment_quote_missing_or_not_full"
-    if not _business_name_in_comment(item, column_comment, data):
+    local_schema_binding = item.evidence_scope == "source_schema" and any(
+        source.source_table == table["name"] and source.source_column == column_name
+        for source in item.source_properties)
+    if not local_schema_binding and not _business_name_in_comment(item, declaration, data):
         return None, "column_comment_lacks_business_type_name"
+    if (not set(decision.scope_bindings.values()) <= set(coordinate_columns)
+            or any(not key.strip() for key in decision.scope_bindings)
+            or len(set(decision.scope_bindings.values())) != len(decision.scope_bindings)):
+        return None, "scope_binding_not_a_unique_coordinate_column"
     if (not decision.type_definition_quote.strip()
             or decision.type_definition_quote != item.definition):
         return None, "type_definition_quote_invalid"
@@ -201,7 +280,14 @@ def _validate_binding(decision, choices, data, table, column_comment,
     if (original is None or not decision.type_source_quote.strip()
             or decision.type_source_quote != original["value"]):
         return None, "full_source_definition_quote_invalid"
-    if not _unit_consistent(item, column_comment):
+    if decision.unit_column:
+        unit = next((value for value in unit_sources if value["column"] == decision.unit_column), None)
+        unit_ok = (unit and unit["status"] == "verified_single_unit"
+                   and _norm(item.unit) == _norm(unit["value"])
+                   and not (_unit_from_comment(declaration) - {_norm(item.unit)}))
+    else:
+        unit_ok = _unit_consistent(item, declaration)
+    if not unit_ok:
         return None, "unit_missing_or_conflicting"
     # Equal labels, units and applicability among two accepted exact types are
     # still ambiguous when their definitions differ; the field cannot resolve
@@ -234,7 +320,7 @@ def _source_rows(data, table, candidate, coordinate_columns, *, limit):
 
 def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
                  max_source_rows, selected_type_id=None,
-                 equivalence_assertion_ids=()):
+                 equivalence_assertion_ids=(), unit_evidence_id=None):
     if candidate.get("candidate_status") != "candidate_only":
         return None, "unexpected_candidate_state"
     if candidate.get("business_type_binding") != "unresolved":
@@ -291,6 +377,10 @@ def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
         }
         evidence_ids.append(evidence_id)
     coordinates = candidate["coordinate_values"]
+    if decision.unit_column:
+        if not unit_evidence_id or unit_evidence_id not in data.evidence:
+            return None, "unit_column_changed_or_unverified"
+        evidence_ids.append(unit_evidence_id)
     instance_id = "fact_observation:" + digest([
         data.snapshot_id, table["name"], item.id, candidate["value_column"],
         coordinates, candidate["observed_value"]])[:24]
@@ -321,6 +411,9 @@ def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
             "type_definition_quote": decision.type_definition_quote,
             "type_source_quote": decision.type_source_quote,
             "source_definition_evidence_id": decision.source_definition_evidence_id,
+            "scope_bindings": decision.scope_bindings,
+            "bound_scope_values": {key: coordinates[field] for key, field in decision.scope_bindings.items()},
+            "unit_column": decision.unit_column,
         },
     }, None
 
@@ -330,6 +423,7 @@ async def bind_fact_observations(
     max_type_candidates_per_field=8, max_source_rows_per_instance=1000,
     max_binding_calls=50, max_definition_chars=2048,
     canonical_type_map=None, equivalence_assertions=(),
+    field_templates=(),
 ):
     """Return verified typed observations plus explicit unresolved coverage.
 
@@ -371,6 +465,13 @@ async def bind_fact_observations(
     instances = []
     skipped = Counter()
     attempts = accepted_fields = candidate_tuples = 0
+    template_by_field = {}
+    for template in field_templates or ():
+        key = (template.get("table"), template.get("value_column"))
+        if key in template_by_field and template_by_field[key] != template:
+            raise ValueError("Conflicting field templates for one source field")
+        template_by_field[key] = template
+    reused_templates = 0
     for report in fact_observations.get("tables", []):
         if report.get("row_purpose") != "business_fact":
             continue
@@ -383,12 +484,15 @@ async def bind_fact_observations(
         blocked_coordinates = bool(selected.get("omitted_dimensions")
                                    or selected.get("omitted_business_times"))
         columns = {entry["column_name"]: entry for entry in table["columns"]}
+        unit_sources = [value for column in columns
+                        if (value := field_unit_evidence(data, table, column)) is not None]
         by_field = {}
         for candidate in report.get("candidates", []):
             candidate_tuples += 1
             by_field.setdefault(candidate.get("value_column"), []).append(candidate)
         for field in report.get("value_fields", []):
             name = field["column"]
+            template = template_by_field.get((table_name, name))
             candidates = by_field.get(name, [])
             status = {"table": table_name, "value_column": name,
                       "candidate_tuples": len(candidates), "status": "candidate_only"}
@@ -399,16 +503,14 @@ async def bind_fact_observations(
                 reason = "missing_coordinate_or_value_column"
             elif not candidates:
                 reason = "no_emitted_tuples"
-            elif not str(columns[name].get("column_comment") or "").strip():
-                reason = "missing_value_column_comment"
-            elif attempts >= max_binding_calls:
+            elif template is None and attempts >= max_binding_calls:
                 reason = "binding_call_budget_exhausted"
             if reason:
                 status["reason"] = reason
                 skipped[reason] += len(candidates)
                 reports.append(status)
                 continue
-            comment = str(columns[name]["column_comment"]).strip()
+            comment = str(columns[name].get("column_comment") or "").strip()
             choices, omitted_types, excluded_types = _recall_types(
                 data, core, table, columns[name],
                 max_candidates=max_type_candidates_per_field,
@@ -438,13 +540,17 @@ async def bind_fact_observations(
                     "One decision for this value field, not per row. Only choose an exact "
                     "accepted Metric ontology type whose full definition fits the "
                     "column's business meaning. A lexical match is candidate recall only. "
-                    "If the column comment lacks the type's complete business name, unit or "
+                    "Use the complete column comment, or the exact source field declaration "
+                    "when comments are absent. If business identity, unit or "
                     "scope is uncertain, or several types remain plausible, return unresolved. "
-                    "For bind, copy the ENTIRE column comment, the ENTIRE type definition "
+                    "For bind, copy the ENTIRE source declaration, the ENTIRE type definition "
                     "and the ENTIRE source definition from one listed original fragment "
                     "with its evidence ID. Do not infer type identity from observed values."),
                 "table": table_name, "table_comment": table.get("table_comment") or "",
                 "value_column": name, "column_comment": comment,
+                "source_declaration": comment or name,
+                "source_checked_unit_columns": unit_sources,
+                "scope_binding_contract": "Map each differently named type scope key to one coordinate column; no comment-text fallback.",
                 "coordinate_columns": coordinate_columns,
                 "type_candidates_omitted_by_limit": omitted_types,
                 "type_candidates": [
@@ -456,13 +562,19 @@ async def bind_fact_observations(
                      "full_source_definitions": evidence}
                     for _, item, evidence in choices],
             }
-            attempts += 1
             try:
-                decision = await llm.ask("fact_type_binding", payload,
-                                         FactFieldBindingDecision)
+                if template is not None:
+                    from .fact_schema_induction import template_binding_decision
+                    decision = template_binding_decision(template, data, table, name, coordinate_columns, core)
+                    reused_templates += 1
+                else:
+                    attempts += 1
+                    decision = await llm.ask("fact_type_binding", payload,
+                                             FactFieldBindingDecision)
                 item, reason = _validate_binding(
                     decision, choices, data, table, comment, canonical_type_map,
-                    verified_equivalence_pairs)
+                    verified_equivalence_pairs, column_name=name,
+                    coordinate_columns=coordinate_columns, unit_sources=unit_sources)
             except Exception as exc:
                 item, reason = None, "binding_call_failed:" + type(exc).__name__
             if item is None:
@@ -488,10 +600,13 @@ async def bind_fact_observations(
                           definition_evidence_id=decision.source_definition_evidence_id,
                           type_definition_quote=decision.type_definition_quote,
                           type_source_quote=decision.type_source_quote,
-                          column_comment_quote=decision.source_column_quote)
+                          column_comment_quote=decision.source_column_quote,
+                          scope_bindings=decision.scope_bindings,
+                          unit_column=decision.unit_column,
+                          field_template_id=template.get("id") if template else None)
             for candidate in candidates:
                 if not _scope_consistent(item, table, comment,
-                                         candidate.get("coordinate_values") or {}):
+                                         candidate.get("coordinate_values") or {}, decision.scope_bindings):
                     rejection = "applicability_scope_unverified_or_conflicting"
                     instance = None
                 else:
@@ -499,7 +614,9 @@ async def bind_fact_observations(
                         data, table, canonical_item, candidate, coordinate_columns,
                         decision, max_source_rows=max_source_rows_per_instance,
                         selected_type_id=item.id,
-                        equivalence_assertion_ids=equivalence_ids)
+                        equivalence_assertion_ids=equivalence_ids,
+                        unit_evidence_id=next((value.get("evidence_id") for value in unit_sources
+                                              if value["column"] == decision.unit_column), None))
                 if instance is None:
                     skipped[rejection] += 1
                 else:
@@ -518,6 +635,7 @@ async def bind_fact_observations(
         "instances": instances,
         "coverage": {
             "binding_attempts": attempts,
+            "reused_field_templates": reused_templates,
             "accepted_fields": accepted_fields,
             "candidate_tuples": candidate_tuples,
             "instances_created": len(instances),

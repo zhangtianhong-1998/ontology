@@ -7,7 +7,8 @@ from functools import lru_cache
 
 from .llm import BudgetExceeded
 from .models import LinkDecision, evaluate
-from .storage import digest
+from .storage import digest, qi
+from .discovery import association_match_sql
 
 
 @lru_cache(maxsize=4096)
@@ -163,6 +164,20 @@ class Extractor:
                           plan_index * 10 // plan_count > (plan_index - 1) * 10 // plan_count):
                 stage.note(f"计划 {plan_index + 1}/{plan_count}: {p.id}")
             processed = 0
+            transform = p.transform.get("operator", "identity")
+            transformed_table = None
+            if transform != "identity":
+                if p.mode != "identifier" or p.source_path:
+                    raise ValueError("Alias transforms require a direct identifier mapping")
+                candidate = {"candidate_id": p.id,
+                             "source": {"table": p.source_table, "field": p.source_column},
+                             "target": {"table": p.target_table, "field": p.target_column}}
+                sql, params = association_match_sql(
+                    self.data, candidate, transform=transform,
+                    scope_bindings={target: source for source, target in p.scope_bindings.items()})
+                transformed_table = "association_" + digest(p.id)[:16]
+                self.data.db.execute(f"CREATE OR REPLACE TEMP TABLE {qi(transformed_table)} AS " + sql, params)
+                self.data.db.execute(f"CREATE INDEX {qi(transformed_table + '_idx')} ON {qi(transformed_table)} (source_row_number)")
             if (p.evidence_scope == "sample_semantic_with_full_technical_check"
                     and not p.witnessed_pairs):
                 raise ValueError("Sample-supported relation has no witnessed record pair")
@@ -220,7 +235,19 @@ class Extractor:
                     continue
                 method, targets = p.mode, []
                 try:
-                    if p.mode == "text":
+                    if transformed_table:
+                        coverage["references"] += 1
+                        target_info = self.data.tables[p.target_table]
+                        cursor = self.data.db.execute(
+                            f"SELECT t.* FROM {qi(transformed_table)} a JOIN {qi(target_info['sql_name'])} t "
+                            "ON t.__r2_row=a.target_row_number WHERE a.source_row_number=?",
+                            [row["__r2_row"]])
+                        cols = [col[0] for col in cursor.description]
+                        targets = [dict(zip(cols, values)) for values in cursor.fetchall()]
+                        method = "checked_transform:" + transform
+                        if not targets:
+                            self.unresolved(p, row, "missing_or_ambiguous_transformed_target")
+                    elif p.mode == "text":
                         coverage["references"] += 1
                         target, method = await self.text_target(p, row)
                         if target is None:

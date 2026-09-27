@@ -1,7 +1,12 @@
 """Small, strict contracts shared by model calls and deterministic execution."""
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def json_null_placeholder(value):
+    """Normalize only the JSON null literal misencoded as a tool string."""
+    return None if isinstance(value, str) and value.strip() == "null" else value
 
 
 class Strict(BaseModel):
@@ -71,12 +76,20 @@ class DerivedType(Strict):
     domain: list[str] = Field(default_factory=list)
     range: list[str] = Field(default_factory=list)
     endpoint_basis: Literal["record_alignment", "table_binding", "mixed",
-                            "configuration_reference"] | None = None
+                            "configuration_reference", "calculation_binding"] | None = None
+    predicate_name: str | None = None
+    semantic_parameters: dict[str, str] = Field(default_factory=dict)
     evidence_scope: Literal["source_schema", "definition_record",
                             "multiple_definition_records",
                             "sample_semantic_with_full_technical_check",
                             "one_positive_pair_with_exact_type_alignments",
-                            "one_configuration_witness_with_exact_type_alignments"] | None = None
+                            "one_configuration_witness_with_exact_type_alignments",
+                            "complete_calculation_definition"] | None = None
+
+    @field_validator("unit", "aggregation_operator", "predicate_name", mode="before")
+    @classmethod
+    def parse_nullable_tool_fields(cls, value):
+        return json_null_placeholder(value)
 
 
 class TablePlan(Strict):
@@ -101,6 +114,7 @@ class RelationPlan(Strict):
     source_column: str
     source_path: list[str] = Field(default_factory=list)
     target_column: str
+    transform: dict[str, str] = Field(default_factory=lambda: {"operator": "identity"})
     scope_bindings: dict[str, str] = Field(default_factory=dict)
     selector: Condition | None = None
     predicate: str = "points_to"

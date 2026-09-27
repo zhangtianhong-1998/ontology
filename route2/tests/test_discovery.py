@@ -122,7 +122,7 @@ def test_value_index_reports_shape_exclusions_without_hiding_other_fields():
         found = propose_candidates(data, value_index_mode="full_distinct",
                                    max_indexed_fields=0, max_value_length=96)
         reasons = found["coverage"]["value_index_exclusion_reasons"]
-        assert reasons["demo.source.continuous"] == "high_cardinality_numeric_without_key_cue"
+        assert "demo.source.continuous" not in reasons  # Could be an undocumented integer code.
         assert reasons["demo.source.long_payload"] == "all_values_exceed_index_length"
         assert "demo.source.opaque_slot" not in found["coverage"]["fields_not_value_indexed"]
         find_candidate(found, "demo.source", "opaque_slot", "demo.target", "foreign_caption")
@@ -392,5 +392,46 @@ def test_dim_discriminator_can_reference_header_code_without_member_table():
                      if c["candidate_id"] == candidate["candidate_id"])
         assert check["checks"]["unique_matches"] == 1
         assert check["scope_bindings"] == {}
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize('discriminators', [('甲类', '乙类'), ('1', '2')])
+def test_value_containment_discovers_opaque_discriminators_without_name_vocabulary(discriminators):
+    first, second = discriminators
+    data = SmallDataset({
+        'demo.incoming': (['c7', 'c8'], [(first, '101'), (first, '102'), (second, '903')], []),
+        'demo.lookup': (['p4'], [('101',), ('102',)], []),
+    })
+    try:
+        found = propose_candidates(data, value_index_mode='full_distinct', max_indexed_fields=0)
+        lead = next(c for c in found['candidates'] if c['source']['field'] == 'c8'
+                    and c.get('suggested_selector') == {'c7': first})
+        assert lead['target'] == {'table': 'demo.lookup', 'field': 'p4'}
+        assert lead['condition_discovery'] == 'observed_value_containment'
+        checked = validate_candidate(data, lead, selector=lead['suggested_selector'])
+        assert checked['checks']['unique_matches'] == 2
+        assert checked['checks']['outside_matched_references'] == 0
+        assert checked['decision']['semantic_relation'] == 'unresolved'
+    finally:
+        data.close()
+
+
+def test_numeric_opaque_codes_are_recalled_with_explicit_risk():
+    data = SmallDataset({
+        'demo.input': (['opaque'], [(str(i),) for i in range(100, 220)], []),
+        'demo.target': (['other'], [(str(i),) for i in range(100, 220)], []),
+    })
+    for table in data.tables.values():
+        table['profiles'] = [{'column': table['column_names'][0], 'scan_scope': 'full_input',
+                              'usable_count': 120, 'numeric_shape_count': 120,
+                              'approx_distinct_usable': 120, 'min_chars_usable': 3,
+                              'max_chars_usable': 3, 'short_text_count': 120}]
+    try:
+        found = propose_candidates(data, value_index_mode='full_distinct', max_indexed_fields=0)
+        lead = find_candidate(found, 'demo.input', 'opaque', 'demo.target', 'other')
+        assert lead['numeric_overlap_only']
+        assert lead['risk_flags'] == ['numeric_value_coincidence']
+        assert lead['decision']['semantic_relation'] == 'unresolved'
     finally:
         data.close()

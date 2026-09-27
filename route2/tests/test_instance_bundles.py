@@ -13,7 +13,7 @@ def test_metric_and_measure_hints_may_be_compared_without_asserting_identity():
     dimension = {"card_id": "x1", "root_hint": "Dimension"}
     assert _compatible(metric, measure)
     assert _compatible(measure, metric)
-    assert not _compatible(metric, dimension)
+    assert _compatible(metric, dimension)  # A hint cannot rule out a coordinate relation.
     assert not _compatible(metric, metric)
 from ontology_r2.semantic_cards import SemanticCardIndex, build_semantic_cards
 from ontology_r2.storage import Dataset
@@ -200,7 +200,7 @@ def test_shared_metric_definition_key_is_not_compiled_as_business_relation():
         rule = {"status": "checked_technical", "transform": {"operator": "identity"},
                 "source": {"table": source, "field": "metric_code"},
                 "target": {"table": "fruit.metric_detail", "field": "metric_code"}}
-        assert _relation_bundle(data, rule, {}) == (None, "same_concept_key_requires_alignment")
+        assert _relation_bundle(data, rule, {}) == (None, "same_concept_key_routed_to_joined_context")
 
 
 def test_skipped_alignment_lead_does_not_consume_relation_packet_slot(monkeypatch):
@@ -213,7 +213,7 @@ def test_skipped_alignment_lead_does_not_consume_relation_packet_slot(monkeypatc
          "target": {"table": "fruit.measure", "field": "measure_code"}},
     ]
     monkeypatch.setattr(packets_module, "_relation_bundle", lambda data, rule, limits: (
-        (None, "same_concept_key_requires_alignment") if rule["rule_id"] == "a"
+        (None, "same_concept_key_routed_to_joined_context") if rule["rule_id"] == "a"
         else ({"task_kind": "relation_meaning", "bundle_id": "b"}, None)))
     index = SimpleNamespace(db=SimpleNamespace(execute=lambda sql: SimpleNamespace(
         fetchone=lambda: (0,))))
@@ -222,7 +222,7 @@ def test_skipped_alignment_lead_does_not_consume_relation_packet_slot(monkeypatc
                                                        "max_relation_bundles": 1})
     assert result["coverage"]["rules_selected"] == 2
     assert result["coverage"]["bundles_by_task"]["relation_meaning"] == 1
-    assert result["coverage"]["skipped"][0]["reason"] == "same_concept_key_requires_alignment"
+    assert result["coverage"]["skipped"][0]["reason"] == "same_concept_key_routed_to_joined_context"
 
 
 def test_lexical_packets_keep_conflicting_scopes_as_unjudged_candidates(tmp_path):

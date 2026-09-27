@@ -12,9 +12,13 @@ import re
 import unicodedata
 from typing import Literal
 
+from pydantic import Field, field_validator
+
 from .configuration_relations import _check_column, _type_alignments
-from .models import BuildPlan, DerivedType, Strict
+from .models import BuildPlan, DerivedType, Strict, json_null_placeholder
 from .relation_contract import (canonical_relation_id, canonical_relation_label,
+                                relation_semantic_parameters,
+                                validate_calculation_parameter_evidence,
                                 validate_proposed_relation_label)
 from .storage import digest, qi
 from .validation import validate_plan
@@ -32,12 +36,21 @@ class ConfigurationRelationDecision(Strict):
     status: Literal["proposed", "no_change", "unresolved"]
     direction: Literal["source_to_target", "target_to_source"] | None = None
     parent_relation: Literal["contains", "depends_on", "related_to", "points_to"] | None = None
+    predicate_name: str | None = None
+    semantic_parameters: dict[str, str] = Field(default_factory=dict)
+    assertion_status: Literal["affirmed", "negated", "conditional", "inactive", "uncertain"] = "affirmed"
+    qualifier_quote: str = ""
     label: str = ""
     definition: str = ""
     configuration_quote: str = ""
     source_definition_quote: str = ""
     target_definition_quote: str = ""
     reason: str = ""
+
+    @field_validator("direction", "parent_relation", "predicate_name", mode="before")
+    @classmethod
+    def parse_nullable_tool_fields(cls, value):
+        return json_null_placeholder(value)
 
 
 def _norm(value):
@@ -60,39 +73,29 @@ def _fragment_for_exact_record(data, business_type, record_id, quote):
                     and source.get("record_id") == record_id
                     and source.get("table") == prop.source_table
                     and source.get("column") == prop.source_column
-                    and isinstance(fragment, str) and quote in fragment):
+                    and isinstance(fragment, str) and quote.strip() == fragment.strip()):
                 return evidence_id
     raise ValueError("Endpoint quote is absent from its exact complete definition record")
 
 
-def _explicit_direction(quote, first_anchors, second_anchors, relation, direction):
-    """Require two unambiguous endpoint mentions around one allowed predicate cue."""
-    phrase = _norm(quote)
-    cue_spans = [(match.start(), match.end()) for cue in _CUES[relation]
-                 for match in re.finditer(re.escape(_norm(cue)), phrase)]
-    if not cue_spans:
-        return False
-    def spans(values):
-        found = set()
-        for value in values:
-            text = _norm(value)
-            if len(text) < 2:
-                continue
-            found.update((match.start(), match.end())
-                         for match in re.finditer(re.escape(text), phrase))
-        return found
-    first, second = spans(first_anchors), spans(second_anchors)
-    if not first or not second:
-        return False
-    forward = any(a_end <= cue_start and cue_end <= b_start
-                  for a_start, a_end in first for cue_start, cue_end in cue_spans
-                  for b_start, b_end in second)
-    reverse = any(b_end <= cue_start and cue_end <= a_start
-                  for b_start, b_end in second for cue_start, cue_end in cue_spans
-                  for a_start, a_end in first)
-    if forward == reverse:
-        return False
-    return forward if direction == "source_to_target" else reverse
+def _explicit_direction(quote, first_anchors, second_anchors, relation, direction,
+                        predicate_name=None):
+    """Accept a complete positive sentence; unmatched modifiers stay unresolved.
+
+    Substring endpoint ordering loses negation and conditions. Until condition
+    compilation exists, accepting only a full supported clause is deliberate.
+    """
+    compact = lambda value: re.sub(r"\s+", "", _norm(value)).rstrip("。.!！")
+    phrase = compact(quote)
+    name = canonical_relation_label(relation, predicate_name)
+    from .relation_contract import _DERIVED_CUES
+    cues = _DERIVED_CUES[name] if name != relation else _CUES[relation]
+    pairs = ((first_anchors, second_anchors) if direction == "source_to_target"
+             else (second_anchors, first_anchors))
+    allowed = {compact(first) + compact(cue) + compact(second)
+               for first in pairs[0] for second in pairs[1] for cue in cues
+               if first and second and len(compact(first)) >= 2 and len(compact(second)) >= 2}
+    return phrase in allowed
 
 
 def _read_witness(data, candidate):
@@ -190,11 +193,15 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
             or not decision.configuration_quote.strip()
             or decision.configuration_quote not in literal):
         raise ValueError("Configuration relationship text is absent, changed or over budget")
+    if decision.assertion_status != "affirmed" or decision.qualifier_quote:
+        raise ValueError("Configuration negation, condition or inactive status requires an explicit supported constraint")
+    if _norm(decision.configuration_quote) != _norm(literal):
+        raise ValueError("Configuration quote must preserve the entire statement and its qualifiers")
     if not _explicit_direction(
-        decision.configuration_quote,
+        literal,
         (source_type.label, candidate.get("source_code")),
         (target_type.label, candidate.get("target_code")),
-        decision.parent_relation, decision.direction,
+        decision.parent_relation, decision.direction, decision.predicate_name,
     ):
         raise ValueError("Configuration text does not prove the proposed predicate and direction")
     config_evidence = "record:" + digest([
@@ -214,7 +221,17 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
     subject_type, object_type, subject_match, object_match, subject_record, object_record = ordered
     validate_proposed_relation_label(
         decision.label, decision.parent_relation,
-        subject_label=subject_type.label, object_label=object_type.label)
+        subject_label=subject_type.label, object_label=object_type.label,
+        predicate_name=decision.predicate_name)
+    semantic_parameters = relation_semantic_parameters(
+        decision.parent_relation, decision.predicate_name, decision.semantic_parameters)
+    if semantic_parameters:
+        formulas = [data.evidence[evidence_id]["raw_fragment"]
+                    for prop in subject_type.source_properties if prop.role == "formula"
+                    for evidence_id in prop.evidence_ids if evidence_id in data.evidence
+                    and not data.evidence[evidence_id].get("raw_fragment_truncated")]
+        validate_calculation_parameter_evidence(semantic_parameters, formulas,
+                                                [object_type.label])
     evidence_ids = sorted(set(candidate.get("evidence_ids", [])
                               + [config_evidence, source_definition_evidence,
                                  target_definition_evidence]
@@ -222,10 +239,12 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
     if not set(evidence_ids) <= data.evidence.keys():
         raise ValueError("Configuration relation evidence is missing")
     relation_id = canonical_relation_id(
-        decision.parent_relation, subject_type.id, object_type.id)
+        decision.parent_relation, subject_type.id, object_type.id,
+        predicate_name=decision.predicate_name, semantic_parameters=semantic_parameters)
     relation_type = DerivedType(
         id=relation_id, parent=decision.parent_relation,
-        label=canonical_relation_label(decision.parent_relation),
+        label=canonical_relation_label(decision.parent_relation, decision.predicate_name),
+        predicate_name=decision.predicate_name, semantic_parameters=semantic_parameters,
         definition=decision.definition.strip(),
         category="business_relation_type", domain=[subject_type.id],
         range=[object_type.id], endpoint_basis="configuration_reference",
@@ -258,6 +277,7 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
         "source_record_pair": {"source": subject_record, "target": object_record},
         "configuration_witness_record_id": candidate["configuration_record_id"],
         "configuration_candidate_id": candidate["id"],
+        "configuration_text": literal, "assertion_status": "affirmed",
         "scope": {**object_type.applicability_scope, **subject_type.applicability_scope},
         "identity_scope": "input_snapshot", "evidence_ids": evidence_ids,
         "decision": {"status": "accepted", "method": "explicit_configuration_phrase_and_exact_type_alignments",
@@ -279,7 +299,8 @@ async def adjudicate_configuration_relations(data, profile, core, candidates,
     steps, assertions = [], []
     plan = BuildPlan.model_validate(core)
     for item in chosen:
-        step = {"candidate_id": item["id"], "status": "unresolved"}
+        step = {"candidate_id": item["id"], "status": "unresolved",
+                "configuration_text": item.get("predicate_literal")}
         try:
             if item.get("snapshot_id") != data.snapshot_id:
                 raise ValueError("Configuration candidate snapshot differs from the input")
@@ -309,7 +330,11 @@ async def adjudicate_configuration_relations(data, profile, core, candidates,
                 "object_relation_roots": [value for value in profile["relation_roots"]
                                           if value.get("kind") == "object"],
                 "contract": "Configuration row is a witness, never a business endpoint. "
-                            "Return unresolved if text does not name both ends and direction.",
+                            "Quote the entire statement, retaining negation, conditions and validity. "
+                            "Return unresolved for negated, conditional, expired, inactive or uncertain "
+                            "claims; only a complete positive unqualified clause can be compiled. "
+                            "Choose a registered predicate name, never free-form prose; operand roles "
+                            "must be proved by an exact formula, not inferred from endpoint order.",
             }
             if not payload["endpoint_a"]["definition_evidence"] or not payload["endpoint_b"]["definition_evidence"]:
                 raise ValueError("An endpoint has no complete definition evidence in the current snapshot")

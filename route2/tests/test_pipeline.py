@@ -637,10 +637,12 @@ def test_optional_datahub_identity_does_not_block_local_graph(tmp_path, monkeypa
     work.mkdir()
     data = Dataset(config["dataset"], work)
     try:
-        def invalid_urn(_):
+        def invalid_urn(name, *args):
+            if name == "metadata_identity_check":
+                return "urn:validation"
             raise ValueError("unsupported quoted identifier")
 
-        monkeypatch.setattr("ontology_r2.pipeline.dataset_urn", invalid_urn)
+        monkeypatch.setattr("ontology_r2.metadata_graph.dataset_urn", invalid_urn)
         graph = technical_graph(data)
         tables = [node for node in graph["nodes"] if node["kind"] == "Table"]
         assert tables and all(node["datahub_urn"] is None for node in tables)
