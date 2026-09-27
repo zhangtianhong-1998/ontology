@@ -380,6 +380,7 @@ def test_optional_embedding_wires_external_and_core_retrieval(tmp_path, monkeypa
             return {"enabled": True, "model_sha256": self.model_sha256}
 
     monkeypatch.setattr("ontology_r2.embedding.LocalEmbedder", FakeEmbedder)
+    monkeypatch.setattr("ontology_r2.pipeline.model_digest", lambda _path: "test-model")
     config = setup(tmp_path, "unrelated", mcp=False)
     config["embedding"] = {"enabled": True, "model_path": str(tmp_path), "max_cards": 1000,
                            "core_top_k": 2}

@@ -18,7 +18,7 @@ from .concept_candidates import recall_concept_candidates
 from .metadata_graph import MetadataGraph, build_metadata_graph, write_metadata_graph
 from .discovery import discover_and_check
 from .definition_memberships import build_definition_memberships
-from .embedding import LocalEmbedder, settings as embedding_settings
+from .embedding import LocalEmbedder, model_digest, settings as embedding_settings
 from .fact_observations import build_fact_observation_candidates
 from .fact_type_binding import bind_fact_observations
 from .fact_schema_induction import induce_fact_schema
@@ -65,6 +65,17 @@ def load_config(path):
 def technical_graph(data):
     """Compatibility entry point for the offline metadata graph builder."""
     return build_metadata_graph(data)
+
+
+def retrieval_contract(config):
+    """Freeze effective retrieval settings, including environment overrides."""
+    options = embedding_settings(config.get("embedding", {}))
+    # Progress only affects display; weights, dtype and query configuration
+    # affect candidate selection and must invalidate semantic checkpoints.
+    options.pop("show_progress", None)
+    if options["enabled"]:
+        options["model_sha256"] = model_digest(options["model_path"])
+    return options
 
 
 def check_output(sink):
@@ -177,6 +188,7 @@ async def build(config, output):
         profiling = {**config.get("profiling", {}), "input_scope": config.get("data_scope", "unknown")}
         data = Dataset(config["dataset"], output / "work", config.get("memory_limit", "1GB"),
                        profiling, progress=progress, privacy_config=config.get("privacy"))
+        data.semantic_retrieval_contract = retrieval_contract(config)
         resumed = restore_state(config.get("resume_from"), data, profile)
         sink = Sink(output, config.get("shard_size", 5000))
         llm = StructuredLLM(config["llm"], output)
@@ -386,11 +398,13 @@ async def build(config, output):
             write_yaml(output / ("definition_" + key + ".yaml"), memberships[key])
         write_yaml(output / "definition_membership_coverage.yaml", memberships["coverage"])
         manifest["definition_memberships"] = memberships["coverage"]
-        stage_signature = digest({key: config.get(key, {}) for key in (
+        stage_settings = {key: config.get(key, {}) for key in (
             "type_generalization", "configuration_relations", "type_equivalence",
             "fact_schema_induction", "fact_type_binding", "fact_templates_from",
             "fact_observations", "discovery", "association_rules", "alias_recall",
-            "instance_bundles", "embedding", "column_role_inference")})
+            "instance_bundles", "column_role_inference")}
+        stage_settings["embedding"] = data.semantic_retrieval_contract
+        stage_signature = digest(stage_settings)
         saved_stages = ((resumed or {}).get("stage_outputs", {})
                         if roles_reused
                         and (resumed or {}).get("stage_signature") == stage_signature

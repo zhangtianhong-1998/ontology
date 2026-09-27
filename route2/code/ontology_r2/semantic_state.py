@@ -16,7 +16,8 @@ def state_contract(data, profile):
     from .llm import SYSTEM, TASK_PROMPTS
     # Definition parameters now participate in type identity and relation
     # compatibility; pre-contract checkpoints must not bypass these checks.
-    return {"version": 3, "snapshot_id": data.snapshot_id,
+    return {"version": 4, "snapshot_id": data.snapshot_id,
+            "retrieval_contract": getattr(data, "semantic_retrieval_contract", {}),
             "profile_hash": digest(profile), "prompts_hash": digest([SYSTEM, TASK_PROMPTS]),
             # Source files alone do not capture a changed exclusion policy.
             # Replaying old evidence must not undo a newly excluded column.

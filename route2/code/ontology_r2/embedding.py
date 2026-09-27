@@ -1,7 +1,9 @@
 """Optional, offline-only sentence embeddings for bounded reference retrieval."""
 
 import hashlib
+import json
 import os
+import sys
 from pathlib import Path
 
 
@@ -19,6 +21,15 @@ def settings(config):
               "core_top_k": config.get("core_top_k", 5),
               "min_cosine_similarity": config.get("min_cosine_similarity", 0.35),
               "query_prompt": config.get("query_prompt")}
+    result["dtype"] = os.getenv("ONTOLOGY_EMBEDDING_DTYPE", "").strip() or config.get("dtype", "float32")
+    if result["dtype"] not in ("float32", "bfloat16", "auto"):
+        raise ValueError("embedding.dtype must be float32, bfloat16 or auto")
+    progress = os.getenv("ONTOLOGY_EMBEDDING_SHOW_PROGRESS", "").strip().lower()
+    if progress and progress not in ("true", "false", "1", "0"):
+        raise ValueError("ONTOLOGY_EMBEDDING_SHOW_PROGRESS must be true or false")
+    result["show_progress"] = progress in ("true", "1") if progress else config.get("show_progress", False)
+    if not isinstance(result["show_progress"], bool):
+        raise ValueError("embedding.show_progress must be a boolean")
     for key in ("batch_size", "max_cards", "core_top_k"):
         if not isinstance(result[key], int) or result[key] < 1:
             raise ValueError(f"embedding.{key} must be a positive integer")
@@ -80,9 +91,30 @@ class LocalEmbedder:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
             raise ValueError("Install the optional embedding dependencies: uv sync --extra embedding") from exc
-        self.config = config
+        self.config = {"dtype": "float32", "show_progress": False, **config}
+        if self.config["dtype"] not in ("float32", "bfloat16", "auto"):
+            raise ValueError("embedding.dtype must be float32, bfloat16 or auto")
         self.model_sha256 = model_digest(config["model_path"])
-        self.model = SentenceTransformer(config["model_path"], device="cpu", local_files_only=True)
+        # Source weights may declare bfloat16. CPU software bf16 kernels can
+        # be much slower, so default to explicit float32 at model load time.
+        self.model = SentenceTransformer(config["model_path"], device="cpu", local_files_only=True,
+                                         model_kwargs={"dtype": self.config["dtype"]})
+        parameter = next(self.model.parameters())
+        self.actual_dtype = str(parameter.dtype).removeprefix("torch.")
+        self.device = str(parameter.device)
+        if self.config["dtype"] != "auto" and self.actual_dtype != self.config["dtype"]:
+            raise ValueError("Embedding model did not apply the requested dtype")
+        prompts = getattr(self.model, "prompts", None) or {}
+        self.encoding_contract = {
+            "version": 1, "model_sha256": self.model_sha256,
+            "configured_dtype": self.config["dtype"], "actual_dtype": self.actual_dtype,
+            "device": self.device, "batch_size": config["batch_size"],
+            "query_prompt": config.get("query_prompt") or prompts.get("query"),
+            "default_prompt": prompts.get(getattr(self.model, "default_prompt_name", None)),
+            "normalize_embeddings": True, "output_dtype": "float32",
+        }
+        self.encoding_contract_sha256 = hashlib.sha256(json.dumps(
+            self.encoding_contract, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         self.cache = {}
         self.documents_encoded = 0
         self.queries_encoded = 0
@@ -91,12 +123,18 @@ class LocalEmbedder:
         import numpy as np
 
         options = {"batch_size": self.config["batch_size"], "normalize_embeddings": True,
-                   "convert_to_numpy": True, "show_progress_bar": False}
+                   "convert_to_numpy": True, "show_progress_bar": self.config["show_progress"]}
         if query:
             if self.config.get("query_prompt"):
                 options["prompt"] = self.config["query_prompt"]
             elif "query" in (getattr(self.model, "prompts", None) or {}):
                 options["prompt_name"] = "query"
+        if not texts:
+            return np.empty((0, self.report()["dimensions"]), dtype=np.float32)
+        if self.config["show_progress"]:
+            batches = (len(texts) + self.config["batch_size"] - 1) // self.config["batch_size"]
+            print(f"[embedding:{'query' if query else 'document'}] {len(texts)} texts, "
+                  f"{batches} batches, {self.device}/{self.actual_dtype}", file=sys.stderr, flush=True)
         values = np.asarray(self.model.encode(texts, **options), dtype=np.float32)
         if values.ndim == 1:
             values = values.reshape(1, -1)
@@ -113,12 +151,13 @@ class LocalEmbedder:
         if not cache:
             self.documents_encoded += len(texts)
             return self._encode(texts)
-        missing = list(dict.fromkeys(text for text in texts if text not in self.cache))
+        key = lambda text: (self.encoding_contract_sha256, text)
+        missing = list(dict.fromkeys(text for text in texts if key(text) not in self.cache))
         if missing:
             for text, vector in zip(missing, self._encode(missing)):
-                self.cache[text] = vector
+                self.cache[key(text)] = vector
             self.documents_encoded += len(missing)
-        return np.stack([self.cache[text] for text in texts])
+        return np.stack([self.cache[key(text)] for text in texts])
 
     def query(self, text):
         self.queries_encoded += 1
@@ -134,6 +173,11 @@ class LocalEmbedder:
                      else self.model.get_sentence_embedding_dimension())
         return {"enabled": True, "model": Path(self.config["model_path"]).name,
                 "model_sha256": self.model_sha256,
+                "configured_dtype": self.config["dtype"], "actual_dtype": self.actual_dtype,
+                "device": self.device, "batch_size": self.config["batch_size"],
+                "show_progress": self.config["show_progress"],
+                "encoding_contract": self.encoding_contract,
+                "encoding_contract_sha256": self.encoding_contract_sha256,
                 "query_prompt": self.config.get("query_prompt") or (
                     "model:query" if "query" in (getattr(self.model, "prompts", None) or {}) else "none"),
                 "min_cosine_similarity": self.config["min_cosine_similarity"],

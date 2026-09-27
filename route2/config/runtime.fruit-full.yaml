@@ -147,6 +147,8 @@ embedding:
   # 环境变量 ONTOLOGY_EMBEDDING_MODEL_PATH 优先；此目录已在本机核实存在。
   model_path: ~/Desktop/code/bi-semantic-context-design/.cache/models/Qwen3-Embedding-0.6B
   batch_size: 16
+  dtype: float32
+  show_progress: true
   max_cards: 20000
   core_top_k: 5
   min_cosine_similarity: 0.35

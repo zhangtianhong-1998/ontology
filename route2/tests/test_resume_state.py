@@ -21,6 +21,10 @@ def test_snapshot_checkpoint_validates_and_reuses_plan(tmp_path, monkeypatch):
         save_state(checkpoint, data, profile, state)
         restored = restore_state(checkpoint, data, profile)
         assert restored['plan'] == plan
+        data.semantic_retrieval_contract = {'dtype': 'float32', 'model_sha256': 'new-weights'}
+        with pytest.raises(ValueError, match='semantic contract'):
+            restore_state(checkpoint, data, profile)
+        del data.semantic_retrieval_contract
         # Old cached stages were compiled before parameter-aware type identity.
         old = json.loads(checkpoint.read_text())
         old['contract']['version'] = 2
@@ -33,6 +37,17 @@ def test_snapshot_checkpoint_validates_and_reuses_plan(tmp_path, monkeypatch):
             restore_state(checkpoint, data, profile)
     finally:
         data.close()
+
+
+def test_retrieval_contract_uses_environment_dtype_but_not_progress(monkeypatch):
+    from ontology_r2.pipeline import retrieval_contract
+    monkeypatch.setenv('ONTOLOGY_EMBEDDING_ENABLED', 'false')
+    monkeypatch.setenv('ONTOLOGY_EMBEDDING_DTYPE', 'float32')
+    first = retrieval_contract({'embedding': {'dtype': 'auto'}})
+    monkeypatch.setenv('ONTOLOGY_EMBEDDING_SHOW_PROGRESS', 'true')
+    assert retrieval_contract({'embedding': {'dtype': 'auto'}}) == first
+    monkeypatch.setenv('ONTOLOGY_EMBEDDING_DTYPE', 'bfloat16')
+    assert retrieval_contract({'embedding': {'dtype': 'auto'}}) != first
 
 
 def test_resume_preserves_incomplete_column_role_report_and_stage_outputs(tmp_path):
