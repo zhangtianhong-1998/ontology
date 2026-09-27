@@ -16,6 +16,17 @@ progress:
   min_interval_seconds: 1.0
 profiling:
   sql_columns_per_group: 32
+# Optional shared-budget table-level role suggestions for columns whose
+# name/comment heuristics find no definition-name field. The model sees at
+# most 8 actual rows per table; source values are checked before card recall.
+# Candidate roles remain unjudged; disable this stage to avoid the extra
+# bounded model calls when column metadata is already sufficient.
+column_role_inference:
+  enabled: true
+  max_tables: 12
+  max_columns_per_table: 16
+  max_sample_rows: 8
+  max_value_chars: 128
 # Fact candidates are observed CSV tuples only. Exact DISTINCT scans the
 # selected value fields but writes at most this many tuples per table; it does
 # not create ontology instances or call the LLM for each row.
@@ -25,6 +36,9 @@ fact_observations:
   max_dimension_columns: 4
   max_time_columns: 2
   max_value_columns: 8
+  # Above this estimated tuple count, select bounded observed seeds and
+  # reverse-check their full coordinates; unvisited tuple count is unknown.
+  max_exact_group_tuples: 50000
 # One model decision per fact value field; accepted tuples are re-read from the
 # imported snapshot before becoming typed observations. No per-row LLM calls.
 fact_type_binding:

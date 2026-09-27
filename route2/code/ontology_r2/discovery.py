@@ -14,6 +14,11 @@ from .storage import digest, qi
 
 
 _GENERIC = {"id", "key", "code", "name", "ref", "fk", "value", "uuid"}
+_NUMERIC_LITERAL = re.compile(r"[+-]?[0-9]+(?:\.[0-9]+)?\Z")
+
+
+def _numeric_literal(value):
+    return bool(_NUMERIC_LITERAL.fullmatch(value))
 
 
 def _fields(data):
@@ -78,18 +83,48 @@ def _sample_values(data, table, field, limit, max_length):
     return [row[0] for row in rows[:limit]], len(rows) > limit
 
 
-def _indexable_field(data, field):
-    """Keep the full-value index on keys and names, not descriptions or payloads."""
+def _value_index_eligibility(data, field, max_length):
+    """Use observed shape to exclude clear payloads, not unfamiliar column names.
+
+    Missing/incomplete profiles stay eligible: absence of profile evidence must
+    not silently turn an opaque business key into an excluded field. The
+    expensive DISTINCT index is still bounded by the caller's field budget.
+    """
     table, column = field
-    role = next((item for item in classify_columns(data.tables[table])
+    info = data.tables[table]
+    role = next((item for item in classify_columns(info)
                  if item["column"] == column), {})
     tokens = set(_tokens(column))
-    return bool(role.get("join_eligible") or
-                tokens & {"id", "uuid", "guid"} or
-                tokens & {"name", "alias", "synonym", "field", "ref", "key", "code"})
+    named_key = bool(role.get("join_eligible") or
+                     tokens & {"id", "uuid", "guid", "key", "code", "ref"})
+    profile = next((item for item in info.get("profiles", ())
+                    if item.get("column") == column), None)
+    if not profile or profile.get("scan_scope") != "full_input":
+        return True, "profile_unavailable_or_incomplete"
+    usable = profile.get("usable_count")
+    if not isinstance(usable, int) or usable <= 0:
+        return True, "value_shape_unknown"
+    shortest = profile.get("min_chars_usable")
+    if isinstance(shortest, int) and shortest > max_length:
+        return False, "all_values_exceed_index_length"
+    if not named_key:
+        longest = profile.get("max_chars_usable")
+        short = profile.get("short_text_count")
+        if (isinstance(longest, int) and longest > max_length
+                and isinstance(short, int) and short / usable < 0.05):
+            return False, "predominantly_long_text"
+        numeric = profile.get("numeric_shape_count")
+        distinct = profile.get("approx_distinct_usable")
+        # Approximate cardinality only excludes an obviously continuous field;
+        # a short snapshot or an identifier-like name is never excluded here.
+        if (usable >= 100 and isinstance(numeric, int)
+                and isinstance(distinct, (int, float))
+                and numeric / usable >= 0.98 and distinct / usable >= 0.95):
+            return False, "high_cardinality_numeric_without_key_cue"
+    return True, "short_or_unknown_value_shape"
 
 
-def _compatible_value_pair(data, source, target):
+def _compatible_value_pair(data, source, target, *, nonnumeric_shared=False):
     """Value equality is worth recalling only for plausible field roles."""
     if source == target:
         return False
@@ -100,8 +135,12 @@ def _compatible_value_pair(data, source, target):
     target_key = bool(target_tokens & {"id", "key", "code", "ref", "field"})
     if source_key and target_key:
         return True
-    return bool(source_tokens & {"name", "alias", "synonym"} and
-                target_tokens & {"name", "alias", "synonym"})
+    if source_tokens & {"name", "alias", "synonym"} and target_tokens & {"name", "alias", "synonym"}:
+        return True
+    # Distinct, nonnumeric raw values can recall differently named fields.
+    # This is only a technical lead; validate_candidate checks full rows and
+    # leaves its semantic_relation unresolved.
+    return nonnumeric_shared and source[0] != target[0]
 
 
 def _full_value_pairs(data, fields, max_length, max_fanout, *, on_step=None,
@@ -143,7 +182,7 @@ def _full_value_pairs(data, fields, max_length, max_fanout, *, on_step=None,
               HAVING count(*) BETWEEN 2 AND ?
             )
             SELECT a.field_no, b.field_no, count(*) AS common_values,
-                   bool_and(regexp_matches(a.value, '^[0-9]+$')) AS numeric_only
+                   bool_and(regexp_full_match(a.value, '[+-]?[0-9]+(\\.[0-9]+)?')) AS numeric_only
             FROM usable v
             JOIN {index_name} a ON a.value = v.value
             JOIN {index_name} b ON b.value = v.value AND a.field_no < b.field_no
@@ -153,7 +192,8 @@ def _full_value_pairs(data, fields, max_length, max_fanout, *, on_step=None,
         for left, right, count, numeric in matches:
             a, b = fields[left], fields[right]
             for source, target in ((a, b), (b, a)):
-                if _compatible_value_pair(data, source, target):
+                if _compatible_value_pair(data, source, target,
+                                          nonnumeric_shared=not bool(numeric)):
                     pairs[(source, target)] = (count, bool(numeric))
         return pairs, common, oversized
     finally:
@@ -288,7 +328,9 @@ def propose_candidates(data, *, max_candidates_total=2000,
 
     # Index a bounded set across tables, prioritizing declared keys and
     # generic identifier-like names. Metadata recall still sees every field.
-    indexable = ([field for field in fields if _indexable_field(data, field)]
+    eligibility = ({field: _value_index_eligibility(data, field, max_value_length)
+                    for field in fields} if value_index_mode == "full_distinct" else {})
+    indexable = ([field for field in fields if eligibility[field][0]]
                  if value_index_mode == "full_distinct" else fields)
     by_table = defaultdict(list)
     for table, column in indexable:
@@ -345,8 +387,11 @@ def propose_candidates(data, *, max_candidates_total=2000,
                 sampled[(left, right)].add(value)
                 sampled[(right, left)].add(value)
         shared = {pair: (len(values), bool(values) and
-                         all(value.isdecimal() for value in values))
-                  for pair, values in sampled.items()}
+                         all(_numeric_literal(value) for value in values))
+                  for pair, values in sampled.items()
+                  if _compatible_value_pair(data, pair[0], pair[1],
+                                            nonnumeric_shared=any(not _numeric_literal(value)
+                                                                  for value in values))}
     overlap_by_source = defaultdict(list)
     for (source, target), summary in shared.items():
         overlap_by_source[source].append((target, summary))
@@ -427,6 +472,14 @@ def propose_candidates(data, *, max_candidates_total=2000,
                                      if (t, c) not in indexed_set],
         "fields_not_index_eligible": [f"{t}.{c}" for t, c in fields
                                       if (t, c) not in set(indexable)],
+        "value_index_exclusion_reasons": {
+            f"{table}.{column}": eligibility[(table, column)][1]
+            for table, column in fields
+            if eligibility and not eligibility[(table, column)][0]},
+        "value_index_eligibility_policy": (
+            "all nonempty nonsensitive nonaudit fields unless complete profile proves "
+            "oversized text or high-cardinality numeric without a key cue"
+            if value_index_mode == "full_distinct" else "sampled field budget"),
         "value_index_mode": value_index_mode,
         "oversized_distinct_values_by_field": {key: count for key, count in oversized_values.items()
                                                if count},

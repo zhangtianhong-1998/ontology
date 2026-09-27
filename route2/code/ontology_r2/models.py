@@ -57,6 +57,10 @@ class DerivedType(Strict):
     # applicability_scope describes the definition, not observation coordinates.
     applicability_scope: dict[str, str] = Field(default_factory=dict)
     unit: str | None = None
+    # Only populated for a reusable Measure operator. Business-valued
+    # quantities such as revenue and profit belong under Metric instead.
+    aggregation_operator: Literal["sum", "avg", "count", "distinct_count",
+                                  "min", "max", "filter"] | None = None
     source_concept_ids: list[str] = Field(default_factory=list)
     # These describe fields on exact definition records. They are not a claim
     # that every business observation has the same populated property.

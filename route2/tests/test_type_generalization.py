@@ -17,7 +17,7 @@ PROFILE = read_yaml(Path(__file__).resolve().parents[1] / "ontologies/internal_m
 
 
 def _fixture(*, descriptions=None, formulas=None, units=("元", "元"),
-             scopes=None, roots=("Measure", "Measure"), truncated=False):
+             scopes=None, roots=("Metric", "Metric"), truncated=False):
     descriptions = descriptions or (
         "阿里云业务销售所得营业收入", "商业市场业务销售所得营业收入")
     scopes = scopes or ({"business": "阿里云"}, {"business": "商业市场"})
@@ -53,7 +53,7 @@ def _fixture(*, descriptions=None, formulas=None, units=("元", "元"),
 def _decision():
     return {
         "status": "proposed", "label": "收入",
-        "definition": "业务销售所得营业收入", "root_type": "Measure",
+        "definition": "业务销售所得营业收入", "root_type": "Metric",
         "shared_anchor": "营业收入", "unit": "元", "parent_scope": {},
         "children": [
             {"type_id": "type:阿里云", "shared_quote": "业务销售所得营业收入",
@@ -71,13 +71,13 @@ def test_generalization_reparents_two_accepted_types_and_keeps_sources():
     candidates = propose_generalization_candidates(core, data, 3)
     assert len(candidates) == 1 and candidates[0]["status"] == "candidate_only"
     compiled, parent = compile_generalization(data, PROFILE, core, _decision())
-    assert parent.label == "收入" and parent.parent == "Measure"
+    assert parent.label == "收入" and parent.parent == "Metric"
     assert parent.derivation_kind == "shared_supertype"
     assert parent.induced_from_type_ids == ["type:商业市场", "type:阿里云"]
     assert parent.evidence_scope == "multiple_definition_records"
     assert len(parent.evidence_ids) == 2
     assert {item.parent for item in compiled.object_types if item.id != parent.id} == {parent.id}
-    assert {item.parent for item in core.object_types} == {"Measure"}
+    assert {item.parent for item in core.object_types} == {"Metric"}
     assert compiled.relation_types == core.relation_types
     repeated, same_parent = compile_generalization(data, PROFILE, compiled, _decision())
     assert same_parent.id == parent.id and len(repeated.object_types) == 3
@@ -137,7 +137,7 @@ def test_rejects_unsupported_generalization(change, error):
     if change == "unit":
         kwargs["units"] = ("元", "吨")
     elif change == "root":
-        kwargs["roots"] = ("Measure", "Metric")
+        kwargs["roots"] = ("Metric", "Measure")
     elif change == "formula":
         kwargs["formulas"] = ("收入=销量+均价", "收入=销量-均价")
     elif change == "truncated":
@@ -158,7 +158,7 @@ def test_rejects_unsupported_generalization(change, error):
 
 def test_existing_other_parent_and_observation_only_source_cannot_generalize():
     data, core = _fixture()
-    other = DerivedType(id="type:other", parent="Measure", label="其他",
+    other = DerivedType(id="type:other", parent="Metric", label="其他",
                         definition="其他类型", category="business_type",
                         evidence_ids=["record:e0-description"])
     core.object_types.append(other)
@@ -196,3 +196,12 @@ def test_nonproposal_does_not_change_core():
     before = deepcopy(core.model_dump())
     assert compile_generalization(data, PROFILE, core, decision) is None
     assert core.model_dump() == before
+
+
+def test_business_revenue_cannot_be_generalized_as_measure_operation():
+    data, core = _fixture(roots=("Measure", "Measure"))
+    assert propose_generalization_candidates(core, data, 3) == []
+    decision = _decision()
+    decision["root_type"] = "Measure"
+    with pytest.raises(ValueError, match="Measure operator generalization is unsupported"):
+        compile_generalization(data, PROFILE, core, decision)

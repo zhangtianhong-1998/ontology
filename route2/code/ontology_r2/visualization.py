@@ -93,13 +93,13 @@ def _preview_summary(payload, has_results, has_ontology):
         {"label": "输入快照记录", "value": manifest.get("input_records")},
         {"label": "已抽取对象", "value": count("objects")},
         {"label": "概念对象", "value": payload["concept_count"]},
-        {"label": "业务派生类型", "value": type_counts["business"] if has_ontology else None},
+        {"label": "已接受本体对象", "value": type_counts["business"] if has_ontology else None},
         {"label": "源记录类型", "value": type_counts["source_record"]
          if has_ontology and not group_replay else None},
         {"label": "记录对齐", "value": count("record_alignments")},
         {"label": "已接受对象关系", "value": payload["relation_count"]},
         {"label": "已见证记录关系", "value": payload["record_relation_count"]},
-        {"label": "业务类型关系", "value": payload["business_relation_count"]},
+        {"label": "本体对象关系", "value": payload["business_relation_count"]},
         {"label": "映射字段", "value": None if group_replay else payload["construction"].get("direct_mapping_columns")},
         {"label": "未决项", "value": count("unresolved")},
         {"label": "本次模型调用", "value": manifest.get("llm", {}).get("calls")},
@@ -114,6 +114,37 @@ def _preview_summary(payload, has_results, has_ontology):
             notice += f" 模型缓存命中 {hits} 次。"
     return {"metrics": metrics, "type_counts": type_counts if has_ontology else None,
             "notice": notice}
+
+
+def _ontology_overview(ontology):
+    """Keep only accepted ontology types and witnessed type-level relations on the canvas."""
+    roots = ontology.get("object_roots", [])
+    derived = [item for item in ontology.get("object_types", [])
+               if item.get("category") == "business_type"]
+    nodes = roots + derived
+    visible = {item["id"] for item in nodes}
+    inheritance = [
+        {"source": item["parent"], "target": item["id"]}
+        for item in derived if item.get("parent") in visible
+    ]
+    relations = []
+    omitted = []
+    for relation in ontology.get("relation_types", []):
+        # A multi-valued domain/range is a set of constraints, not evidence for
+        # every pair in their Cartesian product. Record-level endpoints also
+        # must not appear as business ontology links.
+        if relation.get("category") != "business_relation_type":
+            omitted.append(relation["id"])
+            continue
+        domain, range_ = relation.get("domain") or [], relation.get("range") or []
+        if len(domain) == len(range_) == 1 and domain[0] in visible and range_[0] in visible:
+            relations.append({"id": relation["id"], "source": domain[0],
+                              "target": range_[0], "label": relation.get("label") or relation["id"],
+                              "parent": relation.get("parent")})
+        else:
+            omitted.append(relation["id"])
+    return {"nodes": nodes, "inheritance": inheritance, "relations": relations,
+            "omitted_relation_type_ids": omitted}
 
 
 def _metadata_preview(graph, candidates, rule_set, max_nodes):
@@ -356,10 +387,24 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                 if row:
                     payload["evidence"][key] = json.loads(row[0])
     payload["preview"] = _preview_summary(payload, database.exists(), (run / "ontology.yaml").exists())
+    payload["ontology_overview"] = _ontology_overview(payload["ontology"])
     graph = read("meta_graph.yaml", {"nodes": [], "edges": []})
-    payload["metadata"] = _metadata_preview(
+    preview = _metadata_preview(
         graph, read("field_candidates.yaml", []),
         read("association_rules.yaml", {"rules": []}), max_nodes)
+    # The local association results are useful for inspection, but they are
+    # neither DataHub schema edges nor declared foreign keys. Keep them in a
+    # separate page payload so a metadata renderer cannot conflate the two.
+    payload["association_preview"] = {
+        "links": [item for item in preview["links"] if item["status"] != "declared"],
+        "link_counts": {key: value for key, value in preview["link_counts"].items()
+                        if key != "declared"},
+    }
+    preview["links"] = [item for item in preview["links"] if item["status"] == "declared"]
+    preview["shown_links"] = len(preview["links"])
+    preview["total_links"] = preview["link_counts"]["declared"]
+    preview["link_counts"] = {"declared": preview["link_counts"]["declared"]}
+    payload["metadata"] = preview
     # Audit logs remain on disk. The page contains only bounded graph data and summaries.
     payload["knowledge"] = [{k: v for k, v in item.items() if k != "documents"} for item in payload["knowledge"]]
     payload["construction"] = {**payload["construction"], "steps": [{k: v for k, v in s.items() if k != "attempts"} | {"attempts": [{k: v for k, v in a.items() if k not in ("delta", "accepted_delta")} for a in s["attempts"]]} for s in payload["construction"].get("steps", [])]}

@@ -44,6 +44,21 @@ def _field_roles(table):
                          if re.search(pattern, comment)), None)
         if role and len(selected[role]) < ROLE_LIMITS[role]:
             selected[role].append(name)
+    # Source-checked model proposals only widen candidate recall. They do not
+    # override a heuristic role or assert that the field truly has that role.
+    for item in table.get("inferred_semantic_roles", ()):
+        name, role = item.get("column"), item.get("role")
+        if (item.get("status") != "source_verified_role_candidate"
+                or role not in ROLE_LIMITS or name not in profiles
+                or name in excluded or name in {c for fields in selected.values() for c in fields}):
+            continue
+        column = next((c for c in table["columns"] if c["column_name"] == name), None)
+        if (column is None or is_sensitive_column(column)
+                or profiles[name].get("scan_scope") != "full_input"
+                or profiles[name].get("usable_count", 0) == 0):
+            continue
+        if len(selected[role]) < ROLE_LIMITS[role]:
+            selected[role].append(name)
     return dict(selected)
 
 

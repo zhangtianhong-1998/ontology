@@ -271,26 +271,42 @@ def test_reviewed_definition_becomes_a_business_type_but_observation_does_not():
 
 def test_metric_measure_type_boundary_uses_definition_not_table_hint():
     data = SimpleNamespace(snapshot_id="snap", evidence={})
-    record = {**_record("measure-def", name="苹果销量汇总"), "kind": "definition",
-              "root_hint": "Metric"}
+    record = {
+        "record_id": "measure-def", "table": "fruit.metric", "row_number": 1,
+        "kind": "definition", "root_hint": "Metric", "scope": {}, "unit": "",
+        "fields": {
+            "name": [{"column": "operation_name", "value": "SUM"}],
+            "description": [{"column": "definition", "value": "SUM(x) 对输入数值求和"}],
+        },
+    }
     decision = ConceptBundleDecision(
-        status="proposed", label="苹果销量汇总", definition="苹果销量求和",
+        status="proposed", label="SUM", definition="对输入数值求和",
         root_type="Measure", ontology_level="type",
         classification_basis="aggregation_or_filter_measure",
-        classification_quote="华东苹果销量汇总",
-        scope_roles={"region": "applicability"},
+        classification_quote="SUM(x) 对输入数值求和", aggregation_operator="sum",
         alignments=[RecordAlignmentDecision(record_id="measure-def",
-                                            mapping_kind="exact", quote="苹果销量汇总")],
+                                            mapping_kind="exact", quote="SUM")],
     )
     compiled = compile_concept(data, PROFILE, {"records": [record]}, decision, {})
     assert compiled[0]["type"] == "Measure"
     assert compiled[0]["ontology_type_id"]
+    assert compiled[0]["aggregation_operator"] == "sum"
     with pytest.raises(ValueError, match="classification basis"):
         compile_concept(data, PROFILE, {"records": [record]},
                         decision.model_copy(update={"classification_basis": "business_driven_metric"}), {})
     with pytest.raises(ValueError, match="classification quote"):
         compile_concept(data, PROFILE, {"records": [record]},
                         decision.model_copy(update={"classification_quote": "来源里没有这句话"}), {})
+    business_record = {**_record("business-revenue", name="水果销售收入"),
+                       "kind": "definition", "root_hint": "Measure"}
+    with pytest.raises(ValueError, match="explicitly evidenced reusable aggregation operator"):
+        compile_concept(data, PROFILE, {"records": [business_record]},
+                        decision.model_copy(update={
+                            "label": "水果销售收入", "classification_quote": "华东水果销售收入",
+                            "alignments": [RecordAlignmentDecision(
+                                record_id="business-revenue", mapping_kind="exact",
+                                quote="水果销售收入")],
+                        }), {})
 
 
 def test_no_change_is_complete_but_unresolved_remains_partial():

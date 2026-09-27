@@ -162,3 +162,15 @@ def test_formula_in_only_one_column_requires_full_expression_in_other_definition
     assertion = compile_equivalence(data, core, candidate, _decision(data, candidate))
     assert assertion["source_formula_evidence_ids"] == ["record:e0-formula"]
     assert assertion["target_formula_evidence_ids"] == []
+
+
+def test_unitless_measure_equivalence_requires_same_explicit_operator():
+    data, core = _fixture(
+        descriptions=("SUM 是对取值求和的聚合操作", "SUM 是对取值求和的聚合操作"),
+        formulas=(None, None), roots=("Measure", "Measure"), units=(None, None),
+    )
+    core.object_types = [item.model_copy(update={"label": "SUM", "aggregation_operator": "sum"})
+                         for item in core.object_types]
+    assert len(propose_equivalence_candidates(core, data, 2)) == 1
+    core.object_types[1] = core.object_types[1].model_copy(update={"aggregation_operator": "avg"})
+    assert propose_equivalence_candidates(core, data, 2) == []

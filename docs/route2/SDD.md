@@ -4,6 +4,8 @@
 
 本文中的对象、字段、公式和地区等均为假设性例子，不说明真实输入包含这些内容。运行时先检测证据和适用性；没有相应内容就不启用该提取器。目标模型的五类根也不要求输入覆盖全部类别。
 
+2026-09-27 的流程纠偏见[以关联搜索组织本体抽取](RELATION_DRIVEN_REDESIGN.md)。Metric 表示有经营含义的指标；Measure 仅表示可复用的聚合或过滤操作。早期文档和合成运行把收入等业务量称为“度量”的地方属于旧口径，不应沿用为当前分类结论。
+
 ## 当前原型与完整设计的对应
 
 代码保留 [RIGOR 对照与本轮改造](RIGOR_COMPARISON.md)中的逐表增量模式，供旧例回归。2026-09-25 起，`runtime.real.example.yaml` 和水果实验配置使用 `incremental.mode: source_mapping_only`：程序先建立完整源映射和字段候选；可选关联 Agent 提出条件规则，程序全量核验；有限的跨表记录包再交给 LLM 判断业务类型与关系。此模式不做逐表 plan/review 调用；MCP 和外部本体若启用，须切回逐表模式，直到它们接入组包流程。运行代码位于 `code/ontology_r2`。
@@ -64,15 +66,15 @@ CSV → 分批导入、快照定位、全字段基础统计
 
 当前技术节点：`DatasetSnapshot`、`Table`、`Column`、`Constraint`、`Source`。当前技术边包括 `table_has_column`、`has_declared_constraint`、`declared_fk`、`documented_by`、`sample_from`、`includes_source`。这些名字属于元数据层，不是新增内部一级业务关系。
 
-`declared_fk` 只能来自声明外键。已核验字段规则以 `inferred_technical_match` 写入技术图，附带规则 ID、条件和状态，不能回写成声明外键或业务关系。无外键时按列角色和值域建立分析候选。
+`declared_fk` 只能来自声明外键。字段候选、核验结果和技术关联规则分别写入独立产物；`meta_graph.yaml` 不再保存推断字段边。无外键时仍可按值域与上下文搜索关联，但候选不是图中的声明关系。
 
 CSV 记录不全部变成内存图节点。元数据图引用 DuckDB 中的记录集合、统计和候选边；仅选定证据包取少量完整相关记录。
 
-本地 `meta_graph.yaml` 是运行时技术图，不是 DataHub 服务内读出的图。它应显示表、列、声明主键、来源和表到 `source_record_type` 的映射；DataHub URN 仅用于离线 metadata-file 互操作。页面按选中表展开邻域，并将已核验技术匹配与声明外键以不同状态展示，不能把字段重叠画成业务对象属性。
+本地 `meta_graph.yaml` 由 YAML/CSV 构建，DataHub 没有参与这一步。图中保存表、列、声明主键、来源和明确标记的本地 `source_record_type` 映射；DataHub URN 仅用于离线 metadata-file 导出。页面的关联发现结果另读独立规则文件，不能把字段重叠画成业务对象属性。
 
 目标电脑为无 Docker 的 Windows 11，因此运行时保留本地技术图与 DuckDB。DataHub 仅作为可选互操作格式：导出表/列 metadata-file，另用隔离环境中的 Lite 做本地存储和读回。Lite 不支持关系图遍历或血缘；完整 DataHub 服务不属于此离线原型的运行依赖。安装与验证命令见[离线说明](DATAHUB_OFFLINE.md)。
 
-字段候选与核验分别写入 `field_candidates.yaml`、`association_checks.yaml`。全输入核验后，`checked_technical` 和 `observed_subset` 规则还会以 `inferred_technical_match` 技术边写入 `meta_graph.yaml`，保留 selector、作用域和状态；`observed_subset` 不能生成全局业务关系。元数据图不把这些边改写成 `declared_fk`，也不自动升级为 `points_to`。
+字段候选、核验与规则分别写入 `field_candidates.yaml`、`association_checks.yaml` 和 `association_rules.yaml`。`checked_technical` 与 `observed_subset` 保留 selector、作用域和状态，但不进入原始元数据图；`observed_subset` 不能生成全局业务关系，也不能自动升级为 `points_to`。
 
 ### 3.1 字段统计路径
 
@@ -133,7 +135,7 @@ evidence_fields: [metric_code, semantic_kind, description]
 
 每个符号保存原文区间、候选对象及绑定方法。按“命名空间/版本内精确编码 → 明确别名 → 名称/定义候选”绑定。一个公式可关联多个目标；参数位置和重复引用保留。只有所有相关语法可解释、所需符号可定位时，才能声称公式依赖完整。支持部分 AST 时可导出已经有独立证据的依赖，但 `dependency_completeness: partial`。
 
-`SUM(x)` 的函数节点不成为度量；数字不成为对象；同名但粒度、单位、期间不同的度量保留歧义。解析出依赖不等于已证明公式数值正确、可加性或运行血缘；相应结论需要额外规则和证据。
+`SUM` 可以成为 Measure 聚合操作，但公式中出现 `SUM(x)` 不会自动建立 Measure 本体对象；还需独立的定义记录和操作依据。收入、成本、利润等带业务含义的量归 Metric。数字不成为本体类型；同名指标在粒度、单位或期间不同的情况下保留歧义。解析出依赖不等于证明公式数值正确、可加性或运行血缘。
 
 ### 4.4 名称、定义与上下文候选
 
@@ -173,7 +175,7 @@ LLM 同意 `same_concept` 先保存为同一概念候选，路线2不据此跨�
 
 当前输入门禁按表级启发式区分 `definition_data/configuration_data/business_fact/unresolved`；混合或证据不足的表保持未决。对少量有语义依据的候选列组做完整输入精确联合 distinct 与重复度分析。定义卡的原始编码和记录独立保留，只把完整语义内容相同的卡归为**候选调度模式**；一个模式的代表记录可以进组包的 exact 对齐白名单，其他编码变体不能因同文自动精确对齐。独特且定义完整的单卡也可组包。模式窗口、组包数和模型请求数各有限额，并分别报告未处理量；相似名称、向量近邻和同列值重叠仍只是候选。
 
-明显业务事实表采用 `fact_observations.py` 对实际出现的维度、期间、数值元组精确分组，不枚举各列值的笛卡尔积。在字段绑定前，`type_equivalence_stage.py` 仅按同根、同名、同单位、同范围召回已接受业务类型；每对需模型逐字引述两端完整来源说明和公式，程序只接受完整说明及公式相同的组合。只有一个同名组的全部类型两两证实等价，才建立同快照 `canonical_type_id`；文字改写、未决或缺失组合都保留分立类型。`fact_type_binding.py` 只对数值字段调用一次结构化模型判断，再核对完整列注释、完整类型与来源定义、单位及适用范围；只有类型唯一或同名备选已全部归到同一规范类型，才按坐标和值回查全部来源行并实例化。合并的来源行若在未选入坐标的非技术字段上取值不同，实例化会拒绝；这仍不能证明单行的坐标完整。未覆盖逐行混合用途、普适的异值别名转换、跨表事实 JOIN 和跨运行本体复用。不同值反向索引回源行的一般关联规则仍未完成。细节及验收边界见[配置定义与业务事实设计](FACT_CONFIG_ONTOLOGY_DESIGN.md)。
+明显业务事实表采用 `fact_observations.py` 处理实际出现的维度、期间、数值元组，不枚举各列值的笛卡尔积。它排在字段关联搜索之后：全量核验技术规则只用于排序候选坐标，不证明维度语义；高基数时取源行种子并反查选中坐标的全部匹配行，未访问范围标为未知和 partial。在字段绑定前，`type_equivalence_stage.py` 仅按同根、同名、同单位、同范围召回已接受业务类型；每对需模型逐字引述两端完整来源说明和公式，程序只接受完整说明及公式相同的组合。只有一个同名组的全部类型两两证实等价，才建立同快照 `canonical_type_id`；文字改写、未决或缺失组合都保留分立类型。`fact_type_binding.py` 只对数值字段调用一次结构化模型判断，再核对完整列注释、完整类型与来源定义、单位及适用范围；只有 Metric 类型唯一或同名备选已全部归到同一规范类型，才按坐标和值回查全部来源行并实例化。合并的来源行若在未选入坐标的非技术字段上取值不同，实例化会拒绝；这仍不能证明单行的坐标完整。未覆盖逐行混合用途、普适的异值别名转换、跨表事实 JOIN 和跨运行本体复用。不同值反向索引回源行的一般关联规则仍未完成。细节及验收边界见[配置定义与业务事实设计](FACT_CONFIG_ONTOLOGY_DESIGN.md)。
 
 该核验由 `type_equivalence.enabled` 控制，`max_pairs`、`max_decisions`、`max_packet_bytes` 限制召回与模型成本。输出包括 `type_equivalence_steps.yaml`、`type_equivalence_assertions.yaml`、`type_equivalence_coverage.yaml`；已证实的组还在 `ontology.yaml` 中保留原业务类型、规范 ID 和来源间断言。未完成与拒绝的组不消失，也不能被同名条件自动合并。输出可追溯模型与程序作出的决定，不构成未经独立业务 Gold 检验的语义正确率证明。
 

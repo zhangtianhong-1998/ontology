@@ -145,6 +145,20 @@ def test_one_field_call_instantiates_only_exact_observed_tuples_with_full_source
         data.close()
 
 
+def test_aggregation_operator_is_not_a_business_fact_value_type(tmp_path):
+    data, core = _fixture(tmp_path)
+    try:
+        core.object_types[0].parent = "Measure"
+        core.object_types[0].aggregation_operator = "sum"
+        llm = _LLM()
+        result = _bind(data, core, llm)
+        assert result["instances"] == []
+        assert result["coverage"]["accepted_fields"] == 0
+        assert llm.calls == []
+    finally:
+        data.close()
+
+
 def test_accepted_fact_binding_materializes_type_property_and_value_assertions(tmp_path):
     data, core = _fixture(tmp_path)
     try:

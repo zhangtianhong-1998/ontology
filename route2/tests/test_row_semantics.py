@@ -88,3 +88,21 @@ def test_control_name_conflicting_with_fact_shape_remains_unresolved():
     assert purpose["purpose"] == "unresolved"
     assert purpose["reason"] == "control_table_name_and_business_fact_evidence_coexist"
     assert purpose["classification_granularity"] == "table_level_heuristic"
+
+
+def test_time_words_in_numeric_value_comment_do_not_turn_value_into_coordinate():
+    fields = [
+        ("fruit_code", "水果编码", "text"),
+        ("period", "会计期", "text"),
+        ("sales_amount", "按月统计的销售金额", "numeric"),
+    ]
+    table = {"schema": "fruit", "table_name": "fruit_business_fact", "pk": [],
+             "column_names": [name for name, _, _ in fields],
+             "columns": [{"column_name": name, "column_comment": comment,
+                          "data_type": dtype} for name, comment, dtype in fields],
+             "profiles": [{"column": "sales_amount", "distinct_sample": ["100", "120"],
+                           "usable_count": 2, "numeric_shape_count": 2}]}
+    purpose = classify_row_purpose(table)
+    assert purpose["purpose"] == "business_fact"
+    assert purpose["evidence_columns"]["business_time"] == ["period"]
+    assert purpose["evidence_columns"]["numeric_business_value"] == ["sales_amount"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -14,6 +15,35 @@ from .validation import validate_plan
 
 ROOTS = ("GeneralObject", "Measure", "Metric", "Dimension", "Term")
 OBJECT_RELATIONS = ("contains", "depends_on", "related_to", "points_to")
+
+# A Measure is an aggregation/filter operation, not a business-valued quantity.
+# Keep this gate deliberately narrow: an unfamiliar operation stays unresolved
+# until its executable meaning can be checked instead of guessing from a name.
+_OPERATOR_LABELS = {
+    "sum": frozenset(("sum", "求和", "合计", "总和", "加总", "累计求和")),
+    "avg": frozenset(("avg", "average", "mean", "平均", "均值", "求平均")),
+    "count": frozenset(("count", "计数", "计条数")),
+    "distinct_count": frozenset(("distinct_count", "count_distinct", "去重计数")),
+    "min": frozenset(("min", "minimum", "最小值", "取最小")),
+    "max": frozenset(("max", "maximum", "最大值", "取最大")),
+    "filter": frozenset(("filter", "where", "过滤", "筛选")),
+}
+_OPERATOR_EVIDENCE = {
+    "sum": re.compile(r"\bsum\s*\(|求和|合计|总和|加总", re.I),
+    "avg": re.compile(r"\b(?:avg|average|mean)\s*\(|平均|均值", re.I),
+    "count": re.compile(r"\bcount\s*\(|计数", re.I),
+    "distinct_count": re.compile(r"\bcount\s*\(\s*distinct\b|去重计数|count_distinct", re.I),
+    "min": re.compile(r"\bmin\s*\(|最小值|取最小", re.I),
+    "max": re.compile(r"\bmax\s*\(|最大值|取最大", re.I),
+    "filter": re.compile(r"\b(?:filter|where)\b|过滤|筛选", re.I),
+}
+
+
+def _operator_label(label):
+    normalized = re.sub(r"[\s_（）()]", "", label).casefold()
+    return next((operator for operator, labels in _OPERATOR_LABELS.items()
+                 if normalized in {re.sub(r"[\s_（）()]", "", value).casefold()
+                                   for value in labels}), None)
 
 
 class RecordAlignmentDecision(Strict):
@@ -32,6 +62,8 @@ class ConceptBundleDecision(Strict):
     classification_basis: Literal["business_driven_metric", "aggregation_or_filter_measure",
                                   "other", "unresolved"] = "unresolved"
     classification_quote: str = ""
+    aggregation_operator: Literal["sum", "avg", "count", "distinct_count",
+                                  "min", "max", "filter"] | None = None
     # An accepted source-grounded concept is not automatically a class.
     # Existing responses without this field remain instance-level candidates.
     ontology_level: Literal["type", "instance", "unresolved"] = "unresolved"
@@ -196,6 +228,15 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                 and decision.classification_quote in str(entry["value"])
                 for record in exact_records for role, entry in _entries(record)):
             raise ValueError("Metric/Measure classification quote is absent from an exact definition")
+        if decision.root_type == "Measure":
+            operator = decision.aggregation_operator
+            if (not operator or _operator_label(decision.label) != operator
+                    or not _OPERATOR_EVIDENCE[operator].search(decision.classification_quote)):
+                raise ValueError("Measure requires an explicitly evidenced reusable aggregation operator")
+            if any(str(record.get("unit") or "").strip() for record in exact_records):
+                raise ValueError("Measure operator cannot carry a business value unit")
+        elif _operator_label(decision.label):
+            raise ValueError("An aggregation operator alone is not a Metric")
     exact_scope = {}
     for record in exact_records:
         for key, value in (record.get("scope") or {}).items():
@@ -208,6 +249,8 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         raise ValueError("Conflicting units cannot share an exact concept")
     unit = next(iter(exact_units), "")
     effective_scope = {**exact_scope, **decision.scope}
+    if decision.ontology_level == "type" and decision.root_type == "Measure" and effective_scope:
+        raise ValueError("Measure operator cannot be scoped to a business observation")
     if not set(decision.scope_roles) <= set(effective_scope):
         raise ValueError("Scope role names a field absent from exact source definitions")
     if decision.ontology_level == "type":
@@ -282,6 +325,8 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                "unclassified_scope": {key: value for key, value in effective_scope.items()
                                       if key not in decision.scope_roles},
                "unit": unit or None,
+               "aggregation_operator": (decision.aggregation_operator
+                                        if decision.root_type == "Measure" else None),
                "source_properties": source_properties,
                "source_refs": [{"record_id": item["source_record_id"],
                                 "card_id": item.get("source_card_id"),
@@ -303,6 +348,7 @@ def _compiled_object_type(concept):
         evidence_scope="definition_record",
         applicability_scope=concept["applicability_scope"],
         unit=concept["unit"], derivation_kind="exact_definition",
+        aggregation_operator=concept.get("aggregation_operator"),
         source_concept_ids=[concept["id"]],
         source_properties=concept["source_properties"],
     )

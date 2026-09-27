@@ -103,6 +103,87 @@ def test_numeric_value_column_does_not_become_a_dimension_from_business_comment(
         data.close()
 
 
+def test_high_cardinality_search_rechecks_selected_coordinates_and_reports_unknown_remainder(tmp_path):
+    data = _dataset(tmp_path)
+    try:
+        first = build_fact_observation_candidates(
+            data, max_candidates_per_table=2, max_exact_group_tuples=1)
+        second = build_fact_observation_candidates(
+            data, max_candidates_per_table=2, max_exact_group_tuples=1)
+        assert first == second
+        fact = next(item for item in first["tables"]
+                    if item["table"] == "fruit.fruit_profit_fact")
+        field = fact["value_fields"][0]
+        assert fact["scan_scope"] == "exact_selected_coordinates_only"
+        assert field["observed_tuples"] is None
+        assert field["observed_tuples_count_status"] == "unknown"
+        assert fact["omitted_observed_tuples_status"] == "unknown_high_cardinality_seeded"
+        assert first["coverage"]["unknown_omitted_observed_tuples_fields"] == 1
+        assert first["coverage"]["partial"] is True
+        assert 0 < fact["emitted_candidates"] <= 2
+        for item in fact["candidates"]:
+            assert item["selection_scope"] == "hash_seeded_exact_reverse_checked"
+            if item["coordinate_values"]["fruit_code"] == "APPLE":
+                assert item["distinct_values_at_selected_coordinates"] == 2
+    finally:
+        data.close()
+
+
+def test_accepted_dimension_link_ranks_candidate_before_column_order(tmp_path):
+    root = tmp_path / "input"
+    _table(root, "many_dim_fact", {
+        "fact_id": "记录 ID", "fruit_code": "水果编码", "region_code": "地区编码",
+        "channel_code": "渠道编码", "opaque_slot": "", "period": "会计期",
+        "profit_amount": "销售利润金额",
+    }, [{"fact_id": "1", "fruit_code": "APPLE", "region_code": "EAST",
+         "channel_code": "ONLINE", "opaque_slot": "D1",
+         "period": "2025Q1", "profit_amount": "100"},
+        {"fact_id": "2", "fruit_code": "BANANA", "region_code": "SOUTH",
+         "channel_code": "OFFLINE", "opaque_slot": "D2",
+         "period": "2025Q2", "profit_amount": "120"}],
+        pk="fact_id")
+    _table(root, "dim_definition", {"dim_code": "维度编码"},
+           [{"dim_code": name} for name in ("EAST", "SOUTH", "ONLINE", "OFFLINE", "D1", "D2")],
+           pk="dim_code")
+    work = tmp_path / "work"
+    work.mkdir()
+    data = Dataset(root, work)
+    try:
+        good = {"source_table": "fruit.many_dim_fact", "source_column": "region_code",
+                "target_table": "fruit.dim_definition", "target_column": "dim_code",
+                "target_root_type": "Dimension", "status": "accepted",
+                "witness_snapshot_id": data.snapshot_id, "full_input_verified": True,
+                "evidence_ids": ["record:checked"]}
+        bad = {**good, "source_column": "channel_code", "witness_snapshot_id": "stale"}
+        technical = {
+            "source": {"table": "fruit.many_dim_fact", "field": "channel_code"},
+            "target": {"table": "fruit.dim_definition", "field": "dim_code"},
+            "status": "checked_technical", "snapshot_id": data.snapshot_id,
+            "verification": {"scan_scope": "full_input", "checks": {
+                "eligible_references": 2, "unique_matches": 2, "missing_scope": 0}},
+        }
+        opaque_technical = {**technical, "source": {
+            "table": "fruit.many_dim_fact", "field": "opaque_slot"}}
+        output = build_fact_observation_candidates(
+            data, max_dimension_columns=2, accepted_dimension_links=[good, bad],
+            verified_technical_links=[technical, opaque_technical])
+        fact = next(item for item in output["tables"]
+                    if item["table"] == "fruit.many_dim_fact")
+        assert fact["selected_columns"]["dimensions"][0] == "region_code"
+        assert fact["selected_columns"]["accepted_dimension_fields_selected"] == ["region_code"]
+        assert fact["selected_columns"]["technical_link_fields_selected"] == ["channel_code"]
+        assert "opaque_slot" in fact["verified_technical_link_fields"]
+        assert "opaque_slot" not in fact["selected_columns"]["dimensions"]
+        assert fact["selected_columns"]["omitted_dimensions"]
+        assert fact["coordinate_grain_status"] == "unresolved_omitted_coordinate_columns"
+        assert "coordinate_columns_omitted_by_limit" in fact["candidates"][0]["ambiguity"]
+        assert output["coverage"]["accepted_dimension_links_ignored"] == 1
+        assert output["coverage"]["verified_technical_links_ignored"] == 0
+        assert output["coverage"]["partial"] is True
+    finally:
+        data.close()
+
+
 @pytest.mark.parametrize("kwargs", [
     {"max_candidates_per_table": 0},
     {"max_dimension_columns": True},

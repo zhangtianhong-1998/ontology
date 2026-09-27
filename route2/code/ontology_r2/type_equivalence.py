@@ -116,14 +116,16 @@ def _eligible_groups(plan, data):
             continue
         unit = _norm(item.unit)
         # Two unknown units do not establish a compatible quantitative unit.
-        if root in ("Metric", "Measure") and not unit:
+        if root == "Metric" and not unit:
+            continue
+        if root == "Measure" and (unit or not item.aggregation_operator):
             continue
         fragments = _fragments(data, item)
         if fragments is None:
             continue
         scope = tuple(sorted((_norm(k), _norm(v))
                               for k, v in item.applicability_scope.items()))
-        key = (root, _norm(item.label), unit, scope)
+        key = (root, _norm(item.label), unit, scope, item.aggregation_operator)
         groups[key].append((item, fragments))
     for values in groups.values():
         values.sort(key=lambda pair: pair[0].id)

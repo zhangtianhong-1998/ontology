@@ -19,7 +19,7 @@ from ontology_r2.group_incremental import (
 )
 from ontology_r2.incremental import direct_mapping, ontology_from_plan
 from ontology_r2.instance_bundles import build_instance_bundles
-from ontology_r2.pipeline import add_inferred_matches, check_output, technical_graph
+from ontology_r2.pipeline import check_output, technical_graph
 from ontology_r2.relations import Extractor
 from ontology_r2.semantic_cards import SemanticCardIndex, build_semantic_cards
 from ontology_r2.storage import Dataset, Sink, read_yaml, write_yaml
@@ -51,7 +51,7 @@ def _table(root, name, comment, columns, rows):
 
 
 def make_fixture(root):
-    """Six definition rows, one explicit metric-to-measure code reference."""
+    """Six definition rows, one explicit metric-to-SUM-operation reference."""
     root = Path(root)
     _table(root, "fruit_metric_definition", "水果经营指标定义", {
         "metric_id": "记录编号", "metric_code": "指标编码", "metric_name": "指标名称",
@@ -59,21 +59,21 @@ def make_fixture(root):
         "measure_code": "被引用的度量编码", "unit": "金额单位",
     }, [{"metric_id": "m1", "metric_code": "PROFIT", "metric_name": "水果销售利润",
          "definition": "水果销售收入扣除销售成本的金额", "calculation_formula":
-         "水果销售利润 = 水果销售收入 - 水果销售成本",
-         "measure_code": "REV", "unit": "元"}])
+         "水果销售利润 = SUM(水果销售收入) - SUM(水果销售成本)",
+         "measure_code": "SUM", "unit": "元"}])
     _table(root, "fruit_metric_common", "水果经营指标公共定义", {
         "id": "记录编号", "metric_name": "指标名称", "definition": "指标说明", "unit": "单位",
     }, [{"id": "mc1", "metric_name": "水果销售利润",
          "definition": "销售收入减去销售成本后的利润金额", "unit": "元"}])
-    _table(root, "fruit_measure_definition", "水果经营度量定义", {
+    _table(root, "fruit_measure_definition", "水果经营聚合操作定义", {
         "measure_id": "记录编号", "measure_code": "度量编码", "measure_name": "度量名称",
         "definition": "度量业务定义", "unit": "金额单位",
-    }, [{"measure_id": "v1", "measure_code": "REV", "measure_name": "水果销售收入",
-         "definition": "水果销售形成的收入金额", "unit": "元"}])
-    _table(root, "fruit_measure_common", "水果经营度量公共定义", {
+    }, [{"measure_id": "v1", "measure_code": "SUM", "measure_name": "SUM",
+         "definition": "SUM(x) 对输入数值求和", "unit": ""}])
+    _table(root, "fruit_measure_common", "水果经营聚合操作公共定义", {
         "id": "记录编号", "measure_name": "度量名称", "definition": "度量说明", "unit": "单位",
-    }, [{"id": "vc1", "measure_name": "水果销售收入",
-         "definition": "水果经营销售所得收入", "unit": "元"}])
+    }, [{"id": "vc1", "measure_name": "SUM",
+         "definition": "对输入值求和，采用 SUM(x)", "unit": ""}])
     _table(root, "fruit_dim_definition", "水果经营地区维度定义", {
         "dim_id": "记录编号", "dim_code": "维度编码", "dim_name": "维度名称",
         "definition": "维度业务定义",
@@ -111,6 +111,7 @@ class FixtureDecisions:
                                       else "aggregation_or_filter_measure" if seed["root_hint"] == "Measure"
                                       else "other"),
                 classification_quote=definition,
+                aggregation_operator=("sum" if seed["root_hint"] == "Measure" else None),
                 alignments=alignments,
             )
         if task == "relation_bundle":
@@ -121,8 +122,8 @@ class FixtureDecisions:
             target = records[pair["target_record_id"]]
             return RelationBundleDecision(
                 status="proposed", parent_relation="depends_on",
-                label="指标计算依赖收入度量",
-                definition="利润指标的公式引用销售收入度量",
+                label="指标公式使用求和操作",
+                definition="利润指标的公式引用 SUM 聚合操作",
                 source_quote=source["fields"]["name"][0]["value"],
                 target_quote=target["fields"]["name"][0]["value"],
             )
@@ -243,7 +244,7 @@ def run(output):
         write_yaml(output / "extraction_plan.yaml", result["plan"].model_dump())
         write_yaml(output / "ontology.yaml", ontology_from_plan(
             result["plan"], profile, data, mapping, []))
-        write_yaml(output / "meta_graph.yaml", add_inferred_matches(technical_graph(data), association))
+        write_yaml(output / "meta_graph.yaml", technical_graph(data))
         write_yaml(output / "construction.yaml", {
             "steps": [], "group_steps": result["steps"],
             "direct_mapping_columns": sum(len(table["columns"]) for table in data.tables.values()),

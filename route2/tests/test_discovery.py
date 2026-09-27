@@ -79,6 +79,57 @@ def test_explicit_column_comment_recalls_pair_when_value_budget_skips_target():
         data.close()
 
 
+@pytest.mark.parametrize("with_comments", [False, True])
+def test_full_distinct_recalls_nonnumeric_link_across_unrelated_column_names(with_comments):
+    data = SmallDataset({
+        "demo.outgoing": (["opaque_slot"], [("FRUIT-APPLE",), ("FRUIT-MANGO",)], []),
+        "demo.glossary": (["foreign_caption"], [("FRUIT-APPLE",), ("FRUIT-MANGO",)], []),
+    })
+    if with_comments:
+        data.tables["demo.outgoing"]["columns"] = [
+            {"column_name": "opaque_slot", "column_comment": "出参的标准名称"}]
+        data.tables["demo.glossary"]["columns"] = [
+            {"column_name": "foreign_caption", "column_comment": "业务术语别名"}]
+    try:
+        found = propose_candidates(data, value_index_mode="full_distinct",
+                                   max_indexed_fields=0)
+        pair = find_candidate(found, "demo.outgoing", "opaque_slot",
+                              "demo.glossary", "foreign_caption")
+        assert pair["retrieval_channels"] == ["value_overlap"]
+        assert pair["shared_sample_value_count"] == 2
+        checked = validate_candidate(data, pair)
+        assert checked["decision"] == {"status": "checked", "semantic_relation": "unresolved"}
+        assert found["coverage"]["value_index_fields"] == 2
+    finally:
+        data.close()
+
+
+def test_value_index_reports_shape_exclusions_without_hiding_other_fields():
+    data = SmallDataset({
+        "demo.source": (["continuous", "long_payload", "opaque_slot"],
+                        [(str(i), "x" * 120, f"K-{i}") for i in range(120)], []),
+        "demo.target": (["foreign_caption"], [("K-1",)], []),
+    })
+    data.tables["demo.source"]["profiles"] = [
+        {"column": "continuous", "scan_scope": "full_input", "usable_count": 120,
+         "numeric_shape_count": 120, "approx_distinct_usable": 120,
+         "min_chars_usable": 1, "max_chars_usable": 3, "short_text_count": 120},
+        {"column": "long_payload", "scan_scope": "full_input", "usable_count": 120,
+         "numeric_shape_count": 0, "approx_distinct_usable": 1,
+         "min_chars_usable": 120, "max_chars_usable": 120, "short_text_count": 0},
+    ]
+    try:
+        found = propose_candidates(data, value_index_mode="full_distinct",
+                                   max_indexed_fields=0, max_value_length=96)
+        reasons = found["coverage"]["value_index_exclusion_reasons"]
+        assert reasons["demo.source.continuous"] == "high_cardinality_numeric_without_key_cue"
+        assert reasons["demo.source.long_payload"] == "all_values_exceed_index_length"
+        assert "demo.source.opaque_slot" not in found["coverage"]["fields_not_value_indexed"]
+        find_candidate(found, "demo.source", "opaque_slot", "demo.target", "foreign_caption")
+    finally:
+        data.close()
+
+
 def test_audit_value_overlap_does_not_consume_candidate_budget():
     data = SmallDataset({
         "demo.source": (["creation_date", "ref_code"], [("2026-01-01", "K17")], []),

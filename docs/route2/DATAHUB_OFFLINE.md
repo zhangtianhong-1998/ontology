@@ -4,11 +4,11 @@
 
 ## 运行方式与功能边界
 
-路线2由本地 `meta_graph.yaml` 保存快照、来源、表、列、声明约束和经核验的技术匹配。每张表还有一个 `SourceRecordType` 节点，通过 `mapped_as_source_record_type` 边连到表；它表示源行结构，不等于已抽取的业务概念。本地图给表存放默认 `postgres/PROD` 的 DataHub dataset URN，以便与可选的导出文件核对。改用其他平台或环境导出时，URN 会按导出参数重新生成。
+路线2由本地 `meta_graph.yaml` 保存快照、来源、表、列、声明约束和声明外键；经核验的技术关联另存于 `association_rules.yaml`，字段候选另存于 `field_candidates.yaml`。每张表还有一个本地确定性生成的 `SourceRecordType` 节点，通过 `mapped_as_source_record_type` 边连到表；它表示源行结构，不等于已抽取的业务概念。本地图给表存放默认 `postgres/PROD` 的 DataHub dataset URN，仅用于与可选的导出文件核对。改用其他平台或环境导出时，URN 会按导出参数重新生成。
 
 `export-datahub` 只把**表和列元数据**写成 DataHub metadata-file JSON；它不读取 CSV 记录，不导出实例关系，也不推断血缘。当前导出器直接生成文件，**不依赖 DataHub Python SDK 或服务端**。[DataHub metadata-file 说明](https://github.com/datahub-project/datahub/blob/master/metadata-ingestion/sink_docs/metadata-file.md)
 
-`meta_graph.yaml` 是**本地 DataHub 兼容元数据视图**，不是 DataHub 服务返回的图。声明主键既体现在表和列属性中，也通过 `has_declared_constraint`、`declared_key_column` 边连接到声明的列。列的 `analysis_role` 只是本地启发式分流结果，不是 DataHub 字段类型。`inferred_technical_match` 只记录已核验字段匹配及其条件、作用域和计数；不能当作业务对象关系、外键声明或血缘。业务派生类型保存在 `ontology.yaml`，记录实体保存在 `objects/part-*.yaml`，二者与源表通过映射及来源证据对齐。考虑到百万行输入，元数据图不会复制全部记录节点；页面仅加载有界实体预览，完整物化范围以 `manifest.yaml` 和 `metrics.yaml` 为准。
+`meta_graph.yaml` 是**本地源元数据图**，不是 DataHub 建造或服务返回的图。声明主键既体现在表和列属性中，也通过 `has_declared_constraint`、`declared_key_column` 边连接到声明的列。启发式列角色另存于 `column_roles.yaml`，字段关联候选、核验结果与技术规则另存于独立文件，不是元数据图边；这些结果不能当作业务对象关系、外键声明或血缘。业务派生类型保存在 `ontology.yaml`，记录实体保存在 `objects/part-*.yaml`，二者与源表通过映射及来源证据对齐。考虑到百万行输入，元数据图不会复制全部记录节点；页面仅加载有界实体预览，完整物化范围以 `manifest.yaml` 和 `metrics.yaml` 为准。
 
 节点、边和稳定标识的约定见[元数据图契约](METADATA_GRAPH_CONTRACT.md)。
 

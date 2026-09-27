@@ -11,7 +11,7 @@ import pytest
 
 from ontology_r2.demo import make_demo
 from ontology_r2.models import BuildPlan, Condition, evaluate
-from ontology_r2.pipeline import add_inferred_matches, build
+from ontology_r2.pipeline import build
 from ontology_r2.relations import formula_symbols
 from ontology_r2.storage import Dataset, read_yaml, write_yaml
 from ontology_r2.validation import validate_plan
@@ -36,19 +36,32 @@ def link_rows(output):
     return {(objects[a["subject"]]["source_ref"]["row"], objects[a["object"]]["source_ref"]["row"]) for a in items(output, "assertions") if "object" in a}
 
 
-def test_checked_field_match_is_a_scoped_technical_graph_edge():
-    graph = {"nodes": [], "edges": []}
-    association = {"rules": [{
+def test_checked_field_match_is_separate_from_source_metadata_graph(tmp_path, monkeypatch):
+    config = setup(tmp_path, scenario="linked", mcp=False)
+    config["incremental"] = {"mode": "source_mapping_only"}
+    config["discovery"] = {"enabled": False}
+    config["association_rules"] = {"enabled": True}
+    rule = {
         "rule_id": "r1", "status": "checked_technical",
-        "source": {"table": "s.a", "field": "ref"},
-        "target": {"table": "s.b", "field": "code"},
+        "source": {"table": "demo.records", "field": "catalog_code"},
+        "target": {"table": "demo.catalog", "field": "code"},
         "selector": {"kind": "metric"}, "scope_bindings": {"domain": "domain"},
-    }]}
-    edge = add_inferred_matches(graph, association)["edges"][0]
-    assert edge["source"] == "s.a.ref" and edge["target"] == "s.b.code"
-    assert edge["type"] == "inferred_technical_match"
-    assert edge["selector"] == {"kind": "metric"}
-    assert edge["semantic_relation"] == "unresolved"
+        "semantic_relation": "unresolved",
+    }
+
+    async def fake_association_rules(*_args, **_kwargs):
+        return {"rules": [rule], "coverage": {"status": "complete", "partial": False},
+                "agent": {"status": "disabled"}}
+
+    monkeypatch.setattr("ontology_r2.pipeline.build_association_rules", fake_association_rules)
+    output = tmp_path / "run"
+    asyncio.run(build(config, output))
+    graph = read_yaml(output / "meta_graph.yaml")
+    association = read_yaml(output / "association_rules.yaml")
+    assert association["rules"] == [rule]
+    assert not any(edge["type"] == "inferred_technical_match" for edge in graph["edges"])
+    assert not any(edge["source"] == "demo.records.catalog_code" and
+                   edge["target"] == "demo.catalog.code" for edge in graph["edges"])
 
 
 def test_business_fact_candidates_are_exported_without_llm_instance_claims(tmp_path):
@@ -86,6 +99,52 @@ def test_business_fact_candidates_are_exported_without_llm_instance_claims(tmp_p
     assert coverage["status"] == "partial"
     assert coverage["partial_table_names"] == ["fruit.fruit_profit_fact"]
     assert result["fact_observations"]["emitted_candidates"] == 2
+
+
+def test_verified_technical_link_ranks_fact_coordinate_after_association_stage(
+        tmp_path, monkeypatch):
+    config = setup(tmp_path, scenario="unrelated", mcp=False)
+    dataset = Path(config["dataset"])
+    _table(dataset, "fruit_profit_fact", {
+        "fact_id": "记录 ID", "fruit_code": "水果编码",
+        "region_code": "经营地区编码", "period": "会计期",
+        "profit_amount": "经营利润金额",
+    }, [
+        {"fact_id": "1", "fruit_code": "APPLE", "region_code": "EAST",
+         "period": "2025Q1", "profit_amount": "100"},
+        {"fact_id": "2", "fruit_code": "BANANA", "region_code": "EAST",
+         "period": "2025Q2", "profit_amount": "110"},
+        {"fact_id": "3", "fruit_code": "APPLE", "region_code": "EAST",
+         "period": "2025Q3", "profit_amount": "120"},
+    ], pk="fact_id")
+    _table(dataset, "fruit_region", {
+        "region_code": "地区编码", "region_name": "地区名称",
+    }, [{"region_code": "EAST", "region_name": "华东"}], pk="region_code")
+    config.update(incremental={"mode": "source_mapping_only"},
+                  discovery={"enabled": False},
+                  association_rules={"enabled": True},
+                  fact_observations={"enabled": True, "max_dimension_columns": 1})
+
+    async def verified_rule(data, *_args, **_kwargs):
+        return {"rules": [{
+            "status": "checked_technical", "snapshot_id": data.snapshot_id,
+            "source": {"table": "fruit.fruit_profit_fact", "field": "region_code"},
+            "target": {"table": "fruit.fruit_region", "field": "region_code"},
+            "verification": {"scan_scope": "full_input", "checks": {
+                "eligible_references": 3, "unique_matches": 3, "missing_scope": 0}},
+            "semantic_relation": "unresolved",
+        }], "coverage": {"status": "complete", "partial": False},
+                "agent": {"status": "disabled"}}
+
+    monkeypatch.setattr("ontology_r2.pipeline.build_association_rules", verified_rule)
+    output = tmp_path / "run"
+    asyncio.run(build(config, output))
+    facts = read_yaml(output / "fact_observation_candidates.yaml")["tables"]
+    fact = next(item for item in facts if item["table"] == "fruit.fruit_profit_fact")
+    assert fact["selected_columns"]["dimensions"] == ["region_code"]
+    assert fact["selected_columns"]["technical_link_fields_selected"] == ["region_code"]
+    assert fact["coordinate_grain_status"] == "unresolved_omitted_coordinate_columns"
+    assert fact["candidates"][0]["candidate_status"] == "candidate_only"
 
 
 def test_disabled_fact_candidate_stage_still_reports_coverage(tmp_path):
@@ -551,9 +610,7 @@ def test_local_metadata_graph_bridges_tables_to_source_types_and_declared_keys(t
         assert [edge["target"] for edge in key_edges] == [
             "demo.catalog." + key for key in table["declared_primary_key"]]
         assert all(nodes[edge["target"]]["is_declared_primary_key"] for edge in key_edges)
-        assert all(nodes["demo.catalog." + name]["analysis_role"]
-                   in {"semantic", "unknown", "empty", "audit_time", "audit_metadata",
-                       "technical_identifier", "sensitive"}
+        assert all("analysis_role" not in nodes["demo.catalog." + name]
                    for name in data.tables["demo.catalog"]["column_names"])
         assert graph["datahub_interchange"]["service_backed"] is False
         table_constraints = data.tables["demo.catalog"]["constraints"]

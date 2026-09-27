@@ -10,6 +10,7 @@ from ontology_r2.visualization import (
     MAX_ATTRIBUTE_CHARS,
     MAX_SOURCE_REFS_PER_CONCEPT,
     _metadata_preview,
+    _ontology_overview,
     render_viewer,
 )
 from ontology_r2.storage import read_yaml, write_yaml
@@ -119,18 +120,76 @@ def test_metadata_graph_exposes_table_to_source_record_type_mapping():
     assert preview["details"]["demo.metric"]["record_types"][0]["business_concept_inferred"] is False
 
 
+def test_viewer_payload_keeps_local_match_candidates_outside_metadata_graph(tmp_path):
+    run = tmp_path / "metadata-boundary"
+    run.mkdir()
+    write_yaml(run / "manifest.yaml", {"status": "complete"})
+    write_yaml(run / "meta_graph.yaml", {"nodes": [
+        {"id": "demo.a", "kind": "Table"}, {"id": "demo.b", "kind": "Table"},
+        {"id": "demo.a.code", "kind": "Column", "column_name": "code"},
+        {"id": "demo.b.code", "kind": "Column", "column_name": "code"},
+    ], "edges": [
+        {"source": "demo.a", "target": "demo.a.code", "type": "table_has_column"},
+        {"source": "demo.b", "target": "demo.b.code", "type": "table_has_column"},
+        {"source": "demo.a.code", "target": "demo.b.code", "type": "declared_fk"},
+    ]})
+    write_yaml(run / "association_rules.yaml", {"rules": [{
+        "rule_id": "rule-1", "source": {"table": "demo.a", "field": "alias"},
+        "target": {"table": "demo.b", "field": "name"},
+        "status": "checked_technical",
+    }]})
+    write_yaml(run / "field_candidates.yaml", [{
+        "candidate_id": "candidate-1", "source": {"table": "demo.a", "field": "word"},
+        "target": {"table": "demo.b", "field": "word"},
+    }])
+    data = payload(render_viewer(run, 10).read_text())
+    assert {item["status"] for item in data["metadata"]["links"]} == {"declared"}
+    assert {item["status"] for item in data["association_preview"]["links"]} == {
+        "verified_technical", "candidate"}
+    assert data["metadata"]["link_counts"] == {"declared": 1}
+
+
+def test_ontology_overview_keeps_business_structure_without_source_fields_or_cartesian_edges():
+    overview = _ontology_overview({
+        "object_roots": [{"id": "Metric"}, {"id": "Measure"}],
+        "object_types": [
+            {"id": "Revenue", "parent": "Metric", "category": "business_type"},
+            {"id": "Cost", "parent": "Metric", "category": "business_type"},
+            {"id": "Sum", "parent": "Measure", "category": "business_type"},
+            {"id": "source_record_type:metric", "parent": "Metric", "category": "source_record_type"},
+        ],
+        "attributes": [{"id": "source_column:metric.name", "domain": ["Revenue"]}],
+        "relation_types": [
+            {"id": "depends", "label": "依赖", "category": "business_relation_type",
+             "domain": ["Revenue"], "range": ["Cost"]},
+            {"id": "ambiguous", "category": "business_relation_type",
+             "domain": ["Revenue", "Cost"], "range": ["Sum"]},
+            {"id": "record_link", "domain": ["source_record_type:metric"],
+             "range": ["Revenue"]},
+        ],
+    })
+    assert {item["id"] for item in overview["nodes"]} == {
+        "Metric", "Measure", "Revenue", "Cost", "Sum"}
+    assert {tuple(item.values()) for item in overview["inheritance"]} == {
+        ("Metric", "Revenue"), ("Metric", "Cost"), ("Measure", "Sum")}
+    assert overview["relations"] == [{"id": "depends", "source": "Revenue",
+                                       "target": "Cost", "label": "依赖", "parent": None}]
+    assert overview["omitted_relation_type_ids"] == ["ambiguous", "record_link"]
+
+
 def test_viewer_counts_business_and_source_record_types_separately(tmp_path):
     run = tmp_path / "type-preview"
     run.mkdir()
     write_yaml(run / "manifest.yaml", {"status": "complete", "input_tables": 2})
     write_yaml(run / "ontology.yaml", {
-        "object_roots": [{"id": "GeneralObject"}, {"id": "Measure"}],
+        "object_roots": [{"id": "GeneralObject"}, {"id": "Metric"}, {"id": "Measure"}],
         "object_types": [
             {"id": "source_record_type:demo.api", "parent": "GeneralObject",
              "category": "source_record_type"},
             {"id": "source_record_type:demo.measure", "parent": "Measure",
              "category": "source_record_type"},
-            {"id": "FruitRevenue", "parent": "Measure", "category": "business_type"},
+            {"id": "FruitRevenue", "parent": "Metric", "category": "business_type"},
+            {"id": "Sum", "parent": "Measure", "category": "business_type"},
             {"id": "legacy", "parent": "Measure"}],
         "relation_roots": [{"id": "depends_on"}],
         "relation_types": [{"id": "calculation_depends_on", "parent": "depends_on"}],
@@ -138,18 +197,24 @@ def test_viewer_counts_business_and_source_record_types_separately(tmp_path):
     html = render_viewer(run, 10).read_text()
     data = payload(html)
     metrics = {item["label"]: item["value"] for item in data["preview"]["metrics"]}
-    assert metrics["业务派生类型"] == 1
+    assert metrics["已接受本体对象"] == 2
     assert metrics["源记录类型"] == 2
     assert data["preview"]["type_counts"] == {
-        "business": 1, "source_record": 2, "unclassified": 1, "relation": 1,
+        "business": 2, "source_record": 2, "unclassified": 1, "relation": 1,
         "business_relation": 0, "record_relation": 1}
     assert 'data-mode="ontology"' in html
     assert 'data-mode="metadata"' in html
     assert 'data-type-filter=' not in html
     assert '<section class="metrics"' not in html
-    assert "['业务类型'" in html and "['源记录类型'" in html
-    assert "业务数据属性" in html and "源记录字段" in html
-    assert "个物理字段映射" in html
+    assert {item["id"] for item in data["ontology_overview"]["nodes"]} == {
+        "GeneralObject", "Metric", "Measure", "FruitRevenue", "Sum"}
+    assert {item["target"] for item in data["ontology_overview"]["inheritance"]} == {
+        "FruitRevenue", "Sum"}
+    assert "search-panel\" class=\"search-panel\" hidden" in html
+    assert "聚合度量" in html and "整体本体结构" in html
+    assert "cols.slice(0,6)" not in html
+    assert "(M.links||[]).filter(x=>x.status==='declared'" in html
+    assert "业务类型" not in html
 
 
 def test_viewer_shows_verified_equivalence_on_business_type_without_relation_edge(tmp_path):
@@ -257,7 +322,7 @@ def test_viewer_separates_witnessed_record_and_business_type_relations(tmp_path)
     assert data["preview"]["type_counts"]["business_relation"] == 1
     assert 'data-mode="ontology"' in html
     assert "对象属性与连接" in html
-    assert "业务类型关系实例" in html
+    assert "本体对象关系实例" in html
 
 
 def test_viewer_shows_type_definition_and_bounded_record_attributes(tmp_path):

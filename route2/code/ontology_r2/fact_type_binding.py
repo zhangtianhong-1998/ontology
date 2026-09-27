@@ -119,8 +119,10 @@ def _recall_types(data, core, table, column, *, max_candidates, max_definition_c
     found = []
     excluded = Counter()
     for item in core.object_types:
+        # A fact value instantiates a business Metric. Measure describes a
+        # reusable aggregation/filter operation, not the value of one fact.
         if (item.category != "business_type" or item.derivation_kind == "shared_supertype"
-                or _root_of(item, by_id) not in ("Metric", "Measure")
+                or _root_of(item, by_id) != "Metric"
                 or not item.label or not item.definition):
             continue
         label = _norm(item.label)
@@ -433,7 +435,7 @@ async def bind_fact_observations(
             payload = {
                 "contract": (
                     "One decision for this value field, not per row. Only choose an exact "
-                    "accepted Metric/Measure business type whose full definition fits the "
+                    "accepted Metric ontology type whose full definition fits the "
                     "column's business meaning. A lexical match is candidate recall only. "
                     "If the column comment lacks the type's complete business name, unit or "
                     "scope is uncertain, or several types remain plausible, return unresolved. "

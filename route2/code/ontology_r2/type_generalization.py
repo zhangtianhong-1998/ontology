@@ -98,6 +98,7 @@ def propose_generalization_candidates(plan: BuildPlan, data, max_pairs: int):
         return []
     eligible = [item for item in plan.object_types
                 if item.category == "business_type" and item.parent in ROOTS
+                and item.parent != "Measure"
                 and item.derivation_kind in (None, "exact_definition")]
     by_group = defaultdict(list)
     for item in eligible:
@@ -181,10 +182,15 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
         if child is None or child.category != "business_type":
             raise ValueError("Generalization child is not an accepted business type")
         children.append(child)
+    # Measure denotes a reusable operation. Its subclasses need an
+    # operator-specific contract; the business-value superclass logic below
+    # deliberately applies only to Metric and other semantic objects.
+    if decision.root_type == "Measure":
+        raise ValueError("Measure operator generalization is unsupported")
     units = {_norm(item.unit) for item in children}
     if len(units) != 1 or _norm(decision.unit) not in units:
         raise ValueError("Child units conflict with the proposed parent unit")
-    if decision.root_type in ("Metric", "Measure") and not next(iter(units)):
+    if decision.root_type == "Metric" and not next(iter(units)):
         raise ValueError("Quantitative generalization requires known compatible units")
     common_scope = {key: value for key, value in children[0].applicability_scope.items()
                     if all(item.applicability_scope.get(key) == value for item in children[1:])}

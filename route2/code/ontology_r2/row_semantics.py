@@ -26,6 +26,11 @@ _CONTROL = frozenset(("rule", "config", "anchor", "log", "reference", "ref",
                       "param", "input", "output", "tag", "connection", "member",
                       "field", "column"))
 _DEFINITION = frozenset(("definition", "def", "detail", "common", "attribute", "attr"))
+_TEMPORAL_VALUE = re.compile(
+    r"(?:19|20)\d\d(?:[-/]\d{1,2}(?:[-/]\d{1,2})?|Q[1-4])?|"
+    r"(?:19|20)\d\d年(?:\d{1,2}月|第?[一二三四1-4]季度)?",
+    re.I,
+)
 
 
 def _numeric_value(column, profile):
@@ -36,7 +41,17 @@ def _numeric_value(column, profile):
     return declared_numeric or (usable >= 2 and numeric / usable >= 0.9)
 
 
-def classify_row_purpose(table):
+def _temporal_value(column, profile):
+    """Check observed value shape before treating a comment as a time column."""
+    sql_type = str(column.get("data_type") or "").casefold()
+    if "timestamp" in sql_type or sql_type.startswith(("date", "datetime")):
+        return True
+    samples = [str(value).strip() for value in profile.get("distinct_sample", ())
+               if value is not None and str(value).strip()]
+    return bool(samples) and sum(bool(_TEMPORAL_VALUE.fullmatch(value)) for value in samples) / len(samples) >= 0.8
+
+
+def classify_row_purpose(table, *, accepted_dimension_fields=()):
     """Describe a *table's likely row purpose*, leaving mixed cases unresolved.
 
     Strong fact evidence requires a numeric business value plus both a business
@@ -44,6 +59,7 @@ def classify_row_purpose(table):
     makes that inference ambiguous, so the table is not silently excluded.
     """
     roles = _field_roles(table)
+    accepted_dimension_fields = set(accepted_dimension_fields)
     columns = {item["column_name"]: item for item in table["columns"]}
     profiles = {item["column"]: item for item in table.get("profiles", ())}
     safe = {item["column"] for item in classify_columns(table)
@@ -57,12 +73,20 @@ def classify_row_purpose(table):
         if name not in safe or name in pk:
             continue
         column = columns[name]
-        text = name + " " + str(column.get("column_comment") or "")
-        if _TIME.search(text):
+        comment = str(column.get("column_comment") or "")
+        text = name + " " + comment
+        numeric_business_value = bool(_VALUE.search(text) and
+                                      _numeric_value(column, profiles.get(name, {})))
+        temporal_shape = _temporal_value(column, profiles.get(name, {}))
+        # A value column may be described as "按月统计的销售金额". The comment
+        # specifies its grain, not the column's own values. Prefer observed
+        # temporal shape over lexical time words in a comment.
+        time_candidate = bool(_TIME.search(name) or (_TIME.search(comment) and temporal_shape))
+        if time_candidate and (temporal_shape or not numeric_business_value):
             times.append(name)
-        if _DIMENSION.search(text):
+        if _DIMENSION.search(text) or name in accepted_dimension_fields:
             dimensions.append(name)
-        if _VALUE.search(text) and _numeric_value(column, profiles.get(name, {})):
+        if numeric_business_value and name not in times:
             values.append(name)
         if name in roles.get("name", ()):
             names.append(name)
@@ -94,7 +118,8 @@ def classify_row_purpose(table):
                                  "numeric_business_value": values},
             "scope": "imported_csv_snapshot_only",
             "classification_granularity": "table_level_heuristic",
-            "authority": "heuristic_candidate_not_business_fact_proof"}
+            "authority": "heuristic_candidate_not_business_fact_proof",
+            "accepted_dimension_fields_used": sorted(accepted_dimension_fields & set(dimensions))}
 
 
 def _candidate_groups(table, purpose, *, max_columns):

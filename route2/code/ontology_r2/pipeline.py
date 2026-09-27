@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from .association_rules import build_association_rules
 from .column_roles import classify_columns
+from .column_role_inference import infer_column_role_candidates
 from .configuration_relations import (discover_configuration_relations,
                                       infer_configuration_specs)
 from .configuration_relation_stage import adjudicate_configuration_relations
@@ -58,10 +59,10 @@ def load_config(path):
 
 
 def technical_graph(data):
-    """Build a local technical graph with explicit source-record type bridges.
+    """Build a local source-metadata graph with source-record type bridges.
 
-    DataHub's dataset/schema shape is used for offline interchange only. No
-    DataHub service or lineage inference is involved in graph construction.
+    The optional DataHub URN is an interchange identifier. DataHub does not
+    construct this graph, infer its edges, or participate in extraction.
     """
     nodes, edges = [{"id": "snapshot:" + data.snapshot_id, "kind": "DatasetSnapshot"}], []
     for path, sha in sorted(data.files.items()):
@@ -70,7 +71,6 @@ def technical_graph(data):
     for name, t in data.tables.items():
         metadata_file = data.evidence["schema:" + name]["source_ref"]["file"]
         record_type, classification = source_record_type(name, t)
-        roles = {role["column"]: role for role in classify_columns(t)}
         try:
             default_datahub_urn = dataset_urn(name)
         except ValueError:
@@ -88,7 +88,8 @@ def technical_graph(data):
                       "label": record_type.label, "definition": record_type.definition,
                       "parent": record_type.parent, "evidence_ids": record_type.evidence_ids,
                       "classification_basis": classification["basis"],
-                      "business_concept_inferred": False, "observed_rows": t["rows"]})
+                      "business_concept_inferred": False, "observed_rows": t["rows"],
+                      "mapping_origin": "local_deterministic_source_structure"})
         edges.append({"source": name, "type": "mapped_as_source_record_type", "target": record_type.id,
                       "semantic_status": "source_structure_only"})
         edges.append({"source": name, "type": "documented_by", "target": "source:" + metadata_file})
@@ -110,8 +111,6 @@ def technical_graph(data):
             nodes.append({"id": cid, "kind": "Column", **c,
                           "table": name, "datahub_field_path": c["column_name"],
                           "is_declared_primary_key": c["column_name"] in t["pk"],
-                          "analysis_role": roles[c["column_name"]]["role"],
-                          "semantic_prompt_eligible": roles[c["column_name"]]["include_in_semantic_prompt"],
                           "evidence_ids": ["schema:" + name + ":" + c["column_name"]]})
             edges.append({"source": name, "type": "table_has_column", "target": cid})
         for fk in t["foreign_keys"]:
@@ -125,25 +124,6 @@ def technical_graph(data):
             "graph_source": "local_schema_and_csv_snapshot",
             "datahub_interchange": {"format": "metadata-file", "default_platform": "postgres",
                                     "default_environment": "PROD", "service_backed": False}}
-
-
-def add_inferred_matches(graph, association):
-    """Keep checked field matches in the technical graph, never as declared FKs."""
-    for rule in association.get("rules", []):
-        if rule.get("status") not in ("checked_technical", "observed_subset"):
-            continue
-        source, target = rule["source"], rule["target"]
-        graph["edges"].append({
-            "source": source["table"] + "." + source["field"],
-            "target": target["table"] + "." + target["field"],
-            "type": "inferred_technical_match",
-            "rule_id": rule["rule_id"], "status": rule["status"],
-            "selector": rule.get("selector") or {},
-            "scope_bindings": rule.get("scope_bindings") or {},
-            "verification": rule.get("verification") or {},
-            "semantic_relation": "unresolved",
-        })
-    return graph
 
 
 def check_output(sink):
@@ -264,54 +244,6 @@ async def build(config, output):
         write_yaml(output / "profiles.yaml", {name: t["profiles"] for name, t in data.tables.items()})
         write_yaml(output / "column_roles.yaml", {name: classify_columns(table)
                                                    for name, table in data.tables.items()})
-        fact_options = config.get("fact_observations", {})
-        if not isinstance(fact_options, dict):
-            raise ValueError("fact_observations must be a mapping")
-        unknown_fact_options = set(fact_options) - {
-            "enabled", "max_candidates_per_table", "max_dimension_columns",
-            "max_time_columns", "max_value_columns"}
-        if unknown_fact_options:
-            raise ValueError("Unknown fact_observations settings: " +
-                             ", ".join(sorted(unknown_fact_options)))
-        if type(fact_options.get("enabled", True)) is not bool:
-            raise ValueError("fact_observations.enabled must be a boolean")
-        fact_result = {"scope": "imported_csv_snapshot_only", "candidate_status": "candidate_only",
-                       "business_type_binding": "unresolved", "tables": [],
-                       "coverage": {"status": "disabled", "partial": False,
-                                    "reason": "fact_observations.enabled=false"}}
-        if fact_options.get("enabled", True):
-            stage = progress.task("业务事实去重候选", 1) if progress else nullcontext(None)
-            with stage as task:
-                fact_result = build_fact_observation_candidates(
-                    data, **{key: value for key, value in fact_options.items() if key != "enabled"})
-                if task:
-                    task.advance(detail=f"{fact_result['coverage']['emitted_candidates']} 个候选")
-            partial_tables = [item["table"] for item in fact_result["tables"]
-                              if item["row_purpose"] == "business_fact" and (
-                                  item["scan_scope"] != "full_input_for_selected_value_columns"
-                                  or item["omitted_observed_tuples"] > 0
-                                  or bool(item.get("value_columns_not_scanned_due_to_candidate_limit"))
-                                  or any(item["selected_columns"].get(key)
-                                         for key in ("omitted_dimensions", "omitted_business_times",
-                                                     "omitted_values")))]
-            fact_result["coverage"].update(
-                status="partial" if partial_tables else "complete",
-                partial=bool(partial_tables), partial_table_names=partial_tables,
-                unresolved_table_names=[item["table"] for item in fact_result["tables"]
-                                        if item["row_purpose"] == "unresolved"],
-                semantic_status="candidate_only_not_business_instance_or_type")
-        write_yaml(output / "fact_observation_candidates.yaml", {
-            key: value for key, value in fact_result.items() if key != "coverage"})
-        write_yaml(output / "fact_observation_coverage.yaml", fact_result["coverage"])
-        manifest["fact_observations"] = {
-            "status": fact_result["coverage"]["status"],
-            "candidate_status": "candidate_only", "business_type_binding": "unresolved",
-            "business_fact_tables": fact_result["coverage"].get("business_fact_tables", 0),
-            "emitted_candidates": fact_result["coverage"].get("emitted_candidates", 0),
-            "omitted_observed_tuples": fact_result["coverage"].get("omitted_observed_tuples", 0),
-            "unresolved_tables": fact_result["coverage"].get("unresolved_tables", 0),
-            "partial": fact_result["coverage"]["partial"],
-        }
         discovery = {"candidates": [], "checks": [], "coverage": {"status": "disabled", "partial": False}}
         if config.get("discovery", {}).get("enabled", True):
             discovery = discover_and_check(data, config.get("discovery", {}), progress=progress)
@@ -327,13 +259,71 @@ async def build(config, output):
         if config.get("association_rules", {}).get("enabled", False):
             association = await build_association_rules(
                 data, discovery, config["association_rules"], llm=llm)
-        add_inferred_matches(meta_graph, association)
-        write_yaml(output / "meta_graph.yaml", meta_graph)
         write_yaml(output / "association_rules.yaml", association)
         manifest["association_rules"] = {"rules": len(association["rules"]),
                                           "statuses": association["coverage"].get("statuses", {}),
                                           "agent": association["agent"],
                                           "partial": association["coverage"].get("partial", False)}
+        fact_options = config.get("fact_observations", {})
+        if not isinstance(fact_options, dict):
+            raise ValueError("fact_observations must be a mapping")
+        unknown_fact_options = set(fact_options) - {
+            "enabled", "max_candidates_per_table", "max_dimension_columns",
+            "max_time_columns", "max_value_columns", "max_exact_group_tuples"}
+        if unknown_fact_options:
+            raise ValueError("Unknown fact_observations settings: " +
+                             ", ".join(sorted(unknown_fact_options)))
+        if type(fact_options.get("enabled", True)) is not bool:
+            raise ValueError("fact_observations.enabled must be a boolean")
+        fact_result = {"scope": "imported_csv_snapshot_only", "candidate_status": "candidate_only",
+                       "business_type_binding": "unresolved", "tables": [],
+                       "coverage": {"status": "disabled", "partial": False,
+                                    "reason": "fact_observations.enabled=false"}}
+        if fact_options.get("enabled", True):
+            stage = progress.task("业务事实去重候选", 1) if progress else nullcontext(None)
+            with stage as task:
+                fact_result = build_fact_observation_candidates(
+                    data, verified_technical_links=association["rules"],
+                    **{key: value for key, value in fact_options.items() if key != "enabled"})
+                if task:
+                    task.advance(detail=f"{fact_result['coverage']['emitted_candidates']} 个候选")
+            partial_tables = [item["table"] for item in fact_result["tables"]
+                              if item["row_purpose"] == "business_fact" and (
+                                  item["scan_scope"] != "full_input_for_selected_value_columns"
+                                  or item["omitted_observed_tuples"] > 0
+                                  or item.get("omitted_observed_tuples_status") != "exact"
+                                  or item.get("coordinate_grain_status") not in
+                                  (None, "candidate_grain_not_business_key_proof")
+                                  or bool(item.get("value_columns_not_scanned_due_to_candidate_limit"))
+                                  or any(item["selected_columns"].get(key)
+                                         for key in ("omitted_dimensions", "omitted_business_times",
+                                                     "omitted_values")))]
+            partial = bool(partial_tables or fact_result["coverage"].get("partial"))
+            fact_result["coverage"].update(
+                status="partial" if partial else "complete",
+                partial=partial, partial_table_names=partial_tables,
+                unresolved_table_names=[item["table"] for item in fact_result["tables"]
+                                        if item["row_purpose"] == "unresolved"],
+                semantic_status="candidate_only_not_business_instance_or_type")
+        write_yaml(output / "fact_observation_candidates.yaml", {
+            key: value for key, value in fact_result.items() if key != "coverage"})
+        write_yaml(output / "fact_observation_coverage.yaml", fact_result["coverage"])
+        manifest["fact_observations"] = {
+            "status": fact_result["coverage"]["status"],
+            "candidate_status": "candidate_only", "business_type_binding": "unresolved",
+            "business_fact_tables": fact_result["coverage"].get("business_fact_tables", 0),
+            "emitted_candidates": fact_result["coverage"].get("emitted_candidates", 0),
+            "omitted_observed_tuples": fact_result["coverage"].get("omitted_observed_tuples", 0),
+            "unresolved_tables": fact_result["coverage"].get("unresolved_tables", 0),
+            "partial": fact_result["coverage"]["partial"],
+        }
+        # Run this after deterministic fact and technical-link discovery so a
+        # source-checked *candidate* role cannot change their row-purpose or
+        # field-association evidence. It only widens later semantic recall.
+        role_candidates = await infer_column_role_candidates(
+            data, llm, config.get("column_role_inference", {}))
+        write_yaml(output / "column_role_candidates.yaml", role_candidates)
+        manifest["column_role_inference"] = role_candidates["coverage"]
         concept_result = {"candidates": [], "coverage": {"status": "disabled"}}
         if config.get("concept_recall", {}).get("enabled", False):
             options = {key: value for key, value in config["concept_recall"].items()
@@ -701,6 +691,7 @@ async def build(config, output):
             "incremental_units_not_accepted": bool(manifest.get("incremental_units_not_accepted")),
             "external_alignment_errors": bool(manifest.get("external_alignment_errors")),
             "field_candidates_not_fully_checked": bool(manifest["field_discovery"]["partial"]),
+            "column_roles_not_fully_inferred": bool(manifest["column_role_inference"]["partial"]),
             "fact_observation_candidates_partial": bool(manifest["fact_observations"]["partial"]),
             "fact_type_binding_partial": bool(manifest["fact_type_binding"]["partial"]),
             "association_rules_partial": bool(manifest["association_rules"]["partial"]),
