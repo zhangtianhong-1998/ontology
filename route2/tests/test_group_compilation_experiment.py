@@ -91,6 +91,7 @@ def test_controlled_packets_compile_business_types_and_evidence_bounded_relation
     assert viewer["validation"]["passed"] is True
     assert viewer["manifest"]["viewer"] == "viewer.html"
     assert viewer["manifest"]["llm"]["mode"] == "fixed_fixture_decisions"
+    assert "不是全量抽取" in viewer["preview"]["notice"]
     assert all(item["label"] != "SUM" for item in viewer["ontology_overview"]["nodes"])
     with pytest.raises(FileExistsError, match="already contains files"):
         run(output)

@@ -112,6 +112,9 @@ def _preview_summary(payload, has_results, has_ontology):
                   "映射阶段未运行，— 表示未执行或无统计，0 表示本次确为零。")
         if hits is not None:
             notice += f" 模型缓存命中 {hits} 次。"
+    elif manifest.get("experimental_scope") == "controlled_synthetic_fixture_only":
+        notice = ("受控合成样例：固定决策用于检查流程和页面；"
+                  "不是全量抽取，也不代表真实业务数据的语义质量。")
     return {"metrics": metrics, "type_counts": type_counts if has_ontology else None,
             "notice": notice}
 

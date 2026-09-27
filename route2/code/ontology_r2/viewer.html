@@ -7,7 +7,7 @@
 :root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;color:#1f3043;background:#f6f8fb}*{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}
 header{background:white;border-bottom:1px solid #dce5ee;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:17px 24px}h1{font-size:20px;margin:0 0 5px}header p{font-size:12px;color:#708095;margin:0}.switch{display:flex;gap:4px;padding:4px;background:#ecf1f6;border-radius:8px}.switch button{border:0;background:transparent;padding:8px 13px;border-radius:6px;color:#53687f;white-space:nowrap}.switch button.active{background:#fff;color:#175487;box-shadow:0 1px 4px #2343;font-weight:600}.status{border:1px solid #d7e1eb;border-radius:40px;padding:6px 10px;font-size:12px;white-space:nowrap}.status.partial,.status.failed{border-color:#e1bd87;color:#946e30}
 main{max-width:1800px;margin:auto;padding:15px}.notice{padding:10px 13px;border-left:3px solid #8fb0d0;background:#edf4fb;margin:0 0 12px;font-size:12px;line-height:1.55;color:#52677d}.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:12px;min-height:calc(100vh - 145px)}.graph-pane,.details{min-width:0;border:1px solid #dce5ee;background:#fff;border-radius:9px}.graph-pane{position:relative;display:flex;flex-direction:column;overflow:hidden}.search-toggle{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;padding:7px 10px}.search-toggle:hover{background:#eff5fa}.search-panel{position:absolute;z-index:5;top:58px;left:14px;width:min(320px,calc(100% - 28px));max-height:65vh;overflow:auto;background:white;border:1px solid #dce5ee;box-shadow:0 8px 22px #16365425;border-radius:8px;padding:11px}.search-panel[hidden]{display:none}.search-panel input{width:100%;border:1px solid #d4e0eb;border-radius:6px;padding:8px 9px;outline:none}.search-panel input:focus,button:focus-visible{outline:2px solid #77a8d8;outline-offset:2px}.group-title{font-size:11px;font-weight:600;color:#7c8999;margin:17px 5px 6px}.index-item{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:6px;padding:8px 9px;color:#34516a;line-height:1.35;overflow-wrap:anywhere}.index-item:hover{background:#eff5fa}.index-item.active{background:#e6f1fc;color:#175386;font-weight:600}.index-item small{display:block;font-size:10px;color:#7c8ca0;margin-top:2px;font-weight:400}
-.graph-head{padding:13px 15px 10px;border-bottom:1px solid #e6edf4;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}.graph-head h2{font-size:17px;margin:0 0 5px}.graph-head p{font-size:12px;color:#708093;line-height:1.55;margin:0}.graph-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;flex-shrink:0}.view-control{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;min-width:31px;height:31px;padding:3px 7px}.view-control:hover{background:#eff5fa}.zoom-level{min-width:39px;text-align:center;color:#667d92;font-size:11px;font-variant-numeric:tabular-nums}.graph-viewport{overflow:hidden;flex:1;min-height:520px;background:radial-gradient(#e4ebf2 .7px,transparent .7px);background-size:18px 18px;touch-action:none}.graph-viewport svg{display:block;width:100%;height:100%;min-height:520px;cursor:grab;touch-action:none}.graph-viewport.is-panning svg{cursor:grabbing}.graph-foot{border-top:1px solid #e6edf4;color:#728396;font-size:12px;padding:11px 16px;line-height:1.55}.node{cursor:pointer}.node rect{stroke:#b7c9d9;stroke-width:1.1}.node.selected rect,.node:hover rect,.node:focus rect{stroke:#1a619a;stroke-width:2}.node text{font-size:11.5px;fill:#27445d;pointer-events:none;font-weight:600}.edge{stroke:#a1b3c5;stroke-width:1.2;fill:none}.edge.relation{stroke:#8c69ad;stroke-dasharray:5 3;stroke-width:2;cursor:pointer}.edge.relation:hover,.edge.relation.selected{stroke:#593783;stroke-width:3}.edge.declared{stroke:#469370;stroke-width:2}.edge-label{fill:#6c7e91;font-size:10px;pointer-events:none}.edge-label.relation{fill:#724d97}
+.graph-head{padding:13px 15px 10px;border-bottom:1px solid #e6edf4;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}.graph-head h2{font-size:17px;margin:0 0 5px}.graph-head p{font-size:12px;color:#708093;line-height:1.55;margin:0}.graph-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;flex-shrink:0}.view-control{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;min-width:31px;height:31px;padding:3px 7px}.view-control:hover{background:#eff5fa}.zoom-level{min-width:39px;text-align:center;color:#667d92;font-size:11px;font-variant-numeric:tabular-nums}.graph-viewport{overflow:hidden;flex:1;min-height:520px;background:radial-gradient(#e4ebf2 .7px,transparent .7px);background-size:18px 18px;touch-action:none}.graph-viewport svg{display:block;width:100%;height:100%;min-height:520px;cursor:grab;touch-action:none}.graph-viewport.is-panning svg{cursor:grabbing}.graph-foot{border-top:1px solid #e6edf4;color:#728396;font-size:12px;padding:11px 16px;line-height:1.55}.node{cursor:pointer}.node circle{stroke:#b7c9d9;stroke-width:1.1}.node.selected circle,.node:hover circle,.node:focus circle{stroke:#1a619a;stroke-width:2}.node text{font-size:11.5px;fill:#27445d;pointer-events:none;font-weight:600}.edge{stroke:#a1b3c5;stroke-width:1.2;fill:none}.edge.relation{stroke:#8c69ad;stroke-dasharray:5 3;stroke-width:2;cursor:pointer}.edge.relation:hover,.edge.relation.selected{stroke:#593783;stroke-width:3}.edge.declared{stroke:#469370;stroke-width:2}.edge-label{fill:#6c7e91;font-size:10px;font-weight:600;pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}.edge-label.relation{fill:#724d97}
 .details{max-height:calc(100vh - 135px);overflow:auto;padding:17px}.details h2{font-size:17px;margin:0 0 6px;line-height:1.4;overflow-wrap:anywhere}.kind{font-size:11px;color:#38648c;background:#eaf2fb;border-radius:4px;padding:3px 6px;display:inline-block;margin-bottom:9px}.id{font-size:11px;color:#75879a;overflow-wrap:anywhere}.label{font-size:11px;font-weight:600;color:#79899a;margin:15px 0 5px}.value{font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.section{border-top:1px solid #e5edf3;padding-top:13px;margin-top:17px}.section h3,.evidence h3{font-size:13px;margin:0 0 9px}.item{display:block;width:100%;text-align:left;border:1px solid #e2eaf1;background:#fbfdff;border-radius:6px;padding:8px 9px;margin:5px 0;color:#34516b;overflow-wrap:anywhere;line-height:1.4}.item:hover{background:#edf5fb}.item small{display:block;color:#798a9c;font-size:10px;margin-top:3px}.empty{font-size:12px;color:#79899a;line-height:1.55}.evidence{border-top:1px solid #e5edf3;padding-top:13px;margin-top:20px}.quote{padding:9px 10px;border-left:3px solid #97b7d7;background:#f5f9fc;font-size:12px;line-height:1.6;margin:7px 0;overflow-wrap:anywhere}.quote small{display:block;color:#72869a;margin-top:4px}.plain{font-size:12px;color:#596d80;line-height:1.6;overflow-wrap:anywhere}footer{font-size:11px;color:#8391a0;padding:12px 1px 0}
 @media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr)}.details{max-height:none}}@media(max-width:580px){header{flex-wrap:wrap;padding:14px}.switch{order:3;width:100%}.switch button{flex:1}.layout{display:block}.graph-pane,.details{max-height:none;margin-bottom:10px}.graph-head{flex-wrap:wrap}.graph-actions{justify-content:flex-start}main{padding:10px}}
 </style>
@@ -91,7 +91,12 @@ const x=[...(detail.columns||[]),...(detail.constraints||[]),...(detail.sources|
 }
 function node(id,label,kind,x,y,action,active=false,subtitle='',root=''){return{id,label,kind,x,y,action,active,subtitle,root}}
 const graphState={key:null,bounds:null,fit:null,view:null,drag:null};
-const NODE_HALF_WIDTH=72,NODE_HALF_HEIGHT=20;
+const NODE_RADIUS=40;
+function circleLabel(value){
+  const chars=[...String(value||'')];let width=0,label='';
+  for(const char of chars){const next=/[\u2e80-\u9fff]/u.test(char)?12:7;if(width+next>NODE_RADIUS*1.7)return [...label].slice(0,-1).join('')+'…';width+=next;label+=char}
+  return label
+}
 function viewportSize(){const rect=$('graph').getBoundingClientRect();return{width:Math.max(rect.width,320),height:Math.max(rect.height,320)}}
 function fittedView(bounds){
   const size=viewportSize(),ratio=size.width/size.height;
@@ -136,29 +141,35 @@ if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>{
 }).observe($('graph-viewport'));
 function drawGraph(nodes,edges){
   const svg=$('graph'),key=`${mode}:${nodes.map(x=>x.id).join('|')}:${edges.map(x=>x.id||`${x.from}>${x.to}`).join('|')}`;
-  const xs=nodes.map(x=>x.x),ys=nodes.map(x=>x.y),paddingX=36,paddingY=edges.some(e=>e.from===e.to)?90:58;
-  const bounds=nodes.length?{x:Math.min(...xs)-NODE_HALF_WIDTH-paddingX,y:Math.min(...ys)-NODE_HALF_HEIGHT-paddingY,width:Math.max(...xs)-Math.min(...xs)+2*(NODE_HALF_WIDTH+paddingX),height:Math.max(...ys)-Math.min(...ys)+2*(NODE_HALF_HEIGHT+paddingY)}:{x:0,y:0,width:600,height:400};
+  const xs=nodes.map(x=>x.x),ys=nodes.map(x=>x.y),paddingX=44,paddingY=edges.some(e=>e.from===e.to)?115:66;
+  const bounds=nodes.length?{x:Math.min(...xs)-NODE_RADIUS-paddingX,y:Math.min(...ys)-NODE_RADIUS-paddingY,width:Math.max(...xs)-Math.min(...xs)+2*(NODE_RADIUS+paddingX),height:Math.max(...ys)-Math.min(...ys)+2*(NODE_RADIUS+paddingY)}:{x:0,y:0,width:600,height:400};
   const preserve=graphState.key===key&&graphState.view;
   graphState.key=key;graphState.bounds=bounds;graphState.fit=fittedView(bounds);
   if(!preserve)graphState.view={...graphState.fit};applyView();svg.replaceChildren();
   const defs=svgEl('defs'),marker=svgEl('marker',{id:'arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:6,markerHeight:6,orient:'auto'});
   marker.append(svgEl('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#8797aa'}));defs.append(marker);svg.append(defs);
   const map=new Map(nodes.map(x=>[x.id,x]));
-  edges.forEach(e=>{
+  edges.forEach((e,index)=>{
     const a=map.get(e.from),b=map.get(e.to);if(!a||!b)return;
-    const dx=b.x-a.x,dy=b.y-a.y,vertical=Math.abs(dy)>=Math.abs(dx),sx=a.x+(vertical?0:Math.sign(dx)*NODE_HALF_WIDTH),sy=a.y+(vertical?Math.sign(dy)*NODE_HALF_HEIGHT:0),tx=b.x-(vertical?0:Math.sign(dx)*NODE_HALF_WIDTH),ty=b.y-(vertical?Math.sign(dy)*NODE_HALF_HEIGHT:0);
-    const relation=e.kind==='relation',self=a.id===b.id,cx=(sx+tx)/2,cy=(sy+ty)/2-(relation?48:0);
-    const path=self?`M ${a.x+55} ${a.y-14} C ${a.x+108} ${a.y-82}, ${a.x-108} ${a.y-82}, ${a.x-55} ${a.y-14}`:relation?`M ${sx} ${sy} Q ${cx} ${cy} ${tx} ${ty}`:`M ${sx} ${sy} L ${tx} ${ty}`;
-    const line=svgEl('path',{d:path,class:`edge ${e.kind||''} ${e.status||''} ${selected?.kind==='relation'&&selected.id===e.id?'selected':''}`,'marker-end':'url(#arrow)'});
+    const dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy)||1,ux=dx/distance,uy=dy/distance,nx=-uy,ny=ux;
+    const sx=a.x+ux*NODE_RADIUS,sy=a.y+uy*NODE_RADIUS,tx=b.x-ux*NODE_RADIUS,ty=b.y-uy*NODE_RADIUS;
+    const relation=e.kind==='relation',self=a.id===b.id,curve=relation?Math.min(38,distance*.22):0,cx=(sx+tx)/2+nx*curve,cy=(sy+ty)/2+ny*curve;
+    const path=self?`M ${a.x+28} ${a.y-28} C ${a.x+98} ${a.y-112}, ${a.x-98} ${a.y-112}, ${a.x-28} ${a.y-28}`:relation?`M ${sx} ${sy} Q ${cx} ${cy} ${tx} ${ty}`:`M ${sx} ${sy} L ${tx} ${ty}`;
+    const line=svgEl('path',{d:path,class:`edge ${e.kind||''} ${e.status||''} ${selected?.kind==='relation'&&selected.id===e.id?'selected':''}`,'marker-end':'url(#arrow)','data-edge-index':index});
     if(e.action){line.setAttribute('role','button');line.setAttribute('tabindex','0');line.setAttribute('aria-label',e.label||e.id);line.onclick=e.action;line.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();e.action()}}}
     const title=svgEl('title');title.textContent=e.label||e.kind||'连接';line.append(title);svg.append(line);
-    if(e.label&&(relation||e.kind==='declared')&&edges.length<30){const textNode=svgEl('text',{x:self?a.x:cx,y:self?a.y-78:cy-8,'text-anchor':'middle',class:`edge-label ${e.kind||''}`});textNode.textContent=clip(e.label,16);svg.append(textNode)}
+    if(e.label){
+      const midX=self?a.x:(relation?(sx+2*cx+tx)/4:(sx+tx)/2)+nx*(relation?0:12);
+      const midY=self?a.y-94:(relation?(sy+2*cy+ty)/4:(sy+ty)/2)+ny*(relation?0:12)-6;
+      const textNode=svgEl('text',{x:midX,y:midY,'text-anchor':'middle',class:`edge-label ${e.kind||''}`,'data-edge-label-for':index});
+      textNode.textContent=clip(e.label,16);const labelTitle=svgEl('title');labelTitle.textContent=e.label;textNode.append(labelTitle);svg.append(textNode)
+    }
   });
   nodes.forEach(n=>{
     const g=svgEl('g',{class:`node ${n.active?'selected':''}`,role:'button',tabindex:0,'aria-label':`${n.kind}：${n.label}`,'data-node-id':n.id});
     const fill=n.kind==='物理表'?'#e5f0fc':({Metric:'#e4f0fc',Measure:'#e7f4eb',Dimension:'#fff2df',Term:'#f4eafd',GeneralObject:'#e8f0f4'})[n.root]||'#f1f5f8';
-    g.append(svgEl('rect',{x:n.x-NODE_HALF_WIDTH,y:n.y-NODE_HALF_HEIGHT,width:NODE_HALF_WIDTH*2,height:NODE_HALF_HEIGHT*2,rx:7,fill}));
-    const t=svgEl('text',{x:n.x,y:n.y+4,'text-anchor':'middle'});t.textContent=clip(n.label,11);g.append(t);
+    g.append(svgEl('circle',{cx:n.x,cy:n.y,r:NODE_RADIUS,fill}));
+    const t=svgEl('text',{x:n.x,y:n.y+4,'text-anchor':'middle'});t.textContent=circleLabel(n.label);g.append(t);
     const title=svgEl('title');title.textContent=`${n.label}${n.subtitle?` · ${n.subtitle}`:''}\n${n.id}`;g.append(title);g.onclick=n.action;g.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();n.action()}};svg.append(g)
   })
 }
@@ -172,24 +183,24 @@ function ontologyGraph(){
     const ia=preferred.indexOf(a),ib=preferred.indexOf(b);
     return(ia<0?preferred.length:ia)-(ib<0?preferred.length:ib)||a.localeCompare(b)
   });
-  const columnCount=ordered.length>1?2:1,groupWidth=336,gapX=24,gapY=25,margin=25;
+  const columnCount=ordered.length>1?2:1,groupWidth=336,gapX=24,gapY=35,margin=25;
   let rowY=25;
   for(let start=0;start<ordered.length;start+=columnCount){
     let rowHeight=0;
     ordered.slice(start,start+columnCount).forEach(([rootId,group],columnIndex)=>{
       const x0=margin+columnIndex*(groupWidth+gapX),center=x0+groupWidth/2;
       const levels=new Map();group.items.forEach(x=>{const depth=depthOf(x);if(!levels.has(depth))levels.set(depth,[]);levels.get(depth).push(x)});
-      if(group.root)nodes.push(node(group.root.id,name(group.root),typeKind(group.root),center,rowY+27,()=>select('object',group.root.id),selected?.kind==='object'&&selected.id===group.root.id,'一级对象',rootId));
-      let levelY=rowY+91;
+      if(group.root)nodes.push(node(group.root.id,name(group.root),typeKind(group.root),center,rowY+45,()=>select('object',group.root.id),selected?.kind==='object'&&selected.id===group.root.id,'一级对象',rootId));
+      let levelY=rowY+150;
       for(const depth of [...levels.keys()].sort((a,b)=>a-b)){
         const items=levels.get(depth).sort((a,b)=>a.id.localeCompare(b.id));
         items.forEach((x,index)=>{
-          const col=index%2,row=Math.floor(index/2),xx=x0+85+col*166,yy=levelY+row*59;
+          const col=index%2,row=Math.floor(index/2),xx=x0+85+col*166,yy=levelY+row*100;
           nodes.push(node(x.id,name(x),typeKind(x),xx,yy,()=>select('object',x.id),selected?.kind==='object'&&selected.id===x.id,`派生层级 ${depth}`,rootId))
         });
-        levelY+=Math.ceil(items.length/2)*59+18
+        levelY+=Math.ceil(items.length/2)*100+20
       }
-      rowHeight=Math.max(rowHeight,Math.max(100,levelY-rowY-16))
+      rowHeight=Math.max(rowHeight,Math.max(145,levelY-rowY-15))
     });
     rowY+=rowHeight+gapY
   }
@@ -202,7 +213,7 @@ function ontologyGraph(){
 }
 function metadataGraph(){
   const tables=M.tables||[],nodes=[],edges=[],cols=Math.min(tables.length>12?4:3,Math.max(1,tables.length));
-  tables.forEach((t,index)=>nodes.push(node(t.id,name(t),'物理表',105+(index%cols)*184,70+Math.floor(index/cols)*74,()=>select('table',t.id),selected?.kind==='table'&&selected.id===t.id,t.schema||'')));
+  tables.forEach((t,index)=>nodes.push(node(t.id,name(t),'物理表',105+(index%cols)*184,82+Math.floor(index/cols)*106,()=>select('table',t.id),selected?.kind==='table'&&selected.id===t.id,t.schema||'')));
   (M.links||[]).filter(x=>x.status==='declared'&&TABLE.has(x.source)&&TABLE.has(x.target)).forEach(link=>edges.push({id:link.id,from:link.source,to:link.target,kind:'declared',label:`${link.source_field||'?'} → ${link.target_field||'?'}`,action:()=>select('technical_link',link.id)}));
   $('graph-title').textContent='物理元数据图';
   $('graph-subtitle').textContent=`${tables.length} 张物理表 · ${edges.length} 条声明外键。列、约束和来源在选中表的详情中查看。`;
@@ -211,6 +222,6 @@ function metadataGraph(){
 }
 function renderGraph(){if(mode==='ontology')ontologyGraph();else metadataGraph()}
 function render(){if(mode==='ontology'){const derived=(OV.nodes||[]).filter(x=>!(O.object_roots||[]).some(root=>root.id===x.id));const counts=Object.fromEntries(Object.keys(rootNames).map(root=>[root,derived.filter(x=>rootOf(x)===root).length]));$('notice').textContent=`已接受派生对象：指标 ${counts.Metric||0}、度量 ${counts.Measure||0}、维度 ${counts.Dimension||0}、术语 ${counts.Term||0}、一般对象 ${counts.GeneralObject||0}。图中只画继承和明确端点的对象关系；属性、实例与证据请选中对象查看。${D.preview?.notice||''}`}
-else $('notice').textContent=`本地物理元数据图：${M.node_kinds?.DatasetSnapshot||0} 个快照、${M.total_tables||0} 张表、${M.node_kinds?.Column||0} 列、声明外键 ${M.link_counts?.declared||0}。画布不混入源行结构、字段节点和候选连接。这是本地 DataHub 兼容交换视图，不是 DataHub 服务端关系图。`;
+else $('notice').textContent=`本地物理元数据图：${M.node_kinds?.DatasetSnapshot||0} 个快照、${M.total_tables||0} 张表、${M.node_kinds?.Column||0} 列、声明外键 ${M.link_counts?.declared||0}。画布不混入源行结构、字段节点和候选连接。这是本地 DataHub 兼容交换视图，不是 DataHub 服务端关系图。${D.preview?.notice||''}`;
 renderIndex();renderGraph();renderDetails()}render();
 </script></body></html>

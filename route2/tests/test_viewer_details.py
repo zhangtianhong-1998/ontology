@@ -234,6 +234,10 @@ def test_viewer_uses_fitted_pan_zoom_canvas(tmp_path):
     assert "setPointerCapture(event.pointerId)" in html
     assert ".graph-viewport{overflow:hidden" in html
     assert "svg.style.width" not in html
+    assert "svgEl('circle',{cx:n.x,cy:n.y,r:NODE_RADIUS,fill})" in html
+    assert "svgEl('rect',{x:n.x" not in html
+    assert "'data-edge-label-for':index" in html
+    assert "edges.length<30" not in html
 
 
 def test_viewer_shows_verified_equivalence_on_business_type_without_relation_edge(tmp_path):

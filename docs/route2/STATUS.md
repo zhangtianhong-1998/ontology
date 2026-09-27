@@ -4,6 +4,8 @@
 
 2026-09-27 的[关联驱动整改设计](RELATION_DRIVEN_REDESIGN.md)及[度量、指标与关系命名契约](MEASURE_METRIC_AND_RELATION_CONTRACT.md)修正了两项口径：DataHub 不负责当前本地建图或抽取；通用“收入/成本”是可复用 Measure 候选，绑定经营对象的指标才归 Metric，`SUM/AVG` 是运算属性。旧合成产物中的 `SUM` 度量节点不能作为新口径的语义验收。
 
+当前可浏览的 `measure-metric-contract-20260927` 只是 3 表、3 行、固定决策、0 次 LLM 的受控样例。早期 `fruit-million-verified-20260925` 虽扫描了 23 表、1,102,238 行，但状态为 `partial`，组级增量 0 步、模型调用 0 次；它不是全量本体抽取。新分类契约下尚无 23 表完整语义运行。
+
 2026-09-25 的失败原因、三层目标模型和整改顺序见[抽取失败复盘](FAILURE_REVIEW_20260925.md)。
 
 本轮实现与复跑结果见[优化与验证记录](OPTIMIZATION_AND_VALIDATION_20260925.md)。真实配置现采用 `source_mapping_only`：逐表阶段只保留物理映射和源记录类型；LLM 调用限于可选的关联 Agent 与选中的跨表记录包。旧的 `table_semantic` 模式供原有示例和回归使用。
