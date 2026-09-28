@@ -100,14 +100,46 @@ def _root(item, types):
     return parent
 
 
-def _target_parameters_supported(source, target):
+def _internal_parameters(data, target):
+    """Source-proved operand algorithms/units are local, not caller constraints."""
+    if data is None:
+        return set()
+    from .column_role_inference import classify_formula_fragment
+    internal = set()
+    records = {data.evidence.get(eid, {}).get("source_ref", {}).get("record_id")
+               for prop in target.source_properties for eid in prop.evidence_ids}
+    for prop in target.source_properties:
+        for _, proof in _evidence(data, prop, records):
+            raw = proof["raw_fragment"]
+            for key, value in target.definition_parameters.items():
+                if value != raw:
+                    continue
+                if prop.role in ("formula", "unit") and key in (prop.role, prop.source_column):
+                    internal.add(key)
+                elif prop.role == "scope" and key == prop.source_column:
+                    fragment = classify_formula_fragment(data.tables.get(prop.source_table, {}), {
+                        "column": prop.source_column, "role": "formula",
+                        "status": "source_verified_role_candidate", "observations": [{"value": raw}]})
+                    if fragment and fragment["effective_role"] == "calculation_operator":
+                        internal.add(key)
+    return internal
+
+
+def _target_parameters_supported(source, target, data=None):
     """A referenced definition may require no parameter absent from its caller.
 
     Exact agreement is required: a missing period or month/year mismatch is
     not evidence for an implicit aggregation or grain conversion.
     """
+    internal = _internal_parameters(data, target)
     return all(source.definition_parameters.get(key) == value
-               for key, value in target.definition_parameters.items())
+               for key, value in target.definition_parameters.items() if key not in internal)
+
+
+def _target_scope_supported(data, source, target):
+    """Observed coordinates cannot promote a caller's whole-type applicability."""
+    return all(source.applicability_scope.get(key) == value
+               for key, value in target.applicability_scope.items())
 
 
 def _evidence(data, prop, accepted_records):
@@ -294,20 +326,20 @@ def enrich_calculation_contracts(data, plan, group_result, index=None):
                 for occurrence in parsed["symbols"]:
                     candidates = registry.get(_norm(occurrence["symbol"]), {})
                     compatible = {candidate: proof for candidate, proof in candidates.items()
-                                  if candidate != type_id and all(item.applicability_scope.get(key) == value
-                                      for key, value in selected[candidate].applicability_scope.items())
-                                  and _target_parameters_supported(item, selected[candidate])}
+                                  if candidate != type_id and _target_scope_supported(data, item, selected[candidate])
+                                  and _target_parameters_supported(item, selected[candidate], data)}
                     binding = {**occurrence, "candidate_type_ids": sorted(candidates),
                                "compatible_type_ids": sorted(compatible), "status": "unresolved"}
                     if len(compatible) == 1:
                         target_id = next(iter(compatible))
                         binding.update(status="bound", target_type_id=target_id,
-                                       binding_evidence=compatible[target_id])
+                                       binding_evidence=compatible[target_id],
+                                       target_internal_parameters=sorted(_internal_parameters(data, selected[target_id])))
                     else:
                         binding["reason"] = ("ambiguous_definition" if len(compatible) > 1 else
                                              "self_reference" if type_id in candidates else
                                              "definition_parameters_not_proven" if any(
-                                                 not _target_parameters_supported(item, selected[candidate])
+                                                 not _target_parameters_supported(item, selected[candidate], data)
                                                  for candidate in candidates) else
                                              "scope_not_proven" if candidates else "symbol_has_no_accepted_definition")
                     calculation["bindings"].append(binding)
@@ -343,14 +375,20 @@ def enrich_calculation_contracts(data, plan, group_result, index=None):
         if calc["status"] != "accepted":
             continue
         for binding in calc["bindings"]:
+            # Local operator and caller-scope evidence participates in the
+            # compatibility check and must travel with the published edge.
+            context_proofs = [eid for owner in (selected[calc["source_type_id"]], selected[binding["target_type_id"]])
+                              for prop in owner.source_properties if prop.role in ("scope", "unit")
+                              for eid in prop.evidence_ids if eid in data.evidence]
             dependencies.append({"id": "calculation_dependency:" + digest([
                 calc["id"], binding["path"], binding["target_type_id"]])[:24],
                 "calculation_id": calc["id"], "source_type_id": calc["source_type_id"],
                 "target_type_id": binding["target_type_id"], "parent_relation": "depends_on",
                 "predicate_name": "calculation_dependency", "operand_role": binding["operand_role"],
                 "expression_path": binding["path"], "symbol": binding["symbol"],
-                "evidence_ids": sorted(set(calc["evidence_ids"] + [p["evidence_id"]
+                "evidence_ids": sorted(set(calc["evidence_ids"] + context_proofs + [p["evidence_id"]
                     for p in binding["binding_evidence"] if "evidence_id" in p])),
+                "target_internal_parameters": binding.get("target_internal_parameters", []),
                 "binding_evidence": binding["binding_evidence"], "status": "accepted"})
     statuses = Counter(item["status"] for item in calculations)
     binding_tasks = _formula_binding_tasks(calculations, index)
@@ -376,10 +414,9 @@ def calculation_relation_errors(data, relation, object_types):
             or _root(source, types) not in ("Metric", "Measure")
             or _root(target, types) not in ("Metric", "Measure")):
         return ["calculation relation lacks distinct quantitative definition types"]
-    if any(source.applicability_scope.get(key) != value
-           for key, value in target.applicability_scope.items()):
+    if not _target_scope_supported(data, source, target):
         return ["calculation relation target applicability is not proved"]
-    if not _target_parameters_supported(source, target):
+    if not _target_parameters_supported(source, target, data):
         return ["calculation relation target definition parameters are not proved"]
 
     def property_evidence(item, roles):
@@ -427,10 +464,9 @@ def calculation_relation_errors(data, relation, object_types):
     for other in object_types:
         if other.id in (source.id, target.id) or other.category != "business_type":
             continue
-        if any(source.applicability_scope.get(key) != value
-               for key, value in other.applicability_scope.items()):
+        if not _target_scope_supported(data, source, other):
             continue
-        if not _target_parameters_supported(source, other):
+        if not _target_parameters_supported(source, other, data):
             continue
         for other_role, _, proof in property_evidence(other, ("name", "alias")):
             values = _aliases(proof["raw_fragment"]) if other_role == "alias" else [proof["raw_fragment"]]

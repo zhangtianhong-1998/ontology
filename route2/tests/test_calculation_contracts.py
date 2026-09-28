@@ -127,6 +127,44 @@ def test_calculation_parameter_guard_applies_to_every_target_parameter():
     assert calculation_relation_errors(data, _profit_revenue_relation(), plan.object_types)
 
 
+def test_source_proved_operand_algorithm_is_not_inherited_by_caller():
+    from ontology_r2.models import SourceProperty
+    data, plan, group = _case()
+    target = plan.object_types[1]
+    target.definition_parameters = {"operation_mode": "SUM"}
+    data.tables["definitions"] = {"columns": [{"column_name": "operation_mode", "column_comment": "聚合方法"}]}
+    data.evidence["revenue:operator"] = {"origin": "observed_record", "raw_fragment": "SUM",
+        "source_ref": {"snapshot_id": "snap", "record_id": "record:revenue",
+                       "table": "definitions", "column": "operation_mode"}}
+    target.source_properties.append(SourceProperty(role="scope", source_table="definitions",
+        source_column="operation_mode", evidence_ids=["revenue:operator"]))
+    result = enrich_calculation_contracts(data, plan, group)
+    assert result["calculations"][0]["status"] == "accepted"
+    assert result["calculations"][0]["bindings"][0]["target_internal_parameters"] == ["operation_mode"]
+    assert calculation_relation_errors(data, _profit_revenue_relation(), plan.object_types) == []
+    # Real period/budget restrictions remain caller preconditions.
+    target.definition_parameters["period"] = "Y"
+    assert enrich_calculation_contracts(data, plan, group)["dependencies"] == []
+    target.definition_parameters.pop("period")
+    data.evidence["revenue:operator"]["source_ref"]["snapshot_id"] = "old"
+    assert enrich_calculation_contracts(data, plan, group)["dependencies"] == []
+
+
+def test_single_observed_scope_value_cannot_become_template_applicability():
+    from ontology_r2.models import SourceProperty
+    data, plan, group = _case(scope={"region": "北京"})
+    data.evidence["profit:region"] = {"origin": "observed_record", "raw_fragment": "北京",
+        "source_ref": {"snapshot_id": "snap", "record_id": "record:profit",
+                       "table": "definitions", "column": "region"}}
+    plan.object_types[0].source_properties.append(SourceProperty(role="scope", source_table="definitions",
+        source_column="region", evidence_ids=["profit:region"]))
+    group["template_projections"] = [{"object_type_id": "profit", "field_templates": [
+        {"column": "region", "template": "{region}"}]}]
+    assert enrich_calculation_contracts(data, plan, group)["dependencies"] == []
+    plan.object_types[0].applicability_scope = {"region": "上海"}
+    assert enrich_calculation_contracts(data, plan, group)["dependencies"] == []
+
+
 def test_ambiguity_uses_the_same_parameter_guard_as_binding_and_replay():
     data, plan, group = _case(duplicate=True)
     plan.object_types[0].definition_parameters = {'period_scope': '公历月'}

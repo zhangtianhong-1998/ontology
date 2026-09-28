@@ -316,8 +316,8 @@ async def adjudicate_configuration_relations(data, profile, core, candidates,
                                                 configuration_purpose_packet, checked_purpose_decision,
                                                 ConfigurationPurposeDecision)
                 purpose = structured_configuration_purpose(data, item, witness)
+                packet = configuration_purpose_packet(data, item, witness, plan, checked_rules)
                 if purpose is None:
-                    packet = configuration_purpose_packet(data, item, witness, plan, checked_rules)
                     if packet:
                         decision = await llm.ask("configuration_purpose", packet, ConfigurationPurposeDecision)
                         step["llm_calls"] = 1
@@ -327,6 +327,9 @@ async def adjudicate_configuration_relations(data, profile, core, candidates,
                             step.update(status=decision.status, reason=decision.reason)
                             steps.append(step)
                             continue
+                    elif not item.get("relation_text_column"):
+                        raise ValueError("No eligible checked semantic reference paths; numeric overlap, "
+                                         "configuration identities or unsupported endpoint roots are not binding evidence")
                 if purpose:
                     aligned, _ = _type_alignments(plan, concepts, alignments, memberships)
                     plan, binding = compile_structured_configuration_binding(

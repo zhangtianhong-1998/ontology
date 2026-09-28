@@ -90,7 +90,18 @@ instance_bundles:
   max_definition_memberships: 1200000
   review: true
   template_projection_enabled: true
-  reserve_calls_for_followup: 16
+  reserve_calls_for_followup: 24
+targeted_repair:
+  enabled: true
+  max_rounds: 2
+  max_tasks_per_round: 4
+  max_examples_per_task: 3
+  max_calls_per_round: 12
+  reserve_calls_for_followup: 12
+ontology_instantiation:
+  enabled: true
+  max_records: 10000
+  max_assertions: 20000
 fact_observations:
   enabled: true
   max_candidates_per_table: 50000
@@ -133,6 +144,7 @@ llm:
     parameter: thinking
     effort: medium
   max_calls: 64
+  request_interval_seconds: 0.2
   max_reserved_tokens: 11000000
   max_input_bytes: 100000
   max_output_tokens: 12288

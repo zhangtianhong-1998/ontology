@@ -22,6 +22,7 @@ from .storage import digest
 from .validation import validate_plan
 from .template_projection import (TemplateProjectionDecision, compile_projection,
                                   reuse_projection)
+from .template_reuse import template_reuse_context, component_type_candidates, representative_record
 
 
 ROOTS = ("GeneralObject", "Measure", "Metric", "Dimension", "Term")
@@ -1195,6 +1196,15 @@ def _compile_checked_projection(data, profile, core, bundle, projection):
     """Projection changes identity semantics, not the quantity classification rules."""
     records = _record_map(bundle)
     witnesses = [records[key] for key in projection.witness_record_ids if key in records]
+    for column, value in projection.applicability_scope.items():
+        for record in witnesses:
+            table = getattr(data, "tables", {}).get(record.get("table"), {})
+            metadata = next((item for item in table.get("columns", []) if item.get("column_name") == column), {})
+            declaration = str(metadata.get("column_comment") or "")
+            if (_OBSERVED_PERIOD.fullmatch(value.strip())
+                    or re.search(r"观测|观察|维度(?:取值|坐标)|实际(?:年份|期间|地区)|\b(?:observation|coordinate)\b",
+                                 declaration, re.I)):
+                raise ValueError("Observed period or coordinate cannot be a class applicability scope")
     if projection.root_type in {"Measure", "Metric"} and _operator_label(projection.label):
         raise ValueError("An aggregation operator alone is not a projected quantity type")
     if projection.root_type == "Measure":
@@ -1226,7 +1236,19 @@ def _compile_checked_projection(data, profile, core, bundle, projection):
             if basis and (basis["basis"] == "source_column_declaration"
                           or basis.get("fragment", {}).get("effective_role") == "calculation_operator"):
                 raise ValueError("A declared calculation parameter cannot be generalized as an instance slot")
-    return compile_projection(data, profile, core, bundle, projection)
+    result = compile_projection(data, profile, core, bundle, projection)
+    repair = bundle.get("template_repair_task") or {}
+    if repair.get("preserve_type_id"):
+        template = result[1]
+        if template["object_type_id"] != repair["preserve_type_id"]:
+            raise ValueError("Targeted endpoint repair must preserve the accepted type definition, formula and parameters")
+        requested = (repair.get("known_template_matches") or [{}])[0].get("unresolved_slots", [])
+        actual = {slot["name"]: slot for slot in template["slots"]}
+        if any(slot["name"] not in actual or actual[slot["name"]]["role"] != slot["role"] for slot in requested):
+            raise ValueError("Targeted endpoint repair cannot remove or change an unresolved semantic slot")
+        if requested and not any(actual[slot["name"]].get("target_type_id") for slot in requested):
+            raise ValueError("Targeted endpoint repair did not resolve any requested slot with source evidence")
+    return result
 
 
 async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *, review=True,
@@ -1247,6 +1269,9 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
     prior = copy.deepcopy(prior_result or {})
     if prior and prior.get("snapshot_id") != data.snapshot_id:
         raise ValueError("Incremental checkpoint snapshot differs from current input")
+    source_bundle_ids = set(prior.get("source_bundle_ids", []))
+    source_bundle_ids.update(item["bundle_id"] for item in bundles if not item.get("template_repair_task"))
+    source_inventory_complete = bool(source_bundle_ids) or not prior
     concepts = {item["id"]: item for item in prior.get("concepts", [])}
     template_projections = {item["template_id"]: item for item in prior.get("template_projections", [])}
     template_bindings = {item["id"]: item for item in prior.get("template_bindings", [])}
@@ -1279,6 +1304,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
 
     def state():
         return {"snapshot_id": data.snapshot_id, "plan": core,
+                "source_bundle_ids": sorted(source_bundle_ids),
                 "concepts": list(concepts.values()), "record_alignments": alignments,
                 "template_projections": list(template_projections.values()),
                 "template_bindings": list(template_bindings.values()),
@@ -1301,17 +1327,23 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
     def packet_payload(bundle):
         payload = bundle_request_payload(data, profile, core, bundle)
         if enable_template_projection:
+            matches = template_reuse_context(template_projections.values(), bundle)
             payload["template_projection"] = {
                 "enabled": True,
                 "identity_contract": "projection is not exact record identity",
                 "name_policy": (
                     "canonical_name_choices constrain exact_definition only. A projected class label "
                     "must be grounded in its own quoted source fragments; it need not equal an instance title."),
-                "existing_templates": [{key: item[key] for key in (
-                    "template_id", "object_type_id", "root_type", "label", "definition", "slots")}
-                    for item in list(template_projections.values())[-12:]],
+                "existing_templates": [item["accepted_template"] for item in matches],
+                "source_match_reports": [{key: value for key, value in item.items() if key != "accepted_template"}
+                                         for item in matches],
                 "reuse_policy": "Complete known contracts are matched before model calls; only uncovered changes require decisions.",
             }
+            seed = representative_record(bundle)
+            if seed is not None:
+                payload["component_type_candidates"] = component_type_candidates(core, seed)
+            if bundle.get("template_repair_task"):
+                payload["targeted_repair"] = bundle["template_repair_task"]
         return payload
 
     async def prepare_batch(position, kind, size):
@@ -1334,7 +1366,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
         for possible in selected[position:]:
             if (possible.get("task_kind") != kind or possible["bundle_id"] in cache):
                 continue
-            if (is_concept and enable_template_projection and
+            if (is_concept and enable_template_projection and not possible.get("template_repair_task") and
                     reuse_projection(data, template_projections.values(), possible) is not None):
                 continue
             packet = packet_payload(possible)
@@ -1403,10 +1435,14 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
         for position, bundle in enumerate(selected):
             step = {"bundle_id": bundle["bundle_id"], "task_kind": bundle["task_kind"],
                     "status": "unresolved", "core_before": digest(core.model_dump())}
+            if bundle.get("template_repair_task"):
+                step.update(repair_scope=bundle["template_repair_task"]["scope"],
+                            source_bundle_id=bundle.get("source_bundle_id"))
             try:
                 payload = packet_payload(bundle)
                 reusable = (reuse_projection(data, template_projections.values(), bundle)
-                            if enable_template_projection and bundle["task_kind"] == "concept_induction" else None)
+                            if enable_template_projection and bundle["task_kind"] == "concept_induction"
+                            and not bundle.get("template_repair_task") else None)
                 if reusable is not None:
                     template_bindings[reusable["id"]] = reusable
                     step.update(status="no_change", action="reuse_template",
@@ -1485,6 +1521,27 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                         step.update(status="accepted", action="project_template",
                                     template_id=template["template_id"],
                                     object_type_id=template["object_type_id"], binding_count=len(bindings))
+                        repair = bundle.get("template_repair_task") or {}
+                        if repair:
+                            requested = (repair.get("known_template_matches") or [{}])[0].get("unresolved_slots", [])
+                            new_slots = {slot["name"]: slot for slot in template["slots"]}
+                            remaining_slots = [slot["name"] for slot in requested
+                                               if not new_slots.get(slot["name"], {}).get("target_type_id")]
+                            step["repair_remaining_slots"] = remaining_slots
+                            step["repair_gap_resolved"] = (repair["scope"] != "template_slot_endpoints" or not remaining_slots)
+                            resolved = []
+                            records = {record["record_id"]: record for record in bundle["records"]}
+                            for source in bundle.get("template_repair_sources", []):
+                                record = records.get(source["record_id"])
+                                binding = reuse_projection(data, [template], {"records": [record]}) if record else None
+                                if binding is not None:
+                                    template_bindings[binding["id"]] = binding
+                                    if step["repair_gap_resolved"]:
+                                        resolved.append(source["bundle_id"])
+                            step["resolved_source_bundle_ids"] = resolved
+                            for old_step in steps:
+                                if old_step["bundle_id"] in resolved and old_step["status"] in {"unresolved", "budget_exhausted"}:
+                                    old_step.update(superseded=True, resolved_by=bundle["bundle_id"])
                     elif compiled:
                         concept, new_alignments = compiled
                         old = concepts.get(concept["id"])
@@ -1670,15 +1727,27 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
         derivation["core_after"] = digest(core.model_dump())
         relation_derivations.append(derivation)
     latest_steps = {item["bundle_id"]: item for item in steps}
-    statuses = {status: sum(item["status"] == status for item in latest_steps.values())
+    statuses = {status: sum(item["status"] == status and not item.get("superseded") for item in latest_steps.values())
                 for status in ("accepted", "no_change", "unresolved", "budget_exhausted")}
+    resolved_source_ids = {source_id for item in latest_steps.values()
+                           for source_id in item.get("resolved_source_bundle_ids", [])}
+    attempted_source_ids = set(latest_steps) | resolved_source_ids
+    source_not_attempted = (len(source_bundle_ids - attempted_source_ids) if source_inventory_complete else
+                            max(0, prior.get("coverage", {}).get("bundles_not_attempted", prior.get("bundles_skipped", 0))
+                                - len(resolved_source_ids - {item["bundle_id"] for item in prior.get("steps", [])})))
+    retained_skipped = max(skipped, source_not_attempted)
     coverage = {"bundles_available": len(bundles), "bundles_selected": len(selected),
                 "bundles_reused": len(bundles) - len(remaining),
                 "steps_this_run": run_step_count,
-                "bundles_not_attempted": skipped, "statuses": statuses,
+                "bundles_not_attempted": retained_skipped, "statuses": statuses,
+                "source_bundles_available": len(source_bundle_ids) if source_inventory_complete else prior.get("coverage", {}).get("bundles_available", 0),
+                "source_bundles_not_attempted": source_not_attempted,
+                "repair_tasks_not_attempted": skipped if any(item.get("template_repair_task") for item in bundles) else 0,
+                "superseded_failures": sum(bool(item.get("superseded")) for item in latest_steps.values()),
                 "template_count": len(template_projections), "template_binding_count": len(template_bindings),
                 "template_reused_before_llm": sum(item.get("action") == "reuse_template" for item in latest_steps.values()),
-                "partial": bool(skipped or statuses["unresolved"] or statuses["budget_exhausted"])}
+                "partial": bool(retained_skipped or statuses["unresolved"] or statuses["budget_exhausted"]
+                                or any(item.get("repair_remaining_slots") for item in latest_steps.values()))}
     await checkpoint()
-    return {**state(), "bundles_selected": len(selected), "bundles_skipped": skipped,
+    return {**state(), "bundles_selected": len(selected), "bundles_skipped": retained_skipped,
             "coverage": coverage, "partial": coverage["partial"]}

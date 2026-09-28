@@ -80,6 +80,28 @@ def _relation_text_candidate(data, table_name, reference_columns):
     return None
 
 
+def declared_reference_evidence(data, rule):
+    """Return an exact original FK declaration, never infer one from key overlap.
+
+    A bridge column may be both PK and FK. This exception proves the reference
+    path only; full-input uniqueness and the business predicate still need
+    their independent checks. Unparsed comments are not declaration evidence.
+    """
+    source, target = rule.get("source") or {}, rule.get("target") or {}
+    local = data.tables.get(source.get("table"))
+    remote = data.tables.get(target.get("table"))
+    if local is None or remote is None:
+        return None
+    for fk in local.get("foreign_keys", ()):
+        if (fk.get("column_name") == source.get("field")
+                and fk.get("referenced_schema") == remote.get("schema")
+                and fk.get("referenced_table") == remote.get("table_name")
+                and fk.get("referenced_column") == target.get("field")):
+            return {"kind": "declared_foreign_key", "source_table": source["table"],
+                    "declaration": dict(fk)}
+    return None
+
+
 def infer_configuration_specs(
     data, plan: BuildPlan, concepts, alignments, checked_rules, *, max_specs=100, memberships=(),
 ):
@@ -104,6 +126,10 @@ def infer_configuration_specs(
         seen += 1
         if rule.get("status") != "checked_technical":
             skipped["not_checked_technical"] += 1
+            continue
+        declaration = declared_reference_evidence(data, rule)
+        if rule.get("numeric_overlap_only") and declaration is None:
+            skipped["numeric_overlap_without_reference_semantics"] += 1
             continue
         if (rule.get("transform", {}).get("operator") != "identity"
                 or rule.get("verification", {}).get("scan_scope") != "full_input"):
@@ -133,8 +159,14 @@ def infer_configuration_specs(
         except ValueError:
             skipped["invisible_or_unknown_column"] += 1
             continue
-        if classify_row_purpose(data.tables[source_table])["purpose"] != "configuration_data":
-            skipped["source_not_configuration_data"] += 1
+        # Table-name heuristics cannot veto two independently verified code
+        # references. Their purpose is still unjudged until the next stage.
+        if classify_row_purpose(data.tables[source_table])["purpose"] == "business_fact":
+            skipped["business_fact_is_not_configuration_witness"] += 1
+            continue
+        if (rule["source"]["field"] in data.tables[source_table].get("pk", [])
+                and declaration is None):
+            skipped["configuration_identity_is_not_business_reference"] += 1
             continue
         roots = target_roots.get(target_table, set())
         if len(roots) != 1:

@@ -93,3 +93,9 @@ def test_schema_field_identity_is_stable_and_scoped_to_its_dataset():
     assert schema_field_urn("demo.items", "id", environment="DEV") != schema_field_urn("demo.items", "id")
     with pytest.raises(ValueError, match="field path"):
         schema_field_urn("demo.items", "id,other")
+
+
+@pytest.mark.parametrize("native", ["integer[]", "boolean[]", "timestamp[]", "ARRAY<INT>"])
+def test_array_is_not_misclassified_by_scalar_element_type(native):
+    from ontology_r2.datahub_adapter import _datahub_type
+    assert _datahub_type(native) == "ArrayType"

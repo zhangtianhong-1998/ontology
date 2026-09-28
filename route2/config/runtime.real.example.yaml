@@ -160,10 +160,12 @@ llm:
     parameter: thinking
     effort: medium
   # Shared by generation, Judge, retrieval, alignment, and semantic matching.
-  max_calls: 800
+  max_calls: 3000
+  # 每次接口完成后等待，0关闭等待；请求仍串行发送。
+  request_interval_seconds: 0.2
   # admit() reserves UTF-8 request bytes + max_output_tokens per call.
-  # 90M covers 800 calls even at the 100K input-byte limit.
-  max_reserved_tokens: 90000000
+  # Covers 3000 calls at the input-byte limit; this is a conservative reservation, not a token count.
+  max_reserved_tokens: 350000000
   max_input_bytes: 100000
   max_output_tokens: 8192
   # One initial attempt plus four repairs per table; the table pass remains one.

@@ -58,7 +58,7 @@ assert.equal(ontologyPositions([{id:'x',parent:'y'},{id:'y',parent:'x'}]).size,2
 
 
 CAMERA_SETUP = """
-let size={width:1200,height:700},selected=null,mode='ontology';const A=new Map(),pinnedPositions={ontology:new Map(),metadata:new Map()},treeLayoutCache=new Map();
+const NODE_RADIUS=40;let size={width:1200,height:700},selected=null,mode='ontology';const A=new Map(),pinnedPositions={ontology:new Map(),metadata:new Map()},treeLayoutCache=new Map();
 let renders=0,observer=null;const graphState={nodes:[],edges:[],view:null,fit:null,bounds:null,userViewChanged:false,drag:null,suppressClickUntil:0};
 const events={},classes=new Set(),elements={graph:{style:{setProperty(){}},setAttribute(k,v){this[k]=v},getBoundingClientRect(){return{left:0,top:0,...size}},addEventListener(k,v){events[k]=v},setPointerCapture(){}}};
 const $=id=>elements[id]||(elements[id]={setAttribute(){},classList:{add(...a){a.forEach(x=>classes.add(x))},remove(...a){a.forEach(x=>classes.delete(x))}}}),viewportSize=()=>size;
@@ -99,3 +99,17 @@ def test_selection_calls_focus_after_rendering_and_view_is_offline():
     assert "renderGraph();renderDetails();focusSelection()" in select
     assert "https://" not in page and "http://" not in page.replace("http://www.w3.org/2000/svg", "")
     assert "full-node-label" in page and "pinnedPositions[mode]" in page
+
+
+def test_pointer_capture_is_delayed_so_ordinary_clicks_reach_node_handlers():
+    js(CAMERA_SETUP + camera_helpers() + """
+graphState.bounds={x:0,y:0,width:1200,height:700};fitGraph();graphState.nodes=[{id:'a',x:100,y:100}];
+let captured=0;$('graph').setPointerCapture=()=>captured++;
+const nodeElement={getAttribute(){return'a'}},target={closest(selector){return selector==='.node'?nodeElement:null}};
+events.pointerdown({button:0,pointerId:1,clientX:100,clientY:100,target});
+assert.equal(captured,0,'capturing immediately steals the browser click from the node');
+events.pointermove({pointerId:1,clientX:101,clientY:101});assert.equal(captured,0);
+events.pointerup({pointerId:1});assert.equal(graphState.suppressClickUntil,0);
+events.pointerdown({button:0,pointerId:2,clientX:100,clientY:100,target});
+events.pointermove({pointerId:2,clientX:110,clientY:100});assert.equal(captured,1);
+""")

@@ -17,6 +17,8 @@ llm:
   temperature: 0
   timeout_seconds: 60
   max_retries: 3
+  max_calls: 3000
+  request_interval_seconds: 0.2
 ```
 
 - `stream: true` 使用 SSE 流式接口，`false` 使用普通 JSON 响应。两者都要求服务支持结构化工具调用。
@@ -26,7 +28,11 @@ llm:
 - 增量生成、Judge 等结构化请求只提供 `submit_result` 工具，并发送 `tool_choice: auto`，兼容不接受指定工具模式的服务。返回时仍要求恰好一次 `submit_result` 调用且参数符合 schema；纯文本或其他工具调用会报错，不写入缓存。企业检索的 ReAct 工具循环由 AgentScope 单独管理。
 - `timeout_seconds` 覆盖一次连接及完整响应消费。`max_retries` 为 0～5，默认 3；结构化调用及 ReAct 模型调用遇连接错误或 HTTP 5xx 可重试，每次实际发送都计入共享调用预算。超时、HTTP 4xx、损坏 JSON、纯文本答复和不完整工具调用不会按同一提示词盲目重试。逐表构建遇超时会停止该表后续相同请求，保留原有直接映射，并在构建步骤记下 `timeout`。重试行为仍需在实际模型服务上验证。
 
-真实模型运行配置 `runtime.real.example.yaml` 与 `runtime.no-thinking.yaml` 均设 `llm.max_calls: 800`、`llm.max_repairs: 4`。后者表示每张表最多 5 次生成与校验尝试，接受后立即停止，并非全库遍历 5 轮。生成、Judge、检索、对齐及文本判定共用 800 次调用；缓存命中不消耗调用次数。`llm.max_reserved_tokens: 90000000` 是按每次请求 UTF-8 字节数加输出上限累计的准入预算，可容纳 800 次达到 `max_input_bytes: 100000` 的请求；不代表实际 token 消耗。若需把企业 MCP 的 ReAct 检索也改为最多 5 轮，另设 `mcp.max_rounds: 5`，它不受 `llm.max_repairs` 控制。
+`request_interval_seconds` 配置一次请求完成后、下一次请求开始前的最短等待时间，可设为 0～60 秒，0 关闭等待。同一次运行中的结构化生成、复核、ReAct 和重试共享串行发送入口；缓存命中、mock 响应不等待。它不限制其他独立进程的调用频率。`manifest.llm.request_pacing` 记录有效间隔和累计等待时间。
+
+当前全量配置 `runtime.fruit-templates.yaml` 和真实数据示例 `runtime.real.example.yaml` 的共享上限为 3,000 次调用；历史示例 `runtime.no-thinking.yaml` 保持 800 次。生成、Judge、检索、对齐及文本判定共用预算，缓存命中不消耗调用次数。当前的 `max_reserved_tokens: 350000000` 按每次请求 UTF-8 字节数加输出上限累计，属于保守准入预算，不代表实际 token 消耗。
+
+`max_repairs` 是逐表失败后的修正次数，不是全库轮数。当前模板实验的 `targeted_repair.max_rounds: 2` 表示首轮加一轮定向修复，第二轮仅处理已发现的字段契约差异、未覆盖模式和缺失端点，仍共用 3,000 次预算。MCP 的 `max_rounds` 单独控制检索循环。
 
 | parameter | disabled 时发送的请求字段 | 典型适用接口 |
 |---|---|---|

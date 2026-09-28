@@ -438,6 +438,7 @@ const T=new Map([{id:'Root'},{id:'Parent',parent:'Root'},{id:'Child',parent:'Par
 const attrs=[{id:'shared',domain:['Parent']},{id:'own',domain:['Child']},{id:'unrelated',domain:['Other']}];
 const O={relation_types:[{id:'rel',category:'business_relation_type',domain:['Parent'],range:['Other']}]};
 const D={objects:[{id:'one',type:'Child'},{id:'two',type:'Other'}],concepts:[{id:'one',ontology_type_id:'Child'}]};
+const INSTANCE=new Map();for(const x of [...D.concepts,...D.objects])INSTANCE.set(x.id,{...(INSTANCE.get(x.id)||{}),...x});
 const name=item=>item.id;
 """ + page[start:end] + """
 const assert=require('node:assert/strict');
@@ -498,7 +499,7 @@ M.links.push({id:'reverse',source:'s.t1',target:'s.t0',source_field:'back_ref',t
 const TABLE=new Map(M.tables.map(t=>[t.id,t])),expandedTables=new Set(),pinnedPositions={ontology:new Map(),metadata:new Map()};
 let selected=null,tableId=null,drawn=null,showNumericMatches=false;
 const $=id=>({}),name=x=>x.table_comment||x.table_name,node=(id,label,kind,x,y,action,active,subtitle)=>({id,label,kind,x,y,action,active,subtitle}),select=()=>{};
-const drawGraph=(nodes,edges)=>{drawn={nodes,edges}};
+const viewportSize=()=>({width:1200,height:800}),drawGraph=(nodes,edges)=>{drawn={nodes,edges}};
 """ + helpers + """
 metadataGraph();
 assert.equal(drawn.nodes.length,23);
@@ -506,7 +507,7 @@ assert.equal([...metadataLinkGroups.values()].reduce((n,g)=>n+g.links.length,0),
 assert([...metadataLinkGroups.values()].some(g=>g.bidirectional));
 assert(drawn.edges.filter(e=>e.showLabel).length<=4);
 assert(drawn.edges.every(e=>typeof e.action==='function'));
-assert(drawn.nodes.every(n=>n.label.startsWith('水果定义')&&n.subtitle.startsWith('fruit_config')));
+assert(drawn.nodes.every(n=>n.label.startsWith('fruit_config')&&n.subtitle.startsWith('水果定义')));
 const first=metadataPositions(M.tables,M.links),again=metadataPositions([...M.tables].reverse(),M.links);
 assert.deepEqual([...first],[...again]);
 const coords=[...first.values()];
@@ -693,4 +694,48 @@ def test_template_preview_collects_source_evidence_for_bindings(tmp_path):
     data = payload(render_viewer(run, 10).read_text())
     assert {"proof:template", "proof:binding"} <= data["evidence"].keys()
     html = (Path(__file__).parents[1] / "code/ontology_r2/viewer.html").read_text()
-    assert "templateDetails(p,x)" in html and "成分关系依据" in html
+    assert "templateDetails(origins,x)" in html and "成分关系依据" in html
+
+
+def test_typed_instance_preview_balances_types_and_keeps_values_and_evidence(tmp_path):
+    run = tmp_path / "instance-preview"
+    (run / "work").mkdir(parents=True)
+    write_yaml(run / "ontology.yaml", {
+        "object_roots": [{"id": "Metric"}, {"id": "GeneralObject"}],
+        "object_types": [{"id": "Revenue", "label": "收入", "parent": "Metric", "category": "business_type"},
+                         {"id": "Fruit", "label": "水果", "parent": "GeneralObject", "category": "business_type"}],
+        "relation_types": [],
+    })
+    with sqlite3.connect(run / "work/results.sqlite") as db:
+        db.execute("CREATE TABLE items(kind TEXT,id TEXT,body TEXT)")
+        values = [("objects", {"id": f"a:raw:{i}", "type": "PhysicalRow"}) for i in range(100)]
+        values += [("objects", {"id": f"ontology_instance:{i}", "type": "Revenue", "label": "苹果收入",
+                     "instance_kind": "definition_record_instance", "business_observation_claim": False,
+                     "source_ref": {"table": "demo.definitions", "row": i + 1},
+                     "properties": [{"column": "name", "value": "苹果收入", "evidence_ids": ["proof:name"]}]})
+                   for i in range(8)]
+        values += [("objects", {"id": "ontology_slot_instance:apple", "type": "Fruit", "label": "苹果",
+                     "instance_kind": "definition_slot_occurrence", "bound_value": "苹果"}),
+                   ("assertions", {"id": "edge:1", "subject": "ontology_instance:0", "object": "ontology_slot_instance:apple",
+                      "predicate": "binds", "instance_scope": "definition_graph_not_observed_business_values"}),
+                   ("evidence", {"id": "proof:name", "raw_fragment": "苹果收入", "source_ref": {"table": "demo.definitions"}})]
+        db.executemany("INSERT INTO items VALUES(?,?,?)", [(kind, item["id"], json.dumps(item)) for kind, item in values])
+    data = payload(render_viewer(run, 10).read_text())
+    previews = data["instance_preview"]
+    assert len(previews) == 4
+    assert {item["type"] for item in previews} == {"Revenue", "Fruit"}
+    assert next(item for item in previews if item["type"] == "Revenue")["properties"][0]["value"] == "苹果收入"
+    assert data["instance_relations"][0]["id"] == "edge:1"
+    assert "proof:name" in data["evidence"]
+    assert sum(item["count"] for item in data["instance_counts"] if item["type_id"] == "Revenue") == 8
+    assert {item["id"] for item in data["ontology_overview"]["nodes"]} == {"Metric", "GeneralObject", "Revenue", "Fruit"}
+
+
+def test_viewer_can_write_new_preview_without_overwriting_original(tmp_path):
+    original = tmp_path / "run"
+    original.mkdir()
+    (original / "viewer.html").write_text("original evidence", encoding="utf-8")
+    output = tmp_path / "preview" / "viewer.html"
+    assert render_viewer(original, 10, output_path=output) == output
+    assert (original / "viewer.html").read_text() == "original evidence"
+    assert "本体结构浏览" in output.read_text()

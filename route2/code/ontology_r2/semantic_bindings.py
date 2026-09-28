@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from .configuration_relations import declared_reference_evidence
 from .models import BuildPlan, Condition, DerivedType, Strict
 from .relation_contract import canonical_relation_definition, canonical_relation_id
 from .storage import digest
@@ -162,6 +163,23 @@ def binding_relation_errors(data, relation, object_types):
     return [] if found else ["structured binding lacks a checked source contract"]
 
 
+def measure_slot_value_supported(data, target, value):
+    """A varying slot may use a concrete measure only by exact name or alias."""
+    from .calculation_contracts import _aliases, _norm
+    names = {_norm(target.label)}
+    for prop in target.source_properties:
+        if prop.role != "alias":
+            continue
+        for evidence_id in prop.evidence_ids:
+            proof = data.evidence.get(evidence_id, {})
+            ref = proof.get("source_ref", {})
+            if (proof.get("origin") == "observed_record" and not proof.get("raw_fragment_truncated")
+                    and ref.get("snapshot_id") == data.snapshot_id
+                    and ref.get("table") == prop.source_table and ref.get("column") == prop.source_column):
+                names.update(_norm(alias) for alias in _aliases(proof.get("raw_fragment", "")))
+    return _norm(value) in names
+
+
 def compile_template_relations(data, profile, plan, template_projections, template_bindings=()):
     """Publish reusable type edges once; observed member values remain bindings."""
     from .validation import validate_plan
@@ -179,6 +197,15 @@ def compile_template_relations(data, profile, plan, template_projections, templa
                     raise ValueError("Template projection snapshot differs")
                 if not raw_slot.get("target_type_id"):
                     raise ValueError("Slot requires a targeted definition endpoint")
+                variable = any("{" + raw_slot["name"] + "}" in field.get("template", "")
+                               for field in projection.get("field_templates", []))
+                if raw_slot["role"] == "measure" and variable:
+                    target = next((item for item in candidate.object_types if item.id == raw_slot["target_type_id"]), None)
+                    values = [binding.get("slot_values", {}).get(raw_slot["name"])
+                              for binding in template_bindings if binding.get("template_id") == projection["template_id"]]
+                    if (target is None or not values or any(value is None or not
+                            measure_slot_value_supported(data, target, value) for value in values)):
+                        raise ValueError("Varying measure slot values do not all identify the proposed target definition")
                 slot = {key: raw_slot[key] for key in OntologySlotBinding.model_fields if key in raw_slot}
                 contract = {"kind": "template_projection", "template_id": projection["template_id"],
                             "contract_hash": projection["contract_hash"],
@@ -219,9 +246,12 @@ def configuration_purpose_packet(data, candidate, witness, plan, checked_rules):
     for side in ("source", "target"):
         rule = rules.get(candidate.get(side + "_rule_id"))
         if (rule is None or rule.get("status") != "checked_technical"
-                or rule.get("snapshot_id") != data.snapshot_id or rule.get("numeric_overlap_only")
-                or rule.get("verification", {}).get("scan_scope") != "full_input"
-                or rule.get("source", {}).get("field") in data.tables[candidate["configuration_table"]].get("pk", [])):
+                or rule.get("snapshot_id") != data.snapshot_id
+                or rule.get("verification", {}).get("scan_scope") != "full_input"):
+            return None
+        if ((rule.get("numeric_overlap_only") or rule.get("source", {}).get("field")
+                in data.tables[candidate["configuration_table"]].get("pk", []))
+                and declared_reference_evidence(data, rule) is None):
             return None
     from .column_roles import is_sensitive_column
     table_name = candidate["configuration_table"]
@@ -257,8 +287,9 @@ def configuration_purpose_packet(data, candidate, witness, plan, checked_rules):
             "endpoints": [{"type_id": item.id, "root": root, "label": item.label,
                             "definition": item.definition, "scope": item.applicability_scope}
                            for item, root in zip((left, right), roots)],
-            "reference_paths": [{key: rules[candidate[side + "_rule_id"]].get(key)
-                                  for key in ("rule_id", "source", "target", "selector", "scope_bindings")}
+            "reference_paths": [{**{key: rules[candidate[side + "_rule_id"]].get(key)
+                                  for key in ("rule_id", "source", "target", "selector", "scope_bindings")},
+                                  "declaration": declared_reference_evidence(data, rules[candidate[side + "_rule_id"]])}
                                  for side in ("source", "target")],
             "contract": "Judge a configuration purpose, not a formula or row identity. Code equality and "
                         "co-occurrence are insufficient. Quote one complete source item that explains the "
@@ -339,14 +370,17 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
         if (rule is None or rule.get("status") != "checked_technical"
                 or rule.get("snapshot_id") != data.snapshot_id
                 or rule.get("verification", {}).get("scan_scope") != "full_input"
-                or rule.get("transform", {}).get("operator", "identity") != "identity"
-                or rule.get("numeric_overlap_only")):
+                or rule.get("transform", {}).get("operator", "identity") != "identity"):
             raise ValueError("Structured binding lacks a complete checked reference rule")
         if (rule.get("source") != {"table": candidate["configuration_table"],
                                   "field": candidate[side + "_code_column"]}
                 or rule.get("target") != {"table": expected["table"], "field": expected["code_column"]}):
             raise ValueError("Structured purpose and execution reference paths differ")
-        if rule["source"]["field"] in data.tables[candidate["configuration_table"]].get("pk", []):
+        declaration = declared_reference_evidence(data, rule)
+        if rule.get("numeric_overlap_only") and declaration is None:
+            raise ValueError("Numeric overlap lacks a declared reference path")
+        if (rule["source"]["field"] in data.tables[candidate["configuration_table"]].get("pk", [])
+                and declaration is None):
             raise ValueError("A configuration row identity is not a business reference")
         counts = rule["verification"].get("checks", {})
         if (not counts.get("eligible_references")
@@ -361,6 +395,7 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
         endpoints[side], _, _ = _endpoint(data, plan, candidate, side, aligned)
         rule_proofs.append({"rule_id": rule["rule_id"], "source": rule["source"], "target": rule["target"],
                             "selector": rule.get("selector") or {}, "scope_bindings": rule.get("scope_bindings") or {},
+                            "declaration": declaration,
                             "verification_hash": digest(rule["verification"])})
     left, right = endpoints["source"], endpoints["target"]
     source, target = (left, right) if _root(left, types) == "Metric" else (right, left)
@@ -374,6 +409,13 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
             "evidence_ids": evidence_ids, "binding_scope": "definition_instance"}
     contract = {"kind": "configuration_references", "candidate_id": candidate["id"],
                 "configuration_record_id": candidate["configuration_record_id"],
+                "configuration_table": candidate["configuration_table"],
+                "configuration_row_number": witness["__r2_row"],
+                "endpoints": {
+                    "source": {"type_id": source.id, **candidate[
+                        "source_definition" if source.id == left.id else "target_definition"]},
+                    "target": {"type_id": target.id, **candidate[
+                        "target_definition" if target.id == right.id else "source_definition"]}},
                 "declaration": purpose, "reference_paths": rule_proofs,
                 "selector": candidate.get("selector", {}),
                 "support_scope": "checked_reference_pattern_and_observed_definition_pair"}

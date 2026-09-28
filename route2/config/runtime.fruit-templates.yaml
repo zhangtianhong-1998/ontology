@@ -1,5 +1,5 @@
 # 23表全量合成输入；语义一致性修复后的v3数据，旧v2及其结果保持不变。
-# 模板覆盖检查先于LLM；总调用上限800，组包阶段为后续保留200。
+# 模板覆盖检查先于LLM；总调用上限3000，首轮为定向修复和后续阶段保留600。
 synthetic: true
 dataset: ../local_data/fruit_data_v3
 data_scope: complete_export
@@ -91,7 +91,19 @@ instance_bundles:
   max_definition_memberships: 1200000
   review: true
   template_projection_enabled: true
-  reserve_calls_for_followup: 200
+  reserve_calls_for_followup: 600
+targeted_repair:
+  enabled: true
+  # 总轮数包含首轮；第二轮只处理未覆盖模式和缺失端点。
+  max_rounds: 2
+  max_tasks_per_round: 80
+  max_examples_per_task: 3
+  max_calls_per_round: 400
+  reserve_calls_for_followup: 300
+ontology_instantiation:
+  enabled: true
+  max_records: 1200000
+  max_assertions: 2400000
 fact_observations:
   enabled: true
   max_candidates_per_table: 50000
@@ -133,8 +145,10 @@ llm:
     mode: disabled
     parameter: thinking
     effort: medium
-  max_calls: 800
-  max_reserved_tokens: 90000000
+  max_calls: 3000
+  max_reserved_tokens: 350000000
+  # 同一任务内串行调用；每次请求完成（含失败）后再等此秒数，0表示不等待。
+  request_interval_seconds: 0.2
   max_input_bytes: 100000
   max_output_tokens: 12288
   max_repairs: 1

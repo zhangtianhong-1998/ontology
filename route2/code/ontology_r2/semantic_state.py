@@ -18,13 +18,13 @@ def state_contract(data, profile, *, implementation_code_hash):
             or len(implementation_code_hash) != 64
             or any(char not in "0123456789abcdef" for char in implementation_code_hash)):
         raise ValueError("implementation_code_hash must be the pipeline SHA-256 hash")
-    from .llm import SYSTEM, TASK_PROMPTS
+    from .llm import SYSTEM, TASK_PROMPTS, TEMPLATE_INDUCTION_PROMPT
     # Definition parameters now participate in type identity and relation
     # compatibility; pre-contract checkpoints must not bypass these checks.
     return {"version": 4, "snapshot_id": data.snapshot_id,
             "implementation_code_hash": implementation_code_hash,
             "retrieval_contract": getattr(data, "semantic_retrieval_contract", {}),
-            "profile_hash": digest(profile), "prompts_hash": digest([SYSTEM, TASK_PROMPTS]),
+            "profile_hash": digest(profile), "prompts_hash": digest([SYSTEM, TASK_PROMPTS, TEMPLATE_INDUCTION_PROMPT]),
             # Source files alone do not capture a changed exclusion policy.
             # Replaying old evidence must not undo a newly excluded column.
             "semantic_exclusions": {name: sorted(table.get("semantic_excluded_columns", []))

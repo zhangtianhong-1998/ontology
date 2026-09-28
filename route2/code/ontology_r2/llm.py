@@ -2,8 +2,10 @@
 import asyncio
 import json
 import os
+import math
+import time
 from copy import deepcopy
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
@@ -159,6 +161,9 @@ B. 从配置/实例的说明或多个相容记录提取共同类：action=projec
 - Metric须有business_object槽及原文依据，可同时绑定独立Measure、Dimension。
   Measure不绑定具体经营对象；SUM/AVG/过滤/RANK是运算，不是量本身。时间、预算、排名可以是量的口径。
 - 保留definition_parameters中的已声明计算参数，值必须是完整且保持不变的来源值。
+- applicability_scope保存类定义的适用范围，只能使用全部见证中实际scope字段的完整不变值；
+  地区、具体年份等观测坐标留在槽位，不能仅因某个见证只有一个取值就当作全类约束。
+  若来源明确限定业务领域等适用范围，应显式保留；不能为了连通度量而删掉或补造范围。
 - 复用已有类型必须定义、单位、公式和参数相容；只用输入中存在的ID。无依据的关系保留未决。
 
 通用格式示例（仅说明契约，绝不可照抄这些ID/字段到真实输出）：
@@ -174,6 +179,11 @@ description:接口是一类接收请求并返回数据的服务资源。本记�
 同值、共词或向量近似只能用于召回，不能证明概念同一、计算依赖或通用性。
 保留完整单位、公式、范围及反证；不能裁剪受限来源伪造通用度量。若只缺某条成分关系，可保留未决槽；
 若类定义本身不成立则unresolved并给具体原因。所有证据只来自本包，禁止外部常识补证。
+
+已有模板的完整契约和字段匹配报告用于复用判断。部分字段匹配只证明这些字段相容，不代表整条记录同一。
+若输入含targeted_repair，只处理列出的未覆盖字段、未定端点或新实际取值；保留已有类的ID、定义、公式、单位与参数。
+已有合格率定义可以作为待核验的度量端点；未发现某个具体成员的定义时，保留该实际值为未决绑定，
+不要为这个成员重复提取同一合格率，也不要仅凭名称给它新建类型。补端点必须有本包来源依据、角色及口径相容性。
 """
 
 
@@ -200,6 +210,13 @@ class StructuredLLM:
         self.positions = defaultdict(int)
         self._call_ceilings = []
         self.call_reservations = []
+        interval = config.get("request_interval_seconds", 0)
+        if type(interval) not in (int, float) or not math.isfinite(interval) or not 0 <= interval <= 60:
+            raise ValueError("llm.request_interval_seconds must be a finite number in 0..60")
+        self.request_interval = float(interval)
+        self._request_lock = asyncio.Lock()
+        self._last_request_completed_at = None
+        self.request_wait_seconds = 0.0
         self.responses = read_yaml(config["responses"]) if self.mode == "mock" else None
         self.model = None
         self.cache = Path(config.get("cache_dir", self.output / "work/llm_cache"))
@@ -263,6 +280,7 @@ class StructuredLLM:
                 "经营对象成员、地区与具体期间属于观察绑定，不能成为新的类名。Measure必须有独立通用定义，操作符不能成类。"
                 "Metric必须有原文经营对象依据与槽位；缺某个度量端点可保留未决，不能从名称推测公式依赖。"
                 "逐一核对全部变化字段、槽值、固定片段、单位、公式、真实计算参数和作用域；编码不等于中文名称。"
+                "applicability_scope必须是来源定义的适用范围且由不变scope字段支持；不能把实际地区/年份观测升为类约束。"
                 "components是独立成分，不得复制主类型充数；每个成分都须由同角色slot.target_component精确引用其name。"
                 "固定槽quote应为源文中的实际成分短值。相似、技术连接与模型解释均不证明来源身份。"
                 "只评估本候选实际声明的契约，其他召回记录不必合并。成立则accepted=true，否则errors逐项指出矛盾或缺证。")
@@ -291,6 +309,25 @@ class StructuredLLM:
             )
         return self.model
 
+    @asynccontextmanager
+    async def request_slot(self):
+        """Serialize wire requests, then pause after completion, including errors.
+
+        ReAct, structured calls and retries share this boundary. Cache hits and
+        mock responses do not send requests and therefore do not wait.
+        """
+        async with self._request_lock:
+            if self._last_request_completed_at is not None:
+                delay = self.request_interval - (time.monotonic() - self._last_request_completed_at)
+                if delay > 0:
+                    started = time.monotonic()
+                    await asyncio.sleep(delay)
+                    self.request_wait_seconds += time.monotonic() - started
+            try:
+                yield
+            finally:
+                self._last_request_completed_at = time.monotonic()
+
     async def complete(self, messages, *, task, budget_request=None, **kwargs):
         max_retries = self.config.get("max_retries", 3)
         if type(max_retries) is not int or not 0 <= max_retries <= 5:
@@ -317,8 +354,9 @@ class StructuredLLM:
 
             observer_token = model.wire_observer.set(observe_wire)
             try:
-                response = await complete(model, messages, timeout=self.config.get("timeout_seconds", 60),
-                                          on_delta=lambda content: self.trace({"stage": "llm_stream_delta", "task": task, "content": content}), **kwargs)
+                async with self.request_slot():
+                    response = await complete(model, messages, timeout=self.config.get("timeout_seconds", 60),
+                                              on_delta=lambda content: self.trace({"stage": "llm_stream_delta", "task": task, "content": content}), **kwargs)
             except (APIConnectionError, APIStatusError) as exc:
                 retryable = (not isinstance(exc, APITimeoutError) and
                              (not isinstance(exc, APIStatusError) or exc.status_code >= 500))
@@ -411,7 +449,7 @@ class StructuredLLM:
         return result
 
     def metrics(self):
-        return {"mode": self.mode, "model": os.getenv("ONTOLOGY_LLM_MODEL") if self.mode != "mock" else "recorded_fixture", "framework": "agentscope-2.0.8", "prompt_hash": digest([SYSTEM, TASK_PROMPTS, KNOWLEDGE_PROMPTS]), "transport": self.transport, "calls": self.calls, "reserved_token_upper_bound": self.reserved_tokens, "provider_reported_tokens": self.actual_tokens if self.mode != "mock" else None, "provider_wire_responses": self.wire_responses if self.mode != "mock" else None, "provider_usage_reported_responses": self.usage_reported_responses if self.mode != "mock" else None, "provider_incomplete_responses": self.incomplete_responses if self.mode != "mock" else None, "provider_finish_reasons": dict(self.finish_reasons) if self.mode != "mock" else None, "cache_hits": self.cached, "call_reservations": deepcopy(self.call_reservations)}
+        return {"mode": self.mode, "model": os.getenv("ONTOLOGY_LLM_MODEL") if self.mode != "mock" else "recorded_fixture", "framework": "agentscope-2.0.8", "prompt_hash": digest([SYSTEM, TASK_PROMPTS, TEMPLATE_INDUCTION_PROMPT, KNOWLEDGE_PROMPTS]), "transport": self.transport, "request_pacing": {"interval_seconds": self.request_interval, "max_concurrent_requests": 1, "wait_seconds": round(self.request_wait_seconds, 3)}, "calls": self.calls, "reserved_token_upper_bound": self.reserved_tokens, "provider_reported_tokens": self.actual_tokens if self.mode != "mock" else None, "provider_wire_responses": self.wire_responses if self.mode != "mock" else None, "provider_usage_reported_responses": self.usage_reported_responses if self.mode != "mock" else None, "provider_incomplete_responses": self.incomplete_responses if self.mode != "mock" else None, "provider_finish_reasons": dict(self.finish_reasons) if self.mode != "mock" else None, "cache_hits": self.cached, "call_reservations": deepcopy(self.call_reservations)}
 
     async def close(self):
         if self.model is not None:

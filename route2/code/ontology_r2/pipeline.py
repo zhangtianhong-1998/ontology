@@ -29,6 +29,7 @@ from .llm import BudgetExceeded, StructuredLLM, validate_call_reservation
 from .progress import ProgressReporter
 from .record_types import source_record_type
 from .relations import Extractor
+from .repair_stage import repair_settings, run_targeted_repair
 from .semantic_cards import SemanticCardIndex, build_semantic_cards
 from .semantic_state import restore_state, save_state
 from .storage import Dataset, Sink, digest, read_yaml, write_yaml
@@ -183,6 +184,15 @@ async def build(config, output):
     manifest.update(input_root=config["dataset"], experiment_profile=config.get("experiment_profile"), source_channels={"mcp": config.get("mcp", {}).get("enabled", False), "external": config.get("external", {}).get("enabled", False)}, runtime_limits={"llm": {k: v for k, v in config["llm"].items() if k.startswith("max_") or k in ("mode", "timeout_seconds")}, "processing": config.get("processing", {}), "memory_limit": config.get("memory_limit", "1GB")})
     try:
         progress = ProgressReporter(config.get("progress"))
+        repair_settings(config.get("targeted_repair"), config["llm"].get("max_calls", 100))
+        instance_options = config.get("ontology_instantiation", {})
+        if (not isinstance(instance_options, dict)
+                or set(instance_options) - {"enabled", "max_records", "max_assertions"}
+                or type(instance_options.get("enabled", False)) is not bool):
+            raise ValueError("Invalid ontology_instantiation settings")
+        for key in ("max_records", "max_assertions"):
+            if key in instance_options and (type(instance_options[key]) is not int or instance_options[key] < 0):
+                raise ValueError("ontology_instantiation limits must be nonnegative integers")
         if config.get("visualization", {}).get("enabled", True):
             from .visualization import validate_viewer_limit
             validate_viewer_limit(config.get("visualization", {}).get("max_nodes", 200))
@@ -384,6 +394,37 @@ async def build(config, output):
                     on_checkpoint=lambda result: save_state(
                         output / "semantic_state.json", data, profile, result,
                         implementation_code_hash=code_hash))
+            # Check actual rows before the second round: pattern seeds alone
+            # may omit values that invalidate an otherwise plausible template.
+            repair_index = None
+            repair_bundles = packet_result["bundles"]
+            try:
+                if config.get("targeted_repair", {}).get("enabled", False):
+                    from .definition_memberships import build_projection_bindings
+                    repair_index = SemanticCardIndex(output / "work" / "semantic_cards.sqlite")
+                    checked_members = build_projection_bindings(
+                        data, repair_index, group_result.get("template_projections", []),
+                        max_records=options.get("max_definition_memberships", 100000))
+                    bound = {item["id"]: item for item in group_result.get("template_bindings", [])}
+                    bound.update({item["id"]: item for item in checked_members["bindings"]})
+                    group_result["template_bindings"] = list(bound.values())
+                    repair_bundles = [*repair_bundles, *checked_members["repair_bundles"]]
+                    write_yaml(output / "template_pre_repair_coverage.yaml", checked_members["coverage"])
+                group_result, repair_report = await run_targeted_repair(
+                    data, profile, repair_bundles, group_result, llm,
+                    config.get("targeted_repair"), bundle_options=options, progress=progress,
+                    index=repair_index,
+                    on_checkpoint=lambda result: save_state(
+                        output / "semantic_state.json", data, profile, result,
+                        implementation_code_hash=code_hash))
+            finally:
+                if repair_index is not None:
+                    repair_index.close()
+            write_yaml(output / "targeted_repair_tasks.yaml", repair_report["tasks"])
+            write_yaml(output / "observed_value_tasks.yaml", repair_report["observed_value_tasks"])
+            write_yaml(output / "observed_value_lookup_coverage.yaml", repair_report.get("observed_value_lookup", {}))
+            write_yaml(output / "targeted_repair_rounds.yaml", repair_report["rounds"])
+            manifest["targeted_repair"] = repair_report["coverage"]
             plan = group_result["plan"]
             from .semantic_bindings import compile_template_relations
             template_relations = compile_template_relations(
@@ -423,6 +464,7 @@ async def build(config, output):
                 template_relations["coverage"]["template_instance_bindings"] = len(bound)
                 write_yaml(output / "ontology_bindings.yaml", template_relations)
                 write_yaml(output / "template_binding_coverage.yaml", projection_members["coverage"])
+                write_yaml(output / "template_uncovered_examples.yaml", projection_members["repair_bundles"])
             finally:
                 index.close()
             for member in memberships["memberships"]:
@@ -728,6 +770,32 @@ async def build(config, output):
         write_yaml(output / "concept_relations.yaml", group_result["concept_relations"])
         write_yaml(output / "concept_relation_derivations.yaml",
                    group_result["concept_relation_derivations"])
+        instance_graph = {"objects": [], "assertions": [], "source_mappings": [], "pending": [],
+                          "coverage": {"status": "disabled", "partial": False}}
+        if instance_options.get("enabled", False):
+            from .ontology_instances import materialize_ontology_instances
+            stage = progress.task("本体来源实例化", 1) if progress else nullcontext(None)
+            with stage as task:
+                instance_graph = materialize_ontology_instances(
+                    data, plan, template_projections=group_result.get("template_projections", []),
+                    template_bindings=group_result.get("template_bindings", []),
+                    ontology_bindings=(template_relations.get("bindings", [])
+                                       if config.get("instance_bundles", {}).get("enabled", False) else [])
+                                      + config_decisions.get("bindings", []),
+                    calculation_contracts=calculations, concepts=group_result["concepts"],
+                    record_alignments=group_result["record_alignments"], memberships=memberships["memberships"],
+                    fact_instances=fact_binding["instances"],
+                    **{key: value for key, value in instance_options.items() if key != "enabled"})
+                if task:
+                    task.advance(detail=f"{len(instance_graph['objects'])} 节点 / {len(instance_graph['assertions'])} 关系")
+        manifest["ontology_instantiation"] = instance_graph["coverage"]
+        write_yaml(output / "ontology_instance_coverage.yaml", instance_graph["coverage"])
+        write_yaml(output / "ontology_instance_mappings.yaml", instance_graph["source_mappings"])
+        write_yaml(output / "ontology_instance_pending.yaml", instance_graph["pending"])
+        for obj in instance_graph["objects"]:
+            sink.put("objects", obj)
+        for assertion in instance_graph["assertions"]:
+            sink.put("assertions", assertion)
         for ev in data.evidence.values():
             sink.put("evidence", ev)
         for concept in group_result["concepts"]:
@@ -820,6 +888,8 @@ async def build(config, output):
             "definition_membership_or_reference_pending": bool(memberships["coverage"].get("partial")),
             "template_binding_incomplete": bool(manifest.get("template_bindings", {}).get("partial")),
             "template_relations_unresolved": bool(manifest.get("template_relations", {}).get("partial")),
+            "ontology_instances_incomplete": bool(manifest["ontology_instantiation"].get("partial")),
+            "targeted_repair_gaps": bool(manifest.get("targeted_repair", {}).get("partial")),
             "group_incremental_partial": bool(manifest["group_incremental"]["partial"]),
             "calculation_operands_unresolved": bool(calculations["coverage"].get("partial")),
             "type_generalization_partial": bool(manifest["type_generalization"]["partial"]),

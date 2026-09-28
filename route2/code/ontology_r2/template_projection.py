@@ -61,6 +61,7 @@ class TemplateProjectionDecision(Strict):
     existing_type_id: str | None = None
     class_definition: ProjectionQuote | None = None
     definition_parameters: dict[str, str] = Field(default_factory=dict)
+    applicability_scope: dict[str, str] = Field(default_factory=dict)
 
 
 _SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -317,6 +318,18 @@ def compile_projection(data, profile, core, bundle, decision):
         if not name or value not in template["invariants"].values():
             raise ValueError("Definition parameter must retain a complete invariant source value")
     template["definition_parameters"] = dict(decision.definition_parameters)
+    for column, value in decision.applicability_scope.items():
+        if not value or column in changed:
+            raise ValueError("Projection applicability scope must use complete invariant scope fields")
+        for record in witnesses:
+            raw_values, raw_roles = _fields(record)
+            if "scope" not in raw_roles.get(column, set()) or raw_values.get(column) != value:
+                raise ValueError("Projection applicability scope is absent from a witness scope field")
+        if any(slot["role"] == "dimension" and (
+                slot.get("source_column") == column
+                or slot.get("value_evidence", {}).get("column") == column) for slot in slots):
+            raise ValueError("An observed dimension slot cannot become class applicability scope")
+    template["applicability_scope"] = dict(decision.applicability_scope)
     source_properties = {}
     for record in witnesses:
         raw_values, raw_roles = _fields(record)
@@ -379,6 +392,15 @@ def compile_projection(data, profile, core, bundle, decision):
         for slot in slots:
             if slot["role"] == "measure" and len({item["slot_values"][slot["name"]] for item in bindings}) > 1:
                 raise ValueError("Different quantity meanings cannot be wildcarded into one Metric")
+    for slot in slots:
+        target = known.get(slot.get("target_type_id"))
+        ancestry = set()
+        while target is not None and target.parent in known and target.id not in ancestry:
+            ancestry.add(target.id)
+            target = known[target.parent]
+        if (slot["role"] == "measure" and target is not None and target.parent == "Measure"
+                and len({item["slot_values"][slot["name"]] for item in bindings}) > 1):
+            raise ValueError("A varying measure slot cannot statically target one concrete Measure; resolve each value separately")
     if decision.existing_type_id:
         existing = known.get(decision.existing_type_id)
         existing_formulas = {str(data.evidence[eid].get("raw_fragment", "")).strip()
@@ -390,8 +412,9 @@ def compile_projection(data, profile, core, bundle, decision):
                 or existing.definition != decision.definition
                 or (existing.unit or "") != (witnesses[0].get("unit") or "")
                 or existing.definition_parameters != decision.definition_parameters
+                or existing.applicability_scope != decision.applicability_scope
                 or existing_formulas != source_formulas):
-            raise ValueError("Template target must match an existing type definition, unit, formula and parameters")
+            raise ValueError("Template target must match an existing type definition, unit, formula, parameters and applicability scope")
         template["object_type_id"] = existing.id
     else:
         if decision.root_type not in roots:
@@ -401,6 +424,8 @@ def compile_projection(data, profile, core, bundle, decision):
         formulas = sorted({values[column] for column, rs in roles.items() if "formula" in rs})
         identity = [decision.root_type, decision.label, decision.definition,
                     witnesses[0].get("unit") or None, formulas, decision.definition_parameters]
+        if decision.applicability_scope:
+            identity.append({"applicability_scope": decision.applicability_scope})
         template["object_type_id"] = "type:" + digest(identity)[:24]
         if template["object_type_id"] not in known:
             candidate.object_types.append(DerivedType(
@@ -408,7 +433,8 @@ def compile_projection(data, profile, core, bundle, decision):
                 definition=decision.definition, category="business_type", evidence_ids=template["evidence_ids"],
                 derivation_kind="template_projection", evidence_scope="projected_definition_template",
                 unit=witnesses[0].get("unit") or None,
-                definition_parameters=decision.definition_parameters, source_properties=properties))
+                definition_parameters=decision.definition_parameters,
+                applicability_scope=decision.applicability_scope, source_properties=properties))
     # Add projection mappings without inventing exact record-to-type identity.
     current = next(item for item in candidate.object_types if item.id == template["object_type_id"])
     known_properties = {(item.role, item.source_table, item.source_column): item.model_dump()
@@ -439,4 +465,15 @@ def reuse_projection(data, templates, bundle):
     matches = [template for template in templates if match_projection(template, seed) is not None]
     if len({item["object_type_id"] for item in matches}) != 1:
         return None
-    return bind_projection(data, sorted(matches, key=lambda item: item["template_id"])[0], seed)
+    endpoints = {}
+    for template in matches:
+        for slot in template["slots"]:
+            if slot.get("target_type_id"):
+                endpoints.setdefault((slot["role"], slot["name"]), set()).add(slot["target_type_id"])
+    if any(len(targets) > 1 for targets in endpoints.values()):
+        return None  # One source row cannot silently choose conflicting accepted endpoints.
+    chosen = min(matches, key=lambda item: (
+        sum(slot["role"] in {"business_object", "measure", "dimension"}
+            and not slot.get("target_type_id") for slot in item["slots"]),
+        -sum(bool(slot.get("target_type_id")) for slot in item["slots"]), item["template_id"]))
+    return bind_projection(data, chosen, seed)

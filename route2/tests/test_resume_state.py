@@ -224,7 +224,11 @@ def test_pipeline_passes_its_manifest_code_hash_to_every_checkpoint_call():
     tree = ast.parse(inspect.getsource(pipeline.build))
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
              and isinstance(node.func, ast.Name) and node.func.id in {"restore_state", "save_state"}]
-    assert sorted(node.func.id for node in calls) == ["restore_state", "save_state", "save_state"]
+    names = [node.func.id for node in calls]
+    assert names.count("restore_state") == 1
+    # Additional iterative stages may checkpoint too; every save must use
+    # the same implementation hash, rather than fixing the number of stages.
+    assert names.count("save_state") >= 2
     for node in calls:
         argument = next(item.value for item in node.keywords if item.arg == "implementation_code_hash")
         assert isinstance(argument, ast.Name) and argument.id == "code_hash"

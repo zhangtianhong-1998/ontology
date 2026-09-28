@@ -66,6 +66,51 @@ def _attach_attribute_previews(db, nodes, ontology):
             del selected[MAX_ATTRIBUTES_PER_OBJECT:]
 
 
+def _instance_preview(db, ontology, max_nodes):
+    """Sample each semantic type, so a large record table cannot hide other types."""
+    type_ids = [item["id"] for item in ontology.get("object_types", [])
+                if item.get("category") == "business_type"]
+    counts = [{"type_id": type_id, "instance_kind": kind, "count": count}
+              for type_id, kind, count in db.execute(
+                  "SELECT coalesce(json_extract(body,'$.ontology_type_id'),json_extract(body,'$.type')), "
+                  "coalesce(json_extract(body,'$.instance_kind'),'legacy'), count(*) "
+                  "FROM items WHERE kind='objects' GROUP BY 1,2")]
+    if not type_ids:
+        return [], [], counts
+    marks = ",".join("?" for _ in type_ids)
+    rows = db.execute(
+        "SELECT body FROM (SELECT body, row_number() OVER (PARTITION BY "
+        "coalesce(json_extract(body,'$.ontology_type_id'),json_extract(body,'$.type')), "
+        "coalesce(json_extract(body,'$.instance_kind'),'legacy') ORDER BY id) AS rank "
+        "FROM items WHERE kind='objects' AND "
+        "coalesce(json_extract(body,'$.ontology_type_id'),json_extract(body,'$.type')) "
+        f"IN ({marks})) WHERE rank<=3 ORDER BY rank LIMIT ?", type_ids + [max_nodes])
+    nodes = {item["id"]: item for item in (json.loads(row[0]) for row in rows)}
+    selected_ids, links = list(nodes), {}
+    for start in range(0, len(selected_ids), SQLITE_PARAMETERS_PER_QUERY):
+        batch = selected_ids[start:start + SQLITE_PARAMETERS_PER_QUERY]
+        placeholders = ",".join("?" for _ in batch)
+        for (raw,) in db.execute(
+                "SELECT body FROM items WHERE kind='assertions' "
+                "AND json_extract(body,'$.object') IS NOT NULL AND ("
+                f"json_extract(body,'$.subject') IN ({placeholders}) OR "
+                f"json_extract(body,'$.object') IN ({placeholders})) ORDER BY id LIMIT ?",
+                batch + batch + [max_nodes * 2]):
+            edge = json.loads(raw)
+            if len(links) >= max_nodes * 2:
+                break
+            needed = {edge["subject"], edge["object"]} - nodes.keys()
+            if len(nodes) + len(needed) > max_nodes:
+                continue
+            for key in needed:
+                row = db.execute("SELECT body FROM items WHERE kind='objects' AND id=?", (key,)).fetchone()
+                if row:
+                    nodes[key] = json.loads(row[0])
+            if edge["subject"] in nodes and edge["object"] in nodes:
+                links[edge["id"]] = edge
+    return list(nodes.values()), list(links.values()), counts
+
+
 def _bound_concept_refs(item):
     refs = item.get("source_refs", [])
     item["preview_source_ref_count"] = len(refs)
@@ -421,7 +466,7 @@ def validate_viewer_limit(max_nodes):
         raise ValueError("max_nodes must be an integer between 10 and 1000")
 
 
-def render_viewer(run, max_nodes=200, *, manifest_override=None):
+def render_viewer(run, max_nodes=200, *, manifest_override=None, output_path=None):
     run = Path(run).resolve()
     validate_viewer_limit(max_nodes)
 
@@ -436,7 +481,9 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                "objects": [], "concepts": [], "concept_count": None,
                "record_alignments": [], "relations": [], "relation_count": None,
                "record_relation_count": None, "business_relation_count": None,
-               "unresolved": [], "evidence": {}, "counts": {}}
+               "unresolved": [], "evidence": {}, "counts": {},
+               "instance_preview": [], "instance_relations": [], "instance_counts": [],
+               "instance_coverage": read("ontology_instance_coverage.yaml", {})}
     payload["templates"] = _template_preview(run, max_nodes)
     database = run / "work/results.sqlite"
     if database.exists():
@@ -493,8 +540,14 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                 "SELECT body FROM (SELECT body, row_number() OVER (PARTITION BY "
                 "json_extract(body,'$.type_id') ORDER BY id) AS rn FROM items "
                 "WHERE kind='definition_memberships') WHERE rn <= 3 LIMIT ?", (max_nodes * 3,))]
+            (payload["instance_preview"], payload["instance_relations"], payload["instance_counts"]) = (
+                _instance_preview(db, payload["ontology"], max_nodes))
+            _attach_attribute_previews(db, payload["instance_preview"], payload["ontology"])
+            for item in payload["instance_preview"]:
+                _bound_concept_refs(item)
             refs = set()
-            for item in (payload["objects"] + payload["concepts"] + payload["record_alignments"]
+            for item in (payload["objects"] + payload["concepts"] + payload["instance_preview"]
+                         + payload["instance_relations"] + payload["record_alignments"]
                          + payload["relations"] + payload["unresolved"]
                          + payload["ontology"].get("object_types", [])
                          + payload["ontology"].get("relation_types", [])
@@ -503,7 +556,7 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                          + payload["templates"]["bindings"]
                          + payload["templates"]["ontology_bindings"]):
                 refs.update(item.get("evidence_ids", []))
-                for attribute in item.get("preview_attributes", []):
+                for attribute in item.get("preview_attributes", []) + item.get("properties", []):
                     refs.update(attribute.get("evidence_ids", []))
             for result in payload["knowledge"]:
                 for claim in result.get("claims", []):
@@ -537,6 +590,7 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
     payload["construction"] = {**payload["construction"], "steps": [{k: v for k, v in s.items() if k != "attempts"} | {"attempts": [{k: v for k, v in a.items() if k not in ("delta", "accepted_delta")} for a in s["attempts"]]} for s in payload["construction"].get("steps", [])]}
     encoded = json.dumps(payload, ensure_ascii=False).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
     page = Path(__file__).with_name("viewer.html").read_text(encoding="utf-8").replace("__RESULT_DATA__", encoded)
-    target = run / "viewer.html"
+    target = Path(output_path).resolve() if output_path is not None else run / "viewer.html"
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(page, encoding="utf-8")
     return target

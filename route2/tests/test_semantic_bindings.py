@@ -133,6 +133,46 @@ def test_declared_config_shortcut_has_no_llm_and_wrong_join_path_is_not_accepted
         data.close()
 
 
+def test_numeric_overlap_cannot_exhaust_configuration_spec_budget(tmp_path):
+    data, plan, concepts, alignments, candidate, rules = _configuration_case(tmp_path, "度量提供指标的量定义")
+    try:
+        noise = [{**rule, "rule_id": "noise:" + rule["rule_id"], "numeric_overlap_only": True}
+                 for rule in rules]
+        result = infer_configuration_specs(data, plan, concepts, alignments, noise + rules, max_specs=1)
+        assert len(result["spec_candidates"]) == 1
+        assert set(result["spec_candidates"][0]["rule_ids"]) == {rule["rule_id"] for rule in rules}
+        assert result["coverage"]["skipped_reasons"]["numeric_overlap_without_reference_semantics"] == 2
+        # No relationship-text column is needed when purpose and both paths are proved.
+        candidate.update(relation_text_column=None, predicate_literal=None)
+        compiled = asyncio.run(adjudicate_configuration_relations(
+            data, PROFILE, plan, [candidate], concepts, alignments, _PurposeModel(), checked_rules=rules))
+        assert compiled["coverage"]["accepted"] == 1
+        endpoints = compiled["bindings"][0]["contract"]["endpoints"]
+        by_type = {candidate[side + "_type_id"]: candidate[side + "_definition"]["record_id"]
+                   for side in ("source", "target")}
+        assert endpoints["source"]["record_id"] == by_type["type:profit"]
+        assert endpoints["target"]["record_id"] == by_type["type:revenue"]
+    finally:
+        data.close()
+
+
+def test_unknown_table_role_does_not_veto_two_checked_reference_paths(tmp_path):
+    from ontology_r2.row_semantics import classify_row_purpose
+    data, plan, concepts, alignments, candidate, rules = _configuration_case(tmp_path, "度量提供指标的量定义")
+    try:
+        # No control-table name or name column; this resembles an attribute
+        # table whose complete semantic purpose has not yet been classified.
+        table = data.tables[candidate["configuration_table"]]
+        table["table_name"] = "property_book"
+        assert classify_row_purpose(table)["purpose"] == "unresolved"
+        inferred = infer_configuration_specs(data, plan, concepts, alignments, rules)
+        assert len(inferred["spec_candidates"]) == 1
+        assert inferred["spec_candidates"][0]["status"] == "candidate_only"
+        assert plan.relation_types == []
+    finally:
+        data.close()
+
+
 def test_checked_membership_can_bind_definition_but_never_claims_exact_identity(tmp_path):
     data, plan, concepts, alignments, candidate, rules = _configuration_case(tmp_path, "度量提供指标的量定义")
     try:
@@ -145,5 +185,80 @@ def test_checked_membership_can_bind_definition_but_never_claims_exact_identity(
             checked_rules=rules, memberships=[member]))
         assert result["coverage"]["accepted"] == 1
         assert result["bindings"][0]["identity_claim"] == "none"
+    finally:
+        data.close()
+
+
+def _numeric_bridge_case(tmp_path):
+    """A two-column PK whose components independently reference definition IDs."""
+    data, plan, concepts, alignments, spec = _input(tmp_path)
+    table = data.tables[spec["configuration_table"]]
+    data.db.execute(f"DELETE FROM {qi(table['sql_name'])} WHERE id <> '21'")
+    data.db.execute(f"UPDATE {qi(table['sql_name'])} SET metric_ref='1', measure_ref='11', "
+                    "relation_text='度量提供指标的量定义'")
+    table["pk"] = ["metric_ref", "measure_ref"]
+    rules = []
+    for field, target in (("metric_ref", spec["source_definition_table"]),
+                          ("measure_ref", spec["target_definition_table"])):
+        schema, name = target.split(".", 1)
+        table["foreign_keys"].append({"fk_name": "fk_" + field, "column_name": field,
+            "referenced_schema": schema, "referenced_table": name, "referenced_column": "id"})
+        rule = _rule("checked:" + field, spec, field, target, "id")
+        rule.update(numeric_overlap_only=True, snapshot_id=data.snapshot_id)
+        rule["verification"]["checks"].update(eligible_references=1, unique_matches=1)
+        rules.append(rule)
+    return data, plan, concepts, alignments, rules
+
+
+def test_declared_numeric_composite_pk_bridge_survives_recall_and_purpose_compilation(tmp_path):
+    data, plan, concepts, alignments, rules = _numeric_bridge_case(tmp_path)
+    try:
+        inferred = infer_configuration_specs(data, plan, concepts, alignments, rules)
+        assert len(inferred["spec_candidates"]) == 1
+        assert inferred["spec_candidates"][0]["status"] == "candidate_only"
+        candidate = discover_configuration_relations(data, plan, concepts, alignments,
+            [inferred["spec_candidates"][0]["spec"]])["candidates"][0]
+        assert candidate["source_code"].isdigit() and candidate["target_code"].isdigit()
+        assert candidate["status"] == "endpoint_verified_candidate"
+        llm = _PurposeModel()
+        result = asyncio.run(adjudicate_configuration_relations(
+            data, PROFILE, plan, [candidate], concepts, alignments, llm, checked_rules=rules))
+        assert result["coverage"]["accepted"] == 1 and llm.calls == 0
+        assert result["plan"].relation_types[0].predicate_name == "measure_binding"
+        paths = result["bindings"][0]["contract"]["reference_paths"]
+        assert all(path["declaration"]["kind"] == "declared_foreign_key" for path in paths)
+        assert validate_plan(result["plan"], data, PROFILE) == []
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize("declarations", ["absent", "wrong_target"])
+def test_numeric_pk_overlap_without_exact_original_fk_stays_unresolved(tmp_path, declarations):
+    from ontology_r2.semantic_bindings import configuration_purpose_packet
+    data, plan, concepts, alignments, rules = _numeric_bridge_case(tmp_path)
+    try:
+        inferred = infer_configuration_specs(data, plan, concepts, alignments, rules)
+        candidate = discover_configuration_relations(data, plan, concepts, alignments,
+            [inferred["spec_candidates"][0]["spec"]])["candidates"][0]
+        table = data.tables[candidate["configuration_table"]]
+        if declarations == "absent":
+            table["foreign_keys"] = []
+        else:
+            for fk in table["foreign_keys"]:
+                fk["referenced_schema"] = "other_schema"
+        # Neither a checked numeric match nor a model-authored declaration is
+        # allowed to substitute for the original exact FK endpoint.
+        for rule in rules:
+            rule["declared_foreign_key"] = True
+        blocked = infer_configuration_specs(data, plan, concepts, alignments, rules)
+        assert blocked["spec_candidates"] == []
+        assert blocked["coverage"]["skipped_reasons"]["numeric_overlap_without_reference_semantics"] == 2
+        witness = next(data.rows(candidate["configuration_table"]))
+        assert configuration_purpose_packet(data, candidate, witness, plan, rules) is None
+        candidate.update(relation_text_column=None, predicate_literal=None)
+        llm = _PurposeModel()
+        result = asyncio.run(adjudicate_configuration_relations(
+            data, PROFILE, plan, [candidate], concepts, alignments, llm, checked_rules=rules))
+        assert result["coverage"]["accepted"] == 0 and llm.calls == 0
     finally:
         data.close()

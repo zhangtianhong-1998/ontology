@@ -11,12 +11,13 @@ from copy import deepcopy
 from .concept_candidates import _field_roles
 from .storage import digest, qi
 from .template_projection import reuse_projection
+from .template_reuse import template_reuse_context
 
 
 _SEMANTIC_ROLES = {"name", "alias", "description", "formula", "unit", "scope", "unknown"}
 
 
-def build_projection_bindings(data, index, templates, *, max_records=100000):
+def build_projection_bindings(data, index, templates, *, max_records=100000, max_gap_examples=32):
     """Apply accepted projection contracts to observed rows, outside LLM budgets.
 
     The index narrows source tables only. Complete original values are fetched
@@ -25,6 +26,8 @@ def build_projection_bindings(data, index, templates, *, max_records=100000):
     """
     if type(max_records) is not int or max_records < 0:
         raise ValueError("Projection binding limit must be nonnegative")
+    if type(max_gap_examples) is not int or max_gap_examples < 0:
+        raise ValueError("Projection gap example limit must be nonnegative")
     if index.coverage.get("snapshot_id") != data.snapshot_id:
         raise ValueError("Projection binding snapshot differs from its source index")
     by_table = defaultdict(list)
@@ -33,6 +36,7 @@ def build_projection_bindings(data, index, templates, *, max_records=100000):
             raise ValueError("Projection contract is not accepted for this snapshot")
         by_table[template["source_table"]].append(template)
     bindings, counts, unexamined = [], Counter(), []
+    gap_counts, gap_bundles = Counter(), {}
     total = 0
     for table, table_templates in sorted(by_table.items()):
         table_count = index.db.execute(
@@ -74,10 +78,26 @@ def build_projection_bindings(data, index, templates, *, max_records=100000):
                     continue
                 if binding is None:
                     counts["uncovered_or_ambiguous"] += 1
+                    if max_gap_examples:
+                        reports = template_reuse_context(table_templates, {"records": [card]}, limit=1)
+                        report = reports[0] if reports else {}
+                        gap_key = digest([table, report.get("template_id"), report.get("unresolved_fields"),
+                                          report.get("protected_fields_changed"),
+                                          report.get("conflicting_accepted_endpoints")])[:24]
+                        gap_counts[gap_key] += 1
+                        if gap_key not in gap_bundles and len(gap_bundles) < max_gap_examples:
+                            gap_bundles[gap_key] = {
+                                "bundle_id": "projection_gap:" + digest([data.snapshot_id, gap_key])[:24],
+                                "task_kind": "concept_induction", "records": [card],
+                                "exact_alignment_record_ids": [card["record_id"]],
+                                "projection_gap": {"gap_id": gap_key, "source_match_report": report,
+                                                   "grouping_is_not_identity": True}}
                 else:
                     bindings.append(binding)
     omitted = total - counts["records_scanned"]
-    return {"bindings": bindings, "coverage": {
+    for gap_key, bundle in gap_bundles.items():
+        bundle["projection_gap"]["records_with_same_gap_shape"] = gap_counts[gap_key]
+    return {"bindings": bindings, "repair_bundles": list(gap_bundles.values()), "coverage": {
         "scope": "indexed_definition_rows_of_template_source_tables", "llm_calls": 0,
         "eligible_source_records": total, "records_scanned": counts["records_scanned"],
         "bindings_emitted": len(bindings), "records_not_scanned": omitted,
@@ -85,6 +105,8 @@ def build_projection_bindings(data, index, templates, *, max_records=100000):
         "identity_changed": counts["identity_changed"],
         "unverifiable_source": counts["unverifiable_source"], "unexamined_tables": unexamined,
         "max_records": max_records, "cartesian_products_created": 0,
+        "uncovered_gap_groups": len(gap_counts), "gap_examples_retained": len(gap_bundles),
+        "max_gap_examples": max_gap_examples,
         "partial": bool(omitted or counts["uncovered_or_ambiguous"]
                         or counts["identity_changed"] or counts["unverifiable_source"])}}
 
