@@ -130,6 +130,34 @@ def test_explicit_source_class_can_compile_one_observed_witness():
     assert len(bindings) == 1
 
 
+def test_variable_slot_citation_must_prove_the_actual_witness_capture():
+    data, bundle = setup()
+    # Both a code and a broad class occur in the source, but neither proves
+    # the literal name captured by the product placeholder.
+    bundle["records"][0]["fields"]["reference"].append({"column": "fruit_code", "value": "APPLE"})
+    for evidence in (quote("fruit_code", "APPLE"), quote("x5", "水果")):
+        proposed = decision().model_dump()
+        proposed["slots"][0]["source_column"] = None
+        proposed["slots"][0]["evidence"] = evidence
+        with pytest.raises(ValueError, match="captured value in the cited witness"):
+            compile_projection(data, PROFILE, BuildPlan(), bundle,
+                               TemplateProjectionDecision.model_validate(proposed))
+
+    # A matching name on a third related record is not a projection witness.
+    bundle["records"].append(record("row3"))
+    proposed = decision().model_dump()
+    proposed["slots"][0]["evidence"] = quote("x8", "苹果", "row3")
+    with pytest.raises(ValueError, match="captured value in the cited witness"):
+        compile_projection(data, PROFILE, BuildPlan(), bundle,
+                           TemplateProjectionDecision.model_validate(proposed))
+
+    # Evidence may use any real witness; do not assume its value is the first.
+    proposed["slots"][0]["evidence"] = quote("x8", "橙子", "row2")
+    _, _, bindings = compile_projection(data, PROFILE, BuildPlan(), bundle,
+                                        TemplateProjectionDecision.model_validate(proposed))
+    assert [item["slot_values"]["product"] for item in bindings] == ["苹果", "橙子"]
+
+
 def test_online_reuse_avoids_second_model_request_and_keeps_separate_instances():
     data, bundle = setup()
     later = {"bundle_id": "b2", "task_kind": "concept_induction", "records": [record("row3", "芒果", "非洲")],
@@ -155,6 +183,37 @@ def test_online_reuse_avoids_second_model_request_and_keeps_separate_instances()
     assert output["record_alignments"] == []
     assert output["concepts"] == []
     assert output["steps"][1]["action"] == "reuse_template"
+
+
+def test_projection_repair_keeps_projection_contract_instead_of_forcing_exact_identity():
+    data, bundle = setup()
+
+    class RepairLLM:
+        calls = 0
+
+        async def ask(self, task, payload, schema):
+            assert task == "concept_bundle"
+            self.calls += 1
+            proposed = decision()
+            if self.calls == 1:
+                assert "exact_definition only" in payload["template_projection"]["name_policy"]
+                proposed.slots[0].evidence = ProjectionQuote.model_validate(quote("x5", "水果"))
+            else:
+                assert "captured value in the cited witness" in payload["compiler_error"]
+                assert "do not add exact record alignments" in payload["repair_instruction"]
+                assert "A proposed new concept requires an exact" not in payload["repair_instruction"]
+                assert payload["previous_decision"]["action"] == "project_template"
+            return ConceptBundleDecision(status="proposed", action="project_template", projection=proposed)
+
+    llm = RepairLLM()
+    result = asyncio.run(construct_from_bundles(
+        data, PROFILE, BuildPlan(), [bundle], llm, review=False,
+        max_repairs_per_bundle=1, enable_template_projection=True))
+    assert llm.calls == 2
+    assert result["steps"][0]["status"] == "accepted"
+    assert len(result["template_projections"]) == 1
+    assert len(result["template_bindings"]) == 2
+    assert result["record_alignments"] == []
 
 
 def test_overlap_between_different_templates_never_silently_binds():

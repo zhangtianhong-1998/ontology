@@ -311,6 +311,16 @@ def compile_projection(data, profile, core, bundle, decision):
     bindings = [match_projection(template, record) for record in witnesses]
     if any(item is None for item in bindings):
         raise ValueError("Every witness must match all literals, invariants and shared slot bindings")
+    bindings_by_record = {item["record_id"]: item for item in bindings}
+    for source_slot, compiled_slot in zip(decision.slots, slots):
+        if "fixed_value" in compiled_slot:
+            continue
+        # A citation proves this captured value, not an implicit name/code
+        # translation. Related records cannot stand in for a matching witness.
+        citation = source_slot.evidence
+        binding = bindings_by_record.get(citation.record_id)
+        if binding is None or binding["slot_values"].get(source_slot.name) != citation.quote:
+            raise ValueError("Variable slot evidence must equal its captured value in the cited witness")
     # A new generalized matcher must be witnessed by variation. A separately
     # accepted type can instead supply a structural instantiation contract.
     declared_class = False

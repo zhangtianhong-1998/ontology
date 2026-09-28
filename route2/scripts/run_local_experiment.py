@@ -11,6 +11,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -28,6 +29,9 @@ def main():
     parser.add_argument('--env-file', type=Path)
     parser.add_argument('--expect-model', default='deepseek-v4-flash')
     args = parser.parse_args()
+    # Detached shells may inherit SIGINT as ignored; keep the run stoppable.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
     if args.output.exists():
         parser.error('Output exists; choose a new directory')
     config = load_config(args.config)

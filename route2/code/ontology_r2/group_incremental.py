@@ -1292,6 +1292,9 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
             payload["template_projection"] = {
                 "enabled": True,
                 "identity_contract": "projection is not exact record identity",
+                "name_policy": (
+                    "canonical_name_choices constrain exact_definition only. A projected class label "
+                    "must be grounded in its own quoted source fragments; it need not equal an instance title."),
                 "existing_templates": [{key: item[key] for key in (
                     "template_id", "object_type_id", "root_type", "label", "definition", "slots")}
                     for item in list(template_projections.values())[-12:]],
@@ -1427,14 +1430,22 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                         except ValueError as exc:
                             if attempt >= max_repairs_per_bundle:
                                 raise
+                            identity_instruction = (
+                                "For project_template, repair the projection contract, source quotes and "
+                                "observed witness bindings; do not add exact record alignments. "
+                                "For exact_definition, an exact alignment to one of "
+                                "exact_alignment_record_ids with a verbatim quote is required. "
+                                if enable_template_projection else
+                                "A proposed new concept requires an exact alignment to one of "
+                                "exact_alignment_record_ids with a verbatim quote; otherwise return unresolved. "
+                            )
                             concept_payload = {
                                 **payload, "previous_decision": decision.model_dump(),
                                 "compiler_error": str(exc),
                                 "repair_instruction": (
                                     "Correct only the cited validation error using this same "
-                                    "evidence bundle. A proposed new concept requires an exact "
-                                    "alignment to one of exact_alignment_record_ids with a "
-                                    "verbatim quote; otherwise return unresolved. Do not invent "
+                                    "evidence bundle. " + identity_instruction +
+                                    "If evidence is insufficient, return unresolved. Do not invent "
                                     "records, scope, units, or facts. related_context is technical "
                                     "association context, never identity or permission to copy its "
                                     "formula onto the seed. Conflicting formula ownership is unresolved."),

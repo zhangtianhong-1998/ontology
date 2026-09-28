@@ -135,9 +135,23 @@ def _columns(table, max_unknown_fields_per_table):
 
 
 def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_index_chars,
-              row_purpose="unresolved", pattern_name_exclusions=()):
+              row_purpose="unresolved", pattern_name_exclusions=(), calculation_fragments=()):
     if row_purpose == "business_fact":
         return None
+    # A sampled operator column may contain a later expression. Check while
+    # doing the existing index scan; never erase that row's formula candidate.
+    from .column_role_inference import formula_fragment_value
+    for fragment in calculation_fragments:
+        name = fragment["column"]
+        value = row.get(name)
+        if value is None or not str(value).strip() or formula_fragment_value(
+                fragment["effective_role"], value):
+            continue
+        roles = {role: list(columns) for role, columns in roles.items()}
+        if name in roles.get("scope", ()):
+            roles["scope"].remove(name)
+        if name not in roles.setdefault("formula", []):
+            roles["formula"].append(name)
     fields = {}
     signature_fields = {}
     for role, columns in [*((role, roles.get(role, ())) for role in _CARD_ROLES),
@@ -349,7 +363,8 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
                                              max_field_chars, max_index_chars,
                                              row_purpose["purpose"],
                                              pattern_name_exclusions=[item["column"] for item in
-                                                 columns_report["definition_pattern_exclusions"]])
+                                                 columns_report["definition_pattern_exclusions"]],
+                                             calculation_fragments=columns_report["calculation_fragments"])
                             if card is None:
                                 counts["rows_without_card"] += 1
                                 if row_purpose["purpose"] == "business_fact":
@@ -481,12 +496,17 @@ class SemanticCardIndex:
             item["binding_columns_excluded_from_semantic_pattern"] = report[
                 "binding_columns_excluded_from_semantic_pattern"]
         if report.get("calculation_fragments"):
+            from .column_role_inference import formula_fragment_value
             item["calculation_fragments"] = [
                 {key: fragment[key] for key in (
                     "column", "proposed_role", "effective_role", "formula_status", "reason",
                     "schema_evidence_id", "validation_scope", "expression_constructed",
-                    "operand_target_verified", "observations") if key in fragment}
-                for fragment in report["calculation_fragments"]]
+                    "operand_target_verified", "observations", "evidence_kind", "profile_field_id",
+                    "profile_sample_scope", "sample_exhaustive_in_input") if key in fragment}
+                for fragment in report["calculation_fragments"]
+                if fragment["column"] not in {field["column"] for field in item["fields"].get("formula", ())}
+                and (fragment["column"] not in item["scope"] or formula_fragment_value(
+                    fragment["effective_role"], item["scope"][fragment["column"]]))]
         # Card fields are retrieval context. Evidence IDs are registered only
         # when a group decision cites a concrete record value.
         item.pop("signature", None)

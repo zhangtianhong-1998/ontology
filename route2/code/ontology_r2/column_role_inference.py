@@ -23,8 +23,8 @@ _ROLES = ("name", "alias", "description", "formula", "unit", "scope",
 _FRAGMENT_ROLES = frozenset(("calculation_operator", "operand_reference"))
 _OPERATOR_VALUES = frozenset((
     "sum", "avg", "average", "mean", "count", "count_distinct", "distinct_count",
-    "min", "max", "ratio", "rank", "add", "subtract", "multiply", "divide",
-    "求和", "平均", "均值", "计数", "去重计数", "最小值", "最大值", "比率", "排名",
+    "min", "max", "ratio", "rank", "add", "subtract", "multiply", "divide", "filter",
+    "求和", "平均", "均值", "计数", "去重计数", "最小值", "最大值", "比率", "排名", "过滤",
 ))
 _IDENTIFIER_VALUE = re.compile(r"[^\W\d]\w*(?:\.[^\W\d]\w*)*", re.UNICODE)
 _EXPLICIT_FORMULA_NAME = re.compile(r"(?:^|_)(?:formula|expression|expr)(?:_|$)")
@@ -82,7 +82,8 @@ def classify_formula_fragment(table, candidate):
     not disprove a direct mapping in an explicitly declared formula column.
     This does not resolve operand targets or construct an expression.
     """
-    if candidate.get("status") != "source_verified_role_candidate":
+    profile_candidate = candidate.get("status") == "profile_supported_role_candidate"
+    if candidate.get("status") != "source_verified_role_candidate" and not profile_candidate:
         return None
     proposed = candidate.get("role")
     if proposed not in {"formula", *_FRAGMENT_ROLES}:
@@ -98,6 +99,15 @@ def classify_formula_fragment(table, candidate):
     effective = proposed
     reason = "source_checked_fragment_role_candidate"
     validation_scope = "source_checked_observations"
+    # An operator proposal must also survive all already available source
+    # samples. A model citing only SUM cannot hide SUM(amount) in the same field.
+    profile = next((item for item in table.get("profiles", ())
+                    if item.get("column") == candidate["column"]), {})
+    values.extend(str(value).strip() for value in profile.get("distinct_sample", ())
+                  if value is not None and str(value).strip())
+    if proposed in _FRAGMENT_ROLES and not all(
+            formula_fragment_value(proposed, value) for value in values):
+        return None
     if proposed == "formula":
         name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", column["column_name"]).casefold()
         comment = str(column.get("column_comment") or "")
@@ -107,10 +117,6 @@ def classify_formula_fragment(table, candidate):
             return None
         # Use every available profile sample as a contradiction check, not
         # just the few values cited by the model. This remains sample-scoped.
-        profile = next((item for item in table.get("profiles", ())
-                        if item.get("column") == candidate["column"]), {})
-        values.extend(str(value).strip() for value in profile.get("distinct_sample", ())
-                      if value is not None and str(value).strip())
         validation_scope = "source_checked_observations_and_available_profile_samples"
         if ((_OPERATOR_NAME.search(name) or _OPERATOR_COMMENT.search(comment))
                 and all(value.casefold() in _OPERATOR_VALUES for value in values)):
@@ -122,15 +128,50 @@ def classify_formula_fragment(table, candidate):
             reason = "declared_operand_field_with_observed_identifier_values"
         else:
             return None
+    if profile_candidate:
+        validation_scope = "source_declaration_and_available_profile_samples"
     return {**candidate, "column": candidate["column"], "proposed_role": proposed,
             "effective_role": effective, "formula_status": "fragment", "reason": reason,
             "validation_scope": validation_scope,
             "expression_constructed": False, "operand_target_verified": False}
 
 
+def formula_fragment_value(role, value):
+    """Check each indexed row too; profile samples are not full-column proof."""
+    text = str(value or "").strip()
+    return bool(text) and (text.casefold() in _OPERATOR_VALUES if role == "calculation_operator"
+                           else bool(_IDENTIFIER_VALUE.fullmatch(text)))
+
+
 def formula_fragment_context(table):
-    """Return calculation parameters for card scope, including restored roles."""
+    """Keep declared operators out of formulas without new scans/model calls."""
     fragments = {}
+    profiles = {item["column"]: item for item in table.get("profiles", ())}
+    safe = {item["column"] for item in classify_columns(table)
+            if item["include_in_semantic_prompt"]}
+    table_name = table.get("name") or ".".join(filter(None, (
+        table.get("schema"), table.get("table_name"))))
+    for column in table.get("columns", ()):
+        name = column["column_name"]
+        profile = profiles.get(name, {})
+        samples = profile.get("distinct_sample") or []
+        if name not in safe or profile.get("scan_scope") != "full_input" or not samples:
+            continue
+        # Profile values are genuine source observations, but do not have
+        # record identities. Preserve that distinction instead of inventing rows.
+        candidate = {"column": name, "role": "formula",
+                     "status": "profile_supported_role_candidate", "semantic_status": "unjudged",
+                     "schema_evidence_id": f"schema:{table_name}:{name}",
+                     "evidence_kind": "source_declaration_and_profile_values",
+                     "profile_field_id": profile.get("field_id"),
+                     "profile_sample_scope": profile.get("sample_scope"),
+                     "sample_exhaustive_in_input": profile.get("sample_exhaustive_in_input", False),
+                     "observations": [{"column": name, "value": str(value),
+                                       "source": "profile_distinct_sample"}
+                                      for value in samples if value is not None and str(value).strip()]}
+        fragment = classify_formula_fragment(table, candidate)
+        if fragment is not None and fragment["effective_role"] == "calculation_operator":
+            fragments[name] = fragment
     for candidate in table.get("inferred_semantic_roles", ()):
         fragment = classify_formula_fragment(table, candidate)
         if fragment is not None:
@@ -150,7 +191,15 @@ def _safe_columns(table):
     blocked = {"sensitive", "empty", "audit_time", "audit_metadata",
                "technical_identifier"}
     profiles = {item["column"]: item for item in table.get("profiles", ())}
-    already_named = {name for fields in _field_roles(table).values() for name in fields}
+    roles = _field_roles(table)
+    settled_fragments = formula_fragment_context(table)
+    checked_roles = {item["column"] for item in table.get("inferred_semantic_roles", ())
+                     if item.get("status") == "source_verified_role_candidate"}
+    # A metadata cue saying "calculation" is not a verified formula role.
+    # Reuse the existing bounded table packet to review these columns first.
+    review_formulas = set(roles.get("formula", ())) - set(settled_fragments) - checked_roles
+    already_named = {name for fields in roles.values() for name in fields} - review_formulas
+    already_named.update(settled_fragments)
     # Strong identifier/content conflicts are already resolved to bindings;
     # do not spend another model call trying to rename a known source key.
     already_named.update(item["column"] for item in field_role_conflicts(table)
@@ -160,12 +209,11 @@ def _safe_columns(table):
         name = item["column"]
         profile = profiles.get(name, {})
         usable = profile.get("usable_count")
-        numeric = profile.get("numeric_shape_count")
         if (item["role"] in blocked or name in already_named
                 or type(usable) is not int or usable <= 0):
             continue
         selected.append(name)
-    return selected
+    return sorted(selected, key=lambda name: name not in review_formulas)
 
 
 def _sample(data, table_name, columns, *, max_rows, max_value_chars):
@@ -248,7 +296,12 @@ def _validate_response(data, table_name, response, eligible, observed):
                      "schema_evidence_id": f"schema:{table_name}:{column}",
                      "evidence_kind": "source_values_supported_role_candidate",
                      "observations": evidence}
-        accepted.append(classify_formula_fragment(data.tables[table_name], candidate) or candidate)
+        fragment = classify_formula_fragment(data.tables[table_name], candidate)
+        if role in _FRAGMENT_ROLES and fragment is None:
+            rejected.append({"column": column, "role": role,
+                             "reason": "fragment_role_conflicts_with_observed_values"})
+            continue
+        accepted.append(fragment or candidate)
     return accepted, rejected
 
 
@@ -331,9 +384,14 @@ async def infer_column_role_candidates(data, llm, config=None):
                                                  if p["column"] == column)}
                         for column in selected],
             "known_column_roles": _field_roles(table),
+            "role_review_columns": [column for column in selected
+                                    if column in _field_roles(table).get("formula", ())],
             "sample_rows": sampled, "allowed_roles": list(_ROLES),
             "contract": "proposals are uncertain column-role candidates, not business types; "
-                        "cite exact sampled row_number and original value for each proposal",
+                        "cite exact sampled row_number and original value for each proposal; "
+                        "known_column_roles are metadata recall hints, not verified roles; "
+                        "review heuristic formula columns: an operator code such as SUM/RATIO/FILTER "
+                        "is calculation_operator, not a complete formula",
         }
         try:
             calls += 1

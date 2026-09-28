@@ -118,6 +118,59 @@ def scope_mock_plan(response, unit):
     return result
 
 
+TEMPLATE_INDUCTION_PROMPT = """当前任务是从记录中提取可复用定义，并把具体记录绑定到定义。已启用模板路径。
+先判断记录描述的是类定义、类的配置/实例，还是无定义的事实。记录是实例并不意味着没有可抽取的类：
+若完整说明中已有类定义，或同表多个见证支持共同含义，优先 action=project_template；
+只有已经存在且本次没有新的匹配契约/绑定，才使用 no_change。no_change不能表示“建议以后将实例绑定到类”。不要为每个成员或展示主题另建子类。
+
+选择两种路径之一：
+A. 独立完整定义记录本身就是类（如通用量、维度定义）：action=exact_definition。
+Metric优先使用B，在定义成立时同时保留经营对象和度量槽位；只创建名称类型会丢失本任务需要的构成关系。
+label选canonical_name_choices中的完整原名，definition和classification_quote复制该记录的完整说明。
+exact对齐只引用exact_alignment_record_ids；related_context不代表同一实体。ontology_level=type。
+Metric填写classification_basis=business_driven_metric及逐字经营对象business_object_quote，aggregation_operator=null；
+Measure填写reusable_measure、business_object_quote为空，需该记录measure_reuse_assessment正面支持通用性。
+其他类型classification_basis=other。scope只取records.scope原键值，并逐项填写scope_roles。
+实际地区/年份是observation，声明粒度/计算参数是parameter，业务限定是applicability。
+unrestricted必须有明确且无例外的不限制原文。一个来源定义即足够，不必合并其他召回记录。
+
+B. 从配置/实例的说明或多个相容记录提取共同类：action=project_template，填写projection；
+不要同时填写exact alignments。外层的label/root_type/definition等exact专用字段可保持默认。
+- label_evidence.quote用组成类名的短片段（如“接口”），每个片段必须真实出现于该列；不要用长句代替名称片段。
+- 若有明确类定义，definition和class_definition.quote必须是同一段逐字原文，且包括label。
+  没有类定义句时class_definition=null，必须由至少两个同表实际见证的变化支持抽象，不能编造普遍性。
+- witness_record_ids只能使用本包同表、非related_context的记录ID；它们均须匹配以下全部字段规则。
+- field_templates是完整原值的字面文本加{slot_name}。每个变化字段都要列出，未列出的语义字段将严格保持不变。
+  名称、说明、同义词、实例坐标、查询示例等只要在见证间变化就要逐一处理；公式、单位、真实计算参数不能通配。
+- slots.name使用英文snake_case；evidence引用某个witness实际捕获到的值，编码和中文名不能共用同一槽。
+  source_column只用于“槽值等于该列完整值”，不要将“苹果合格率”列指定为“苹果”槽的source_column。
+  固定成分也要有slot，但不需要field_template；其evidence必须逐字引用成分/实际值。
+- 具体名称/编号使用record_identity/reference；地区、具体年份等使用dimension；经营对象用business_object。
+  一个完整配置JSON可以用source_column约束的reference槽保留，不生成JSON内部路径或复杂正则。
+- components只放共同类的独立语义成分，不能把共同类自身再复制成component。
+  components的label和definition必须分别等于各自的引文quote。Measure成分需要独立的通用定义来源。
+  已有相容成分用slots.target_type_id连接；新成分用slots.target_component连接。
+- Metric须有business_object槽及原文依据，可同时绑定独立Measure、Dimension。
+  Measure不绑定具体经营对象；SUM/AVG/过滤/RANK是运算，不是量本身。时间、预算、排名可以是量的口径。
+- 保留definition_parameters中的已声明计算参数，值必须是完整且保持不变的来源值。
+- 复用已有类型必须定义、单位、公式和参数相容；只用输入中存在的ID。无依据的关系保留未决。
+
+通用格式示例（仅说明契约，绝不可照抄这些ID/字段到真实输出）：
+若r1的name=华东订货接口、region=华东、description=“接口是一类接收请求并返回数据的服务资源。本记录服务华东。”，
+可投影label=接口，definition与class_definition.quote均为“接口是一类接收请求并返回数据的服务资源。”；
+label_evidence引用description中的“接口”。components=[]。
+slots包含instance_name(record_identity,source_column=name,evidence.quote=华东订货接口)
+和region(dimension,source_column=region,evidence.quote=华东)。
+field_templates为name:{instance_name}、region:{region}、
+description:接口是一类接收请求并返回数据的服务资源。本记录服务{region}。
+该类型是“接口”，原始具体名称保留为绑定。原文已明确类定义时一个见证就能建立这种契约。
+
+同值、共词或向量近似只能用于召回，不能证明概念同一、计算依赖或通用性。
+保留完整单位、公式、范围及反证；不能裁剪受限来源伪造通用度量。若只缺某条成分关系，可保留未决槽；
+若类定义本身不成立则unresolved并给具体原因。所有证据只来自本包，禁止外部常识补证。
+"""
+
+
 class BudgetExceeded(RuntimeError):
     pass
 
@@ -189,7 +242,24 @@ class StructuredLLM:
 
     def structured_request(self, task, payload, schema):
         """One representation for admission, caching, and exact batch sizing."""
-        prompt = SYSTEM + "\n" + TASK_PROMPTS.get(task, "")
+        task_prompt = TASK_PROMPTS.get(task, "")
+        if task in ("concept_bundle", "concept_batch"):
+            packets = payload.get("packets", [payload])
+            if packets and all(item.get("template_projection", {}).get("enabled") for item in packets):
+                task_prompt = TEMPLATE_INDUCTION_PROMPT
+                if task == "concept_batch":
+                    task_prompt += "\n逐包独立判断，decisions必须恰好覆盖每个bundle_id，不得跨包借证。"
+        if task == "group_review" and payload.get("candidate", {}).get("action") == "project_template":
+            task_prompt = (
+                "复核独立类定义投影。核对projection的类定义、每个名称片段、components原文、slots绑定用途及全部见证。"
+                "抽象类名由源片段支持，无须等于完整实例名称，来源记录映射为实例绑定，不要求exact同一性。"
+                "来源记录是实例也能包含明确类定义；不能因此拒绝类投影。类定义句必须与class_definition.quote完全相同。"
+                "经营对象成员、地区与具体期间属于观察绑定，不能成为新的类名。Measure必须有独立通用定义，操作符不能成类。"
+                "Metric必须有原文经营对象依据与槽位；缺某个度量端点可保留未决，不能从名称推测公式依赖。"
+                "逐一核对全部变化字段、槽值、固定片段、单位、公式、真实计算参数和作用域；编码不等于中文名称。"
+                "components是独立成分，不得复制主类型充数；相似、技术连接与模型解释均不证明来源身份。"
+                "只评估本候选实际声明的契约，其他召回记录不必合并。成立则accepted=true，否则errors逐项指出矛盾或缺证。")
+        prompt = SYSTEM + "\n" + task_prompt
         if task in ("plan", "final_plan", "review"):
             prompt += "\n" + knowledge_prompt(payload.get("knowledge_state", "disabled"))
         return {"task": task, "input": payload, "schema": schema.model_json_schema(), "prompt": prompt}

@@ -86,7 +86,7 @@ instance_bundles:
   max_llm_bundles: 36
   concept_batch_size: 1
   relation_batch_size: 4
-  max_repairs_per_bundle: 0
+  max_repairs_per_bundle: 1
   max_definition_memberships: 1200000
   review: true
   template_projection_enabled: true
