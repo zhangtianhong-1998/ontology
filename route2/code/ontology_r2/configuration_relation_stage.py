@@ -129,7 +129,7 @@ def _endpoint(data, plan, candidate, side, aligned):
             or code in (None, "")):
         raise ValueError("Definition endpoint lacks a valid code binding")
     _check_column(data, table_name, code_column)
-    rows = data.lookup(table_name, ((code_column, code),))
+    rows = data.lookup(table_name, ((code_column, code), *sorted(stated.get("lookup_scope", {}).items())))
     if len(rows) != 1:
         raise ValueError("Definition code is missing or ambiguous in the full snapshot")
     record_id = data.record_id(table_name, rows[0])
@@ -288,7 +288,8 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
 
 
 async def adjudicate_configuration_relations(data, profile, core, candidates,
-                                             concepts, alignments, llm, *, max_candidates=20):
+                                             concepts, alignments, llm, *, max_candidates=20,
+                                             checked_rules=(), memberships=()):
     """Spend at most one model decision per candidate, retaining every failure."""
     if type(max_candidates) is not int or max_candidates < 0:
         raise ValueError("max_candidates must be a nonnegative integer")
@@ -296,7 +297,7 @@ async def adjudicate_configuration_relations(data, profile, core, candidates,
 
     selected = [item for item in candidates if item.get("status") == "endpoint_verified_candidate"]
     chosen = selected[:max_candidates]
-    steps, assertions = [], []
+    steps, assertions, bindings = [], [], []
     plan = BuildPlan.model_validate(core)
     for item in chosen:
         step = {"candidate_id": item["id"], "status": "unresolved",
@@ -305,6 +306,37 @@ async def adjudicate_configuration_relations(data, profile, core, candidates,
             if item.get("snapshot_id") != data.snapshot_id:
                 raise ValueError("Configuration candidate snapshot differs from the input")
             witness = _read_witness(data, item)
+            if any(witness.get(field) != value for field, value in item.get("selector", {}).items()):
+                raise ValueError("Configuration witness does not satisfy its condition")
+            # Structured purposes describe the config's function, independently
+            # of endpoint names. No natural-language A-depends-on-B column is needed.
+            if checked_rules:
+                from .semantic_bindings import (structured_configuration_purpose,
+                                                compile_structured_configuration_binding,
+                                                configuration_purpose_packet, checked_purpose_decision,
+                                                ConfigurationPurposeDecision)
+                purpose = structured_configuration_purpose(data, item, witness)
+                if purpose is None:
+                    packet = configuration_purpose_packet(data, item, witness, plan, checked_rules)
+                    if packet:
+                        decision = await llm.ask("configuration_purpose", packet, ConfigurationPurposeDecision)
+                        step["llm_calls"] = 1
+                        purpose = checked_purpose_decision(packet, decision)
+                        step["purpose_decision"] = decision.model_dump()
+                        if purpose is None:
+                            step.update(status=decision.status, reason=decision.reason)
+                            steps.append(step)
+                            continue
+                if purpose:
+                    aligned, _ = _type_alignments(plan, concepts, alignments, memberships)
+                    plan, binding = compile_structured_configuration_binding(
+                        data, profile, plan, item, witness, purpose, checked_rules, aligned)
+                    bindings.append(binding)
+                    step.update(status="accepted", relation_type_id=binding["relation_type_id"],
+                                binding_id=binding["id"], method="checked_structured_configuration",
+                                llm_calls=step.get("llm_calls", 0))
+                    steps.append(step)
+                    continue
             literal = item.get("predicate_literal")
             text_column = item.get("relation_text_column")
             if not text_column or text_column not in data.tables[item["configuration_table"]]["column_names"]:
@@ -363,7 +395,7 @@ async def adjudicate_configuration_relations(data, profile, core, candidates,
         kind = step.get("error_type")
         if kind:
             errors[kind] = errors.get(kind, 0) + 1
-    return {"plan": plan, "assertions": assertions, "steps": steps,
+    return {"plan": plan, "assertions": assertions, "bindings": bindings, "steps": steps,
             "coverage": {"input_candidates": len(candidates),
                          "not_endpoint_verified": len(candidates) - len(selected),
                          "endpoint_verified_candidates": len(selected),

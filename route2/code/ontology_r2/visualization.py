@@ -1,9 +1,10 @@
 """Build a local, bounded result viewer from the disk-backed extraction output."""
 import json
+import yaml
 import sqlite3
 from pathlib import Path
 
-from .storage import read_yaml
+from .storage import read_yaml, UniqueLoader
 from .metadata_graph import technical_link_id
 
 
@@ -337,6 +338,83 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                                    if item.get("kind") == "DatasetSnapshot")}
 
 
+def _sequence_preview(path, limit, *, key=None, byte_limit=8 * 1024 * 1024):
+    """Read only a bounded YAML prefix; never load a million-binding document."""
+    summary = {"file": path.name, "shown": 0, "truncated": False, "status": "missing"}
+    if not path.exists():
+        return [], summary
+    with path.open("rb") as stream:
+        raw = stream.read(byte_limit + 1)
+    summary.update(status="available", file_bytes=path.stat().st_size,
+                   read_bytes=min(len(raw), byte_limit), truncated=len(raw) > byte_limit)
+    text = raw[:byte_limit].decode("utf-8", errors="ignore")
+    loader = UniqueLoader(text)
+    items = []
+
+    def skip_node():
+        event = loader.get_event()
+        depth = int(isinstance(event, (yaml.SequenceStartEvent, yaml.MappingStartEvent)))
+        while depth:
+            event = loader.get_event()
+            if isinstance(event, (yaml.SequenceStartEvent, yaml.MappingStartEvent)):
+                depth += 1
+            elif isinstance(event, (yaml.SequenceEndEvent, yaml.MappingEndEvent)):
+                depth -= 1
+
+    try:
+        loader.get_event()  # stream
+        loader.get_event()  # document
+        if key is not None:
+            if not isinstance(loader.get_event(), yaml.MappingStartEvent):
+                raise ValueError("Expected a mapping document")
+            while not loader.check_event(yaml.MappingEndEvent):
+                name = loader.construct_object(loader.compose_node(None, None), deep=True)
+                if name == key:
+                    break
+                skip_node()
+            else:
+                return [], {**summary, "status": "missing_key"}
+        if not isinstance(loader.get_event(), yaml.SequenceStartEvent):
+            raise ValueError("Expected a sequence")
+        while len(items) < limit and not loader.check_event(yaml.SequenceEndEvent):
+            node = loader.compose_node(None, None)
+            # YAML may implicitly close an incomplete block mapping at EOF.
+            # Discard that tail instead of presenting it as a complete binding.
+            if len(raw) > byte_limit and node.end_mark.index >= len(text.rstrip()):
+                break
+            item = loader.construct_object(node, deep=True)
+            if not isinstance(item, dict):
+                raise ValueError("Expected mapping records")
+            items.append(item)
+        summary["truncated"] |= not loader.check_event(yaml.SequenceEndEvent)
+    except (ValueError, yaml.YAMLError) as exc:
+        # A cut YAML tail is expected. Preserve complete records already parsed.
+        if not summary["truncated"]:
+            summary.update(status="invalid", error=str(exc)[:300])
+    finally:
+        loader.dispose()
+    summary["shown"] = len(items)
+    return items, summary
+
+
+def _template_preview(run, max_nodes):
+    projections, ps = _sequence_preview(run / "template_projections.yaml", max_nodes)
+    bindings, bs = _sequence_preview(run / "template_bindings.yaml", max_nodes * 15)
+    accepted, rs = _sequence_preview(run / "ontology_bindings.yaml", max_nodes * 3, key="bindings")
+    pending, us = _sequence_preview(run / "ontology_bindings.yaml", max_nodes, key="pending")
+    counts, examples = {}, []
+    for binding in bindings:
+        key = binding.get("object_type_id")
+        counts[key] = counts.get(key, 0) + 1
+        if counts[key] <= 3 and len(examples) < max_nodes * 3:
+            examples.append(binding)
+    return {"projections": projections, "bindings": examples, "binding_prefix_counts": counts,
+            "ontology_bindings": accepted, "pending": pending,
+            "files": [ps, bs, rs, us], "truncated": any(x["truncated"] for x in (ps, bs, rs, us)),
+            "warnings": [x["file"] for x in (ps, bs, rs, us) if x["status"] == "invalid"],
+            "notice": "绑定实例仅作有限预览，不进入本体主图；没有预览不表示不存在。"}
+
+
 def render_viewer(run, max_nodes=200, *, manifest_override=None):
     run = Path(run).resolve()
     if not 10 <= max_nodes <= 1000:
@@ -354,6 +432,7 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                "record_alignments": [], "relations": [], "relation_count": None,
                "record_relation_count": None, "business_relation_count": None,
                "unresolved": [], "evidence": {}, "counts": {}}
+    payload["templates"] = _template_preview(run, max_nodes)
     database = run / "work/results.sqlite"
     if database.exists():
         with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as db:
@@ -414,7 +493,10 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                          + payload["relations"] + payload["unresolved"]
                          + payload["ontology"].get("object_types", [])
                          + payload["ontology"].get("relation_types", [])
-                         + payload["ontology"].get("attributes", [])):
+                         + payload["ontology"].get("attributes", [])
+                         + payload["templates"]["projections"]
+                         + payload["templates"]["bindings"]
+                         + payload["templates"]["ontology_bindings"]):
                 refs.update(item.get("evidence_ids", []))
                 for attribute in item.get("preview_attributes", []):
                     refs.update(attribute.get("evidence_ids", []))

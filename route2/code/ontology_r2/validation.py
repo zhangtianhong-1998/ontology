@@ -51,6 +51,8 @@ def validate_plan(plan: BuildPlan, data, profile):
                     and item.evidence_scope == "complete_calculation_definition"
                     and item.parent == "depends_on"
                     and item.predicate_name == "calculation_dependency")
+                or (item.endpoint_basis == "semantic_binding"
+                    and item.evidence_scope == "checked_structured_binding")
             )
             if (not item.domain or not item.range
                     or not set(item.domain + item.range) <= business_ids
@@ -75,6 +77,10 @@ def validate_plan(plan: BuildPlan, data, profile):
                 from .calculation_contracts import calculation_relation_errors
                 errors.extend(reason + ": " + item.id for reason in
                               calculation_relation_errors(data, item, plan.object_types))
+            if item.endpoint_basis == "semantic_binding":
+                from .semantic_bindings import binding_relation_errors
+                errors.extend(reason + ": " + item.id for reason in
+                              binding_relation_errors(data, item, plan.object_types))
         if item.endpoint_basis == "table_binding":
             bindings = [relation for relation in plan.relations if relation.predicate == item.id]
             if len(item.domain) != 1 or len(item.range) != 1 or not bindings:

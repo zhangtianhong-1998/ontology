@@ -495,7 +495,7 @@ const assert=require('node:assert/strict');
 const M={tables:Array.from({length:23},(_,i)=>({id:`s.t${i}`,table_name:`fruit_config_table_${i}`,table_comment:`水果定义${i}`})),links:[],details:{}};
 for(let i=0;i<23;i++)for(let j=1;j<=3;j++)M.links.push({id:`link:${i}:${j}`,source:`s.t${i}`,target:`s.t${(i+j)%23}`,source_field:'ref',target_field:'code',status:'verified_technical'});
 M.links.push({id:'reverse',source:'s.t1',target:'s.t0',source_field:'back_ref',target_field:'other',status:'verified_technical'});
-const TABLE=new Map(M.tables.map(t=>[t.id,t])),expandedTables=new Set();
+const TABLE=new Map(M.tables.map(t=>[t.id,t])),expandedTables=new Set(),pinnedPositions={ontology:new Map(),metadata:new Map()};
 let selected=null,tableId=null,drawn=null,showNumericMatches=false;
 const $=id=>({}),name=x=>x.table_comment||x.table_name,node=(id,label,kind,x,y,action,active,subtitle)=>({id,label,kind,x,y,action,active,subtitle}),select=()=>{};
 const drawGraph=(nodes,edges)=>{drawn={nodes,edges}};
@@ -633,3 +633,64 @@ def test_group_replay_viewer_distinguishes_unrun_stage_and_registers_cli_output(
     metrics = {item["label"]: item["value"] for item in data["preview"]["metrics"]}
     assert metrics["已抽取对象"] is None
     assert metrics["已接受对象关系"] is None
+
+
+def test_template_preview_bounds_large_yaml_and_keeps_instances_off_canvas(tmp_path):
+    from ontology_r2.visualization import _sequence_preview
+
+    run = tmp_path / "template-preview"
+    run.mkdir()
+    write_yaml(run / "manifest.yaml", {"status": "complete"})
+    write_yaml(run / "ontology.yaml", {
+        "object_roots": [{"id": "Metric"}, {"id": "Measure"}],
+        "object_types": [{"id": "QualityRate", "label": "合格率", "parent": "Metric",
+                          "category": "business_type"},
+                         {"id": "PassCount", "label": "合格数量", "parent": "Measure",
+                          "category": "business_type"}],
+        "relation_types": [],
+    })
+    write_yaml(run / "template_projections.yaml", [{
+        "template_id": "projection:quality", "object_type_id": "QualityRate",
+        "source_table": "demo.metrics", "slots": [{"name": "fruit", "role": "dimension"}],
+    }])
+    write_yaml(run / "template_bindings.yaml", [{
+        "id": f"binding:{i}", "template_id": "projection:quality", "object_type_id": "QualityRate",
+        "source_table": "demo.metrics", "record_id": f"record:{i}", "slot_values": {"fruit": str(i)},
+    } for i in range(500)])
+    write_yaml(run / "ontology_bindings.yaml", {
+        "bindings": [{"id": "semantic:quality", "source_type_id": "QualityRate",
+                      "target_type_id": "PassCount", "slot": {"role": "measure"}}],
+        "pending": [{"template_id": "projection:quality", "reason": "missing dimension definition"}],
+        "coverage": {"accepted": 1, "pending": 1},
+    })
+    data = payload(render_viewer(run, 10).read_text())
+    preview = data["templates"]
+    assert preview["truncated"] is True
+    assert len(preview["bindings"]) == 3
+    assert preview["binding_prefix_counts"]["QualityRate"] == 150
+    assert len(preview["projections"]) == len(preview["ontology_bindings"]) == len(preview["pending"]) == 1
+    assert {item["id"] for item in data["ontology_overview"]["nodes"]} == {
+        "Metric", "Measure", "QualityRate", "PassCount"}
+    # Cutting an input byte prefix retains only fully parsed records, never a partial instance.
+    rows, summary = _sequence_preview(run / "template_bindings.yaml", 500, byte_limit=900)
+    assert summary["truncated"] and summary["read_bytes"] == 900
+    assert 0 < len(rows) < 10
+    assert all("slot_values" in row for row in rows)
+
+
+def test_template_preview_collects_source_evidence_for_bindings(tmp_path):
+    run = tmp_path / "template-evidence"
+    (run / "work").mkdir(parents=True)
+    write_yaml(run / "template_projections.yaml", [{
+        "template_id": "p", "object_type_id": "QualityRate", "evidence_ids": ["proof:template"]}])
+    write_yaml(run / "template_bindings.yaml", [{
+        "id": "b", "object_type_id": "QualityRate", "evidence_ids": ["proof:binding"]}])
+    with sqlite3.connect(run / "work/results.sqlite") as db:
+        db.execute("CREATE TABLE items(kind TEXT,id TEXT,body TEXT)")
+        for key in ("proof:template", "proof:binding"):
+            db.execute("INSERT INTO items VALUES(?,?,?)", ("evidence", key, json.dumps({
+                "id": key, "raw_fragment": "合格率", "source_ref": {"table": "demo.metrics"}})))
+    data = payload(render_viewer(run, 10).read_text())
+    assert {"proof:template", "proof:binding"} <= data["evidence"].keys()
+    html = (Path(__file__).parents[1] / "code/ontology_r2/viewer.html").read_text()
+    assert "templateDetails(p,x)" in html and "成分关系依据" in html

@@ -25,7 +25,7 @@ from .fact_schema_induction import induce_fact_schema
 from .group_incremental import construct_from_bundles
 from .incremental import construct, ontology_from_plan
 from .instance_bundles import build_instance_bundles, validate_bundle_options
-from .llm import BudgetExceeded, StructuredLLM
+from .llm import BudgetExceeded, StructuredLLM, validate_call_reservation
 from .progress import ProgressReporter
 from .record_types import source_record_type
 from .relations import Extractor
@@ -185,6 +185,9 @@ async def build(config, output):
         progress = ProgressReporter(config.get("progress"))
         if config.get("instance_bundles", {}).get("enabled", False):
             validate_bundle_options(config["instance_bundles"])
+            validate_call_reservation(
+                config["instance_bundles"].get("reserve_calls_for_followup", 0),
+                config["llm"].get("max_calls", 100))
         load_dotenv(config.get("env_file"), override=False)
         profile = read_yaml(config["model_profile"])
         profiling = {**config.get("profiling", {}), "input_scope": config.get("data_scope", "unknown")}
@@ -364,18 +367,29 @@ async def build(config, output):
                 manifest["source_channels"]["embedding"] = True
             write_yaml(output / "evidence_bundles.yaml", packet_result["bundles"])
             write_yaml(output / "instance_bundle_coverage.yaml", bundle_report)
-            group_result = await construct_from_bundles(
-                data, profile, plan, packet_result["bundles"], llm,
-                review=options.get("review", True),
-                max_bundles=options.get("max_llm_bundles", 20),
-                max_repairs_per_bundle=options.get("max_repairs_per_bundle", 0),
-                progress=progress, prior_result=resumed,
-                concept_batch_size=options.get("concept_batch_size", 1),
-                relation_batch_size=options.get("relation_batch_size", 1),
-                on_checkpoint=lambda result: save_state(
-                    output / "semantic_state.json", data, profile, result,
-                    implementation_code_hash=code_hash))
+            with llm.reserve_calls(options.get("reserve_calls_for_followup", 0),
+                                   stage="group_incremental"):
+                group_result = await construct_from_bundles(
+                    data, profile, plan, packet_result["bundles"], llm,
+                    review=options.get("review", True),
+                    max_bundles=options.get("max_llm_bundles", 20),
+                    max_repairs_per_bundle=options.get("max_repairs_per_bundle", 0),
+                    progress=progress, prior_result=resumed,
+                    concept_batch_size=options.get("concept_batch_size", 1),
+                    relation_batch_size=options.get("relation_batch_size", 1),
+                    enable_template_projection=options.get("template_projection_enabled", False),
+                    on_checkpoint=lambda result: save_state(
+                        output / "semantic_state.json", data, profile, result,
+                        implementation_code_hash=code_hash))
             plan = group_result["plan"]
+            from .semantic_bindings import compile_template_relations
+            template_relations = compile_template_relations(
+                data, profile, plan, group_result.get("template_projections", []),
+                group_result.get("template_bindings", []))
+            plan = template_relations.pop("plan")
+            group_result["plan"] = plan
+            write_yaml(output / "ontology_bindings.yaml", template_relations)
+            manifest["template_relations"] = template_relations["coverage"]
             construction = read_yaml(output / "construction.yaml")
             construction["group_steps"] = group_result["steps"]
             construction["final_core_hash"] = digest(plan.model_dump())
@@ -394,6 +408,18 @@ async def build(config, output):
                 memberships = build_definition_memberships(
                     data, index, group_result,
                     max_records=config["instance_bundles"].get("max_definition_memberships", 100000))
+                from .definition_memberships import build_projection_bindings
+                projection_members = build_projection_bindings(
+                    data, index, group_result.get("template_projections", []),
+                    max_records=config["instance_bundles"].get("max_definition_memberships", 100000))
+                bound = {item["id"]: item for item in group_result.get("template_bindings", [])}
+                bound.update({item["id"]: item for item in projection_members["bindings"]})
+                group_result["template_bindings"] = list(bound.values())
+                manifest["template_bindings"] = projection_members["coverage"]
+                manifest["template_relations"]["template_instance_bindings"] = len(bound)
+                template_relations["coverage"]["template_instance_bindings"] = len(bound)
+                write_yaml(output / "ontology_bindings.yaml", template_relations)
+                write_yaml(output / "template_binding_coverage.yaml", projection_members["coverage"])
             finally:
                 index.close()
             for member in memberships["memberships"]:
@@ -469,15 +495,18 @@ async def build(config, output):
                                "coverage": {"status": "disabled", "partial": False}}
         configuration_relations = {"candidates": [],
                                    "coverage": {"status": "disabled", "partial": False}}
+        configuration_members = memberships["memberships"] + group_result.get("template_bindings", [])
         if config_relation_options.get("enabled", False):
             configuration_specs = completed_stage("configuration_specs") or infer_configuration_specs(
                 data, plan, group_result["concepts"], group_result["record_alignments"],
                 association["rules"],
-                max_specs=config_relation_options.get("max_specs", 20))
+                max_specs=config_relation_options.get("max_specs", 20),
+                memberships=configuration_members)
             configuration_relations = completed_stage("configuration_relations") or discover_configuration_relations(
                 data, plan, group_result["concepts"], group_result["record_alignments"],
                 [item["spec"] for item in configuration_specs["spec_candidates"]],
-                max_pairs_per_spec=config_relation_options.get("max_pairs_per_spec", 200))
+                max_pairs_per_spec=config_relation_options.get("max_pairs_per_spec", 200),
+                memberships=configuration_members)
         config_decisions = {"assertions": [], "steps": [],
                             "coverage": {"status": "disabled", "partial": False,
                                          "accepted": 0, "attempted": 0, "not_attempted": 0}}
@@ -487,7 +516,8 @@ async def build(config, output):
                 config_decisions = completed_stage("config_decisions") or await adjudicate_configuration_relations(
                     data, profile, plan, configuration_relations["candidates"],
                     group_result["concepts"], group_result["record_alignments"], llm,
-                    max_candidates=config_relation_options.get("max_semantic_decisions", 10))
+                    max_candidates=config_relation_options.get("max_semantic_decisions", 10),
+                    checked_rules=association["rules"], memberships=configuration_members)
                 if task:
                     task.advance(detail=str(config_decisions["coverage"]["accepted"]))
             plan = config_decisions.get("plan", plan)
@@ -503,6 +533,13 @@ async def build(config, output):
                 plan, profile, data, read_yaml(output / "direct_mapping.yaml"),
                 construction["steps"])
             write_yaml(output / "ontology.yaml", ontology)
+        write_yaml(output / "configuration_bindings.yaml", config_decisions.get("bindings", []))
+        if config_decisions.get("bindings"):
+            binding_artifact = read_yaml(output / "ontology_bindings.yaml") if (output / "ontology_bindings.yaml").exists() else {"bindings": []}
+            binding_artifact["bindings"].extend(config_decisions["bindings"])
+            binding_artifact["configuration_coverage"] = config_decisions["coverage"]
+            binding_artifact["combined_bindings_count"] = len(binding_artifact["bindings"])
+            write_yaml(output / "ontology_bindings.yaml", binding_artifact)
         write_yaml(output / "configuration_relation_specs.yaml", configuration_specs)
         write_yaml(output / "configuration_relation_candidates.yaml", configuration_relations)
         write_yaml(output / "configuration_relation_steps.yaml", config_decisions["steps"])
@@ -682,6 +719,8 @@ async def build(config, output):
                                               "fact_binding": fact_binding}.items()}},
                        implementation_code_hash=code_hash)
         write_yaml(output / "business_concepts.yaml", group_result["concepts"])
+        write_yaml(output / "template_projections.yaml", group_result.get("template_projections", []))
+        write_yaml(output / "template_bindings.yaml", group_result.get("template_bindings", []))
         write_yaml(output / "record_alignments.yaml", group_result["record_alignments"])
         write_yaml(output / "concept_relations.yaml", group_result["concept_relations"])
         write_yaml(output / "concept_relation_derivations.yaml",
@@ -776,6 +815,8 @@ async def build(config, output):
             "semantic_cards_partial": bool(manifest["semantic_cards"]["partial"]),
             "instance_bundles_partial": bool(manifest["instance_bundles"]["partial"]),
             "definition_membership_or_reference_pending": bool(memberships["coverage"].get("partial")),
+            "template_binding_incomplete": bool(manifest.get("template_bindings", {}).get("partial")),
+            "template_relations_unresolved": bool(manifest.get("template_relations", {}).get("partial")),
             "group_incremental_partial": bool(manifest["group_incremental"]["partial"]),
             "calculation_operands_unresolved": bool(calculations["coverage"].get("partial")),
             "type_generalization_partial": bool(manifest["type_generalization"]["partial"]),

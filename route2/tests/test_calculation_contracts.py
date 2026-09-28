@@ -139,3 +139,82 @@ def test_ambiguity_uses_the_same_parameter_guard_as_binding_and_replay():
     assert enrich_calculation_contracts(data, plan, group)['calculations'][0]['status'] == 'unresolved'
     assert calculation_relation_errors(data, _profit_revenue_relation(), plan.object_types) == [
         'calculation relation symbol has ambiguous accepted definitions']
+
+
+def test_missing_operands_schedule_targeted_definition_tasks_without_creating_relations():
+    data, plan, group = _case("利润 = (新收入 - 成本) / 新收入")
+    class Index:
+        coverage = {"snapshot_id": "snap"}
+        def search(self, query, **options):
+            assert query == "新收入" and options["kind"] == "definition"
+            return [{"card_id": "possible", "name": "收入", "retrieval_channels": ["bm25"]}]
+        # This fixture has no declared keys to look up; test query scoping below.
+    from ontology_r2.calculation_contracts import _formula_binding_tasks
+    result = enrich_calculation_contracts(data, plan, group)
+    tasks = _formula_binding_tasks(result["calculations"], Index())
+    assert len(tasks) == 1 and len(tasks[0]["occurrences"]) == 2
+    assert tasks[0]["definition_candidates"][0]["card_id"] == "possible"
+    assert tasks[0]["automatic_relation_created"] is False
+    assert result["dependencies"] == []
+
+
+def test_projected_components_bind_formulas_without_claiming_whole_record_identity():
+    data, plan, group = _case()
+    for item in plan.object_types:
+        item.derivation_kind = "template_projection"
+    group["record_alignments"] = []
+    assert enrich_calculation_contracts(data, plan, group)["calculations"][0]["status"] == "accepted"
+    group["template_projections"] = [{"object_type_id": "revenue", "field_templates": [
+        {"column": "name", "template": "{region}收入"}]}]
+    assert enrich_calculation_contracts(data, plan, group)["calculations"][0]["status"] == "unresolved"
+
+
+def test_declared_formula_variable_alias_works_without_primary_key_on_alias(tmp_path):
+    from ontology_r2.storage import Dataset, digest
+    from ontology_r2.semantic_cards import build_semantic_cards, SemanticCardIndex
+    from ontology_r2.calculation_stage import compile_calculation_stage
+    from test_semantic_cards import _table
+    from test_semantic_bindings import PROFILE
+    root = tmp_path / "input"
+    _table(root, "amount_definition", {"id": "记录ID", "name": "度量名称", "definition": "度量定义",
+           "parameter_name": "英文别名，公式变量"}, [
+        {"id": "1", "name": "收入", "definition": "通用收入量", "parameter_name": "revenue"},
+        {"id": "2", "name": "成本", "definition": "通用成本量", "parameter_name": "cost"}])
+    _table(root, "metric_definition", {"id": "记录ID", "name": "指标名称", "definition": "指标定义",
+           "formula": "计算公式"}, [{"id": "3", "name": "经营利润", "definition": "经营所得",
+                                   "formula": "profit = revenue - cost"}])
+    work = tmp_path / "work"
+    work.mkdir()
+    data = Dataset(root, work)
+    try:
+        groups = {"concepts": [], "record_alignments": []}
+        types = []
+        for table in sorted(data.tables):
+            for row in data.rows(table):
+                key = "type:" + row["id"]
+                rid = data.record_id(table, row)
+                props = []
+                for role, column in (("name", "name"), ("description", "definition"), ("formula", "formula")):
+                    if not row.get(column):
+                        continue
+                    eid = "record:" + digest([data.snapshot_id, rid, column])[:24]
+                    data.evidence[eid] = {"origin": "observed_record", "raw_fragment": row[column],
+                        "source_ref": {"snapshot_id": data.snapshot_id, "record_id": rid,
+                                       "table": table, "column": column, "row": row["__r2_row"]}}
+                    props.append({"role": role, "source_table": table, "source_column": column, "evidence_ids": [eid]})
+                types.append(DerivedType(id=key, parent="Metric" if row.get("formula") else "Measure",
+                    label=row["name"], definition=row["definition"], category="business_type",
+                    evidence_ids=[e for p in props for e in p["evidence_ids"]], source_properties=props))
+                groups["concepts"].append({"id": key, "ontology_type_id": key})
+                groups["record_alignments"].append({"source_record_id": rid, "concept_id": key, "mapping_kind": "exact"})
+        indexed = build_semantic_cards(data, tmp_path / "cards.sqlite")
+        index = SemanticCardIndex(indexed["index_path"])
+        try:
+            result = compile_calculation_stage(data, PROFILE, BuildPlan(object_types=types), groups, index)
+            assert result["calculations"][0]["status"] == "accepted"
+            assert {d["symbol"] for d in result["dependencies"]} == {"revenue", "cost"}
+            assert len(result["plan"].relation_types) == 2
+        finally:
+            index.close()
+    finally:
+        data.close()

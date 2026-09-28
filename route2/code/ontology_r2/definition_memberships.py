@@ -6,12 +6,87 @@ remain independent and do not inherit the representative's business relations.
 """
 
 from collections import Counter, defaultdict
+from copy import deepcopy
 
 from .concept_candidates import _field_roles
 from .storage import digest, qi
+from .template_projection import reuse_projection
 
 
 _SEMANTIC_ROLES = {"name", "alias", "description", "formula", "unit", "scope", "unknown"}
+
+
+def build_projection_bindings(data, index, templates, *, max_records=100000):
+    """Apply accepted projection contracts to observed rows, outside LLM budgets.
+
+    The index narrows source tables only. Complete original values are fetched
+    in fixed batches, including independent record identifiers. No Cartesian
+    product, name-based identity merge or business-relation inheritance occurs.
+    """
+    if type(max_records) is not int or max_records < 0:
+        raise ValueError("Projection binding limit must be nonnegative")
+    if index.coverage.get("snapshot_id") != data.snapshot_id:
+        raise ValueError("Projection binding snapshot differs from its source index")
+    by_table = defaultdict(list)
+    for template in templates:
+        if template.get("snapshot_id") != data.snapshot_id or template.get("status") != "accepted":
+            raise ValueError("Projection contract is not accepted for this snapshot")
+        by_table[template["source_table"]].append(template)
+    bindings, counts, unexamined = [], Counter(), []
+    total = 0
+    for table, table_templates in sorted(by_table.items()):
+        table_count = index.db.execute(
+            "SELECT count(*) FROM card_sources s JOIN cards c ON c.card_id=s.card_id "
+            "WHERE c.table_name=? AND c.kind='definition'", (table,)).fetchone()[0]
+        total += table_count
+        report = index.coverage.get("by_table", {}).get(table, {})
+        if report.get("unknown_columns_not_examined"):
+            unexamined.append({"table": table, "records": table_count,
+                               "reason": "unexamined_semantic_columns"})
+            continue
+        cursor = index.db.execute(
+            "SELECT s.card_id, s.record_id, s.row_number FROM card_sources s "
+            "JOIN cards c ON c.card_id=s.card_id WHERE c.table_name=? "
+            "AND c.kind='definition' ORDER BY s.row_number, s.record_id", (table,))
+        while counts["records_scanned"] < max_records:
+            batch = cursor.fetchmany(min(256, max_records - counts["records_scanned"]))
+            if not batch:
+                break
+            cards = {item["card_id"]: index.get(item["card_id"]) for item in batch}
+            columns = sorted({entry["column"] for card in cards.values()
+                              for entries in card["fields"].values() for entry in entries})
+            rows = _read_rows(data, table, [item["row_number"] for item in batch], columns)
+            for source in batch:
+                counts["records_scanned"] += 1
+                row = rows.get(source["row_number"])
+                if row is None or data.record_id(table, row) != source["record_id"]:
+                    counts["identity_changed"] += 1
+                    continue
+                card = deepcopy(cards[source["card_id"]])
+                card.update(record_id=source["record_id"], row_number=source["row_number"])
+                for role, entries in list(card["fields"].items()):
+                    card["fields"][role] = [{**entry, "value": str(row[entry["column"]]), "truncated": False}
+                                            for entry in entries if row.get(entry["column"]) is not None]
+                try:
+                    binding = reuse_projection(data, table_templates, {"records": [card]})
+                except ValueError:
+                    counts["unverifiable_source"] += 1
+                    continue
+                if binding is None:
+                    counts["uncovered_or_ambiguous"] += 1
+                else:
+                    bindings.append(binding)
+    omitted = total - counts["records_scanned"]
+    return {"bindings": bindings, "coverage": {
+        "scope": "indexed_definition_rows_of_template_source_tables", "llm_calls": 0,
+        "eligible_source_records": total, "records_scanned": counts["records_scanned"],
+        "bindings_emitted": len(bindings), "records_not_scanned": omitted,
+        "uncovered_or_ambiguous": counts["uncovered_or_ambiguous"],
+        "identity_changed": counts["identity_changed"],
+        "unverifiable_source": counts["unverifiable_source"], "unexamined_tables": unexamined,
+        "max_records": max_records, "cartesian_products_created": 0,
+        "partial": bool(omitted or counts["uncovered_or_ambiguous"]
+                        or counts["identity_changed"] or counts["unverifiable_source"])}}
 
 
 def _read_rows(data, table_name, row_numbers, columns):

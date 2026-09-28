@@ -24,12 +24,16 @@ RELATION_VERBS = {
 # Derived names are part of a small contract, not model-authored predicate prose.
 DERIVED_PREDICATES = {
     "calculation_dependency": "depends_on",
+    "measure_binding": "depends_on",
+    "business_object_binding": "related_to",
     "scope_constraint": "related_to",
     "definition_reference": "points_to",
     "has_member": "contains",
 }
 _DERIVED_CUES = {
     "calculation_dependency": ("calculation_dependency", "计算依赖"),
+    "measure_binding": ("measure_binding", "度量绑定"),
+    "business_object_binding": ("business_object_binding", "经营对象绑定"),
     "scope_constraint": ("scope_constraint", "维度约束", "范围约束"),
     "definition_reference": ("definition_reference", "定义引用", "引用定义"),
     "has_member": ("has_member", "包含成员"),
@@ -42,6 +46,8 @@ _PREDICATE_DEFINITIONS = {
     "related_to": "源对象与目标对象有关联。",
     "points_to": "源对象指向目标对象。",
     "calculation_dependency": "源对象的计算依赖目标操作数。",
+    "measure_binding": "指标采用目标通用度量；此关系本身不声明计算公式。",
+    "business_object_binding": "指标绑定目标经营对象类型。",
     "scope_constraint": "源对象与目标对象之间存在范围约束。",
     "definition_reference": "源对象引用目标对象的定义。",
     "has_member": "目标对象是源对象的成员。",

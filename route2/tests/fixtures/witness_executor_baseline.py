@@ -9,7 +9,6 @@ from .llm import BudgetExceeded
 from .models import LinkDecision, evaluate
 from .storage import digest, qi
 from .discovery import association_match_sql
-from .witness_rows import WitnessLocator
 
 
 @lru_cache(maxsize=4096)
@@ -158,25 +157,7 @@ class Extractor:
                 stage.advance(remainder)
             return result
 
-    def _source_rows(self, plan, witnessed, coverage, locator):
-        if not witnessed:
-            yield from self.data.rows(plan.source_table)
-            return
-        locations = locator.resolve(plan.source_table)
-        missing = set(witnessed) - set(locations)
-        coverage["missing_witness_source_records"] = len(missing)
-        for record_id in sorted(missing):
-            self.sink.put("unresolved", {
-                "id": digest([plan.id, record_id, "witness_source_not_found"]),
-                "plan_id": plan.id, "source_record": record_id,
-                "reason": "witness_source_not_found"})
-            self.stats["unresolved"] += 1
-            self.stats["unprocessed_records"] += 1
-        yield from locator.rows(plan.source_table, witnessed, coverage)
-
     async def _execute(self, stage=None):
-        locator = WitnessLocator(self.data, self.plan.relations)
-        self.stats["witness_lookup"] = locator.stats
         plan_count = len(self.plan.relations)
         for plan_index, p in enumerate(self.plan.relations):
             if stage and (plan_count <= 30 or plan_index == 0 or
@@ -207,10 +188,13 @@ class Extractor:
                 witnessed.setdefault(pair.source_record_id, set()).add(pair.target_record_id)
             coverage = {"plan_id": p.id, "total_source_records": self.data.tables[p.source_table]["rows"], "examined": 0, "selector_true": 0, "selector_unknown": 0, "nonempty_applicable_records": 0, "matched_records": 0, "references": 0, "matched_references": 0, "witnessed_source_records": len(witnessed), "outside_witness": 0}
             self.stats["plans"].append(coverage)
-            for row in self._source_rows(p, witnessed, coverage, locator):
+            for row in self.data.rows(p.source_table):
                 source_record_id = self.data.record_id(p.source_table, row)
+                if witnessed and source_record_id not in witnessed:
+                    coverage["outside_witness"] += 1
+                    continue
                 if self.stats["records_examined"] >= self.config.get("max_relation_records", 1000000):
-                    remaining = (len(witnessed) - coverage.get("missing_witness_source_records", 0) - coverage["examined"] if witnessed else
+                    remaining = (len(witnessed) - coverage["examined"] if witnessed else
                                  self.data.tables[p.source_table]["rows"] - processed)
                     self.stats["unprocessed_records"] += remaining
                     self.sink.put("unresolved", {"id": digest([p.id, "remaining", processed]), "plan_id": p.id, "reason": "record_budget", "from_row": processed + 1, "count": remaining})

@@ -282,6 +282,63 @@ def _fair_source_order(items, source_of, quality):
     return ordered
 
 
+def _conditioned_order(items, shared):
+    """Cover source, discriminator branch and target table before variants.
+
+    Existing value evidence orders families within each branch; it does not
+    validate the branch or erase the original selector, scope or risk flags.
+    """
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    def quality(item):
+        count = shared.get((item['source'], item['target']), (0, False))[0]
+        evidence = item.get('condition_evidence', {})
+        rows, matches = evidence.get('branch_rows', 0), evidence.get('branch_matches', 0)
+        return (not bool(count or matches), -(matches / rows if rows else 0),
+                -count, item['target_role_priority'], item['target'])
+    for item in items:
+        branch = tuple(sorted(item['suggested_selector'].items()))
+        grouped[item['source']][branch][item['target'][0]].append(item)
+    local_rank = {}
+    for branches in grouped.values():
+        branch_queues = {}
+        for branch, families in branches.items():
+            for values in families.values():
+                values.sort(key=quality)
+            family_order = sorted(families, key=lambda key: (quality(families[key][0]), key))
+            queue = []
+            # A second field of one target table cannot consume another table's turn.
+            for offset in range(max(map(len, families.values()), default=0)):
+                queue.extend(families[key][offset] for key in family_order
+                             if offset < len(families[key]))
+            branch_queues[branch] = queue
+        rank = 0
+        for offset in range(max(map(len, branch_queues.values()), default=0)):
+            for branch in sorted(branch_queues):
+                if offset < len(branch_queues[branch]):
+                    local_rank[id(branch_queues[branch][offset])] = rank
+                    rank += 1
+    return _fair_source_order(items, lambda item: item['source'],
+                              lambda item: (local_rank[id(item)],))
+
+
+def _conditional_selection_coverage(items, selected):
+    def groups(values):
+        sources, branches, families = set(), set(), set()
+        for item in values:
+            source = item['source']
+            branch = (source, tuple(sorted(item['suggested_selector'].items())))
+            sources.add(source)
+            branches.add(branch)
+            families.add((branch, item['target'][0]))
+        return sources, branches, families
+    full, kept = groups(items), groups(selected)
+    return {'policy': 'source_discriminator_branch_target_table_round_robin',
+            **{name: {'available': len(all_), 'selected': len(some),
+                      'queued': len(all_ - some)}
+               for name, all_, some in zip(('source_fields', 'selector_branches',
+                                           'target_families'), full, kept)}}
+
+
 def _value_conditioned_pairs(data, fields, shared, *, max_values, max_pairs=64,
                              max_selector_fields=4):
     """Find discriminator branches from observed containment, without a literal vocabulary.
@@ -537,15 +594,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
                        for item in conditional}
     conditional.extend(item for item in learned if
         (item["source"], item["target"], tuple(sorted(item["suggested_selector"].items()))) not in seen_conditions)
-    conditional.sort(key=lambda item: (
-        item.get("condition_discovery") == "observed_value_containment",
-
-        item["source"], tuple(sorted(item["suggested_selector"].items())),
-        item["target_role_priority"], item["target"]))
-    conditional = _fair_source_order(conditional, lambda item: item["source"],
-        lambda item: (item.get("condition_discovery") == "observed_value_containment",
-                      item["target_role_priority"], tuple(sorted(item["suggested_selector"].items())),
-                      item["target"]))
+    conditional = _conditioned_order(conditional, shared)
     retained_conditioned = conditional[:min(max_conditional_candidates, max_candidates_total)]
     retained = ranked[:max(0, max_candidates_total - len(retained_conditioned))]
     # Never silently lose a declared FK behind a global candidate budget.
@@ -622,6 +671,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
         "condition_values_truncated": truncated_conditions,
         "conditional_candidates_queued": len(conditional) - len(retained_conditioned),
         "conditional_candidates_recalled": len(retained_conditioned),
+        "conditional_selection": _conditional_selection_coverage(conditional, retained_conditioned),
         **learned_coverage,
         "candidate_count": len(candidates),
     }}
@@ -1012,35 +1062,10 @@ def discover_and_check(data, options=None, progress=None):
 
     conditioned = [c for c in candidates if "conditioned_structure" in c["retrieval_channels"]]
     ordinary = [c for c in candidates if "conditioned_structure" not in c["retrieval_channels"]]
-    # Give different observed discriminator branches a fair share before
-    # spending the remaining budget on ordinary value/name pairs.
-    conditioned_by_reference = defaultdict(lambda: defaultdict(list))
-    for candidate in conditioned:
-        source = candidate["source"]
-        literal = next(iter(candidate["suggested_selector"].values()))
-        cue = re.match(r"[a-zA-Z]+", literal)
-        branch = cue.group().casefold() if cue else literal.casefold()
-        conditioned_by_reference[(source["table"], source["field"])][branch].append(candidate)
-    conditioned_order = []
-    by_reference = {}
-    for reference, branches in conditioned_by_reference.items():
-        for values in branches.values():
-            values.sort(key=lambda c: (
-                c.get("condition_discovery") == "observed_value_containment",
-                -c["shared_sample_value_count"] if reference[1].endswith("_field") else 0,
-                c.get("target_role_priority", 2), rank(c)))
-        order = []
-        for index in range(max((len(x) for x in branches.values()), default=0)):
-            for branch in sorted(branches):
-                if index < len(branches[branch]):
-                    order.append(branches[branch][index])
-        by_reference[reference] = order
-    reference_order = sorted(by_reference, key=lambda ref: (
-        not ref[1].endswith("_field"), ref))
-    for index in range(max((len(x) for x in by_reference.values()), default=0)):
-        for reference in reference_order:
-            if index < len(by_reference[reference]):
-                conditioned_order.append(by_reference[reference][index])
+    # Recall already interleaves complete selectors and target families. Keep
+    # that order: grouping literals by an alphabetic prefix would collapse
+    # distinct branches such as A01/A02 and undo bounded recall coverage.
+    conditioned_order = conditioned
     reserved = min(len(conditioned_order), max(1, max_validations // 3)) if max_validations else 0
     ordinary_budget = max_validations - reserved
     pending = list(ordinary)

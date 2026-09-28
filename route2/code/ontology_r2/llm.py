@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 from copy import deepcopy
+from contextlib import contextmanager
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
@@ -38,6 +39,41 @@ TASK_PROMPTS = {
     "fact_type_binding": "这是事实数值列到已接受 Metric 的字段级绑定。一列只判断一次，不能根据数字分布推测具体指标。无注释时可使用完整字段名声明，必须能够支持候选的具体业务身份；身份不明或候选冲突则 unresolved。source_column_quote 完整复制 source_declaration；type_definition_quote 完整复制候选定义，并从 full_source_definitions 复制同一条 evidence_id/value 到 source_definition_evidence_id/type_source_quote。scope_bindings 将类型内部范围键显式映射到实际 coordinate_columns；同名坐标可保持原键，不能靠注释出现地名放行。单位必须有字段声明或 source_checked_unit_columns 中已核验的同值单位列支持，可指定 unit_column；无证据不能猜单位。",
     "fact_schema_induction": "这是没有既有业务类型可绑定的事实字段。真实去重样本和已核验列角色只说明数据形态，不能给匿名数字猜指标名称。只有 source_declaration 的完整原文同时明确包含具体经营对象和业务量名称时才能 proposed；identity_evidence_id 引用它的 evidence_id，identity_quote 完整复制 value，business_object_quote 和 quantity_quote 分别逐字引用不同的经营对象与量名称，二者必须出现在 label 中，label 也必须能逐字对应来源声明。不能把 value、amount、指标值等泛称当经营对象。无业务身份则 unresolved。程序将把计算口径标为未知，不得编造公式。scope_bindings 只将逻辑范围键映射到真实 coordinate_columns，不把观察值升为类型身份。unit 仅引用声明中的明确单位，或 unit_columns 内 verified_single_unit 的单位列；后者填写 unit_column 与逐字 unit_quote，前者 unit_quote 必须完整复制 declared_unit_quote_contract.required_unit_quote_if_declared，包括对象名称、金额说明和单位，不能只填写“单位元”或“元”等子串；recognized_units 给出程序已识别的声明单位。无单位证据填 null。associated_definitions 是已核验技术邻域的上下文，技术连接不证明字段与该定义等价。",
 }
+
+TASK_PROMPTS["configuration_purpose"] = (
+    "判断结构化配置是否明确表达指标与经营对象、度量或维度的绑定用途。输入reference_paths已经核验"
+    "技术引用，但同值、共行、共同引用第三方均不能独立证明该用途。仔细阅读两端完整定义、配置字段、"
+    "字段用途、条件和方向；仅当证据支持同一路径的用途时返回proposed，role只能为business_object、"
+    "measure或dimension，谓词由程序生成。evidence_id必须指向给出的证据，purpose_quote完整复制其"
+    "原文，不拼接或删除否定、条件及版本限定。不要求专门自然语言关系列；字段组合可以表达配置。"
+    "指标引用量定义可支持measure绑定，但不自动证明具体算式的计算依赖；维度值还需独立成员选择器。"
+    "证据不足或执行路径与语义理由不一致返回unresolved，保留具体缺失信息。")
+
+TEMPLATE_PROMPT = """
+当 template_projection.enabled=true 时，可以使用 action=project_template 独立投影可复用定义，
+并填写 projection；该分支不要求抽象名称等于完整来源记录名，也不把来源记录 exact 等同于类型。
+优先复用 current_types 中定义、单位及口径相容的类型，existing_type_id 只能引用已接受类型。
+projection 的 label 每个片段必须由 label_evidence 中同包原文支撑；definition 应说明共同含义，
+完整类定义可通过 class_definition 逐字引文支持。witness_record_ids 指定实际同表记录；
+新模板的变化槽位通常须有至少两个相容记录，已有类或完整明确类定义可支持单条实例匹配。
+field_templates 只能是原文固定片段与 {snake_case_slot} 占位符，slots 逐项声明绑定用途和证据；
+未列出的字段默认保持不变。公式、单位、真实计算参数不可通配，实例编号和引用应保留在绑定中。
+不要用一个通配槽吞掉整段描述或不同量含义，不因同名就合并不同口径。
+经营对象的具体成员、地区和实际期间只形成已观察对象的绑定，不生成它们的笛卡尔组合类型。
+例如有原文证明时，水果合格率 Metric 可以有水果 GeneralObject 和合格率 Measure 成分；
+components 的 label/definition 必须分别逐字引用对应原文。Measure 必须是独立通用量或口径，
+不能用 SUM 操作名或去掉水果前缀代替定义证据。通过 slots.target_component 连接成分；
+固定成分也要提供 slot，无须为了固定值编造 field_template。计算依赖另外核对真实公式。
+具体看板记录可匹配看板类，名称与编号留在 record_identity/reference 槽位；
+有明确看板类说明时从说明抽取类型，再将当前看板作为实例绑定，不把展示主题升为看板子类。
+引用编码不自动成为类型参数。信息不足时使用 exact_definition 原路径或 unresolved，不能补造类定义。
+"""
+TASK_PROMPTS["concept_bundle"] += TEMPLATE_PROMPT
+TASK_PROMPTS["group_review"] += (
+    " 当candidate.action=project_template时按独立投影契约复核：抽象名称可由有来源的片段组成，"
+    "不要套用exact分支完整原名要求，也不要要求其记录与类型同一。检查完整类定义或多个实际见证、"
+    "不变字段、槽位语义、公式单位保护和components原文；变动的实例绑定不应新增类型。"
+    "不能因为原表叫度量表就认可Measure，也不能因为具体看板具有名称就将它认可为子类。")
 
 TASK_PROMPTS["concept_batch"] = (
     "输入 packets 是若干独立证据包。对每个包分别执行概念判断，decisions 必须恰好覆盖全部 "
@@ -86,6 +122,14 @@ class BudgetExceeded(RuntimeError):
     pass
 
 
+def validate_call_reservation(count, total):
+    """Reject invalid shared-budget settings before import or provider calls."""
+    if type(total) is not int or total < 0:
+        raise ValueError("llm.max_calls must be a nonnegative integer")
+    if type(count) is not int or not 0 <= count <= total:
+        raise ValueError("reserve_calls_for_followup must be an integer in 0..llm.max_calls")
+
+
 class StructuredLLM:
     def __init__(self, config, output):
         self.config, self.output = config, Path(output)
@@ -95,6 +139,8 @@ class StructuredLLM:
         self.wire_responses, self.usage_reported_responses, self.incomplete_responses = 0, 0, 0
         self.finish_reasons = defaultdict(int)
         self.positions = defaultdict(int)
+        self._call_ceilings = []
+        self.call_reservations = []
         self.responses = read_yaml(config["responses"]) if self.mode == "mock" else None
         self.model = None
         self.cache = Path(config.get("cache_dir", self.output / "work/llm_cache"))
@@ -104,6 +150,27 @@ class StructuredLLM:
         with (self.output / "trace.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
 
+    @contextmanager
+    def reserve_calls(self, count, *, stage):
+        """Keep part of the shared budget for later stages, including retries.
+
+        Cached answers remain usable because they do not pass through admission.
+        This is a per-run ceiling, not extra calls or a promise to spend the tail.
+        """
+        total = self.config.get("max_calls", 100)
+        validate_call_reservation(count, total)
+        ceiling = total - count
+        entry = {"stage": stage, "reserved_calls": count,
+                 "shared_call_ceiling": ceiling, "calls_before": self.calls,
+                 "blocked_admissions": 0}
+        self._call_ceilings.append(entry)
+        self.call_reservations.append(entry)
+        try:
+            yield
+        finally:
+            entry["calls_after"] = self.calls
+            self._call_ceilings.pop()
+
     def admit(self, request):
         raw = json.dumps(request, ensure_ascii=False, default=str).encode()
         if len(raw) > self.config.get("max_input_bytes", 100000):
@@ -111,6 +178,12 @@ class StructuredLLM:
         reserved = len(raw) + self.config.get("max_output_tokens", 4096)
         if self.calls >= self.config.get("max_calls", 100) or self.reserved_tokens + reserved > self.config.get("max_reserved_tokens", 2000000):
             raise BudgetExceeded("LLM call/token reservation budget exhausted")
+        for ceiling in self._call_ceilings:
+            if self.calls >= ceiling["shared_call_ceiling"]:
+                ceiling["blocked_admissions"] += 1
+                raise BudgetExceeded(
+                    f"Stage {ceiling['stage']} reached its shared call ceiling; "
+                    f"{ceiling['reserved_calls']} calls are reserved for later stages")
         self.calls += 1
         self.reserved_tokens += reserved
 
@@ -261,7 +334,7 @@ class StructuredLLM:
         return result
 
     def metrics(self):
-        return {"mode": self.mode, "model": os.getenv("ONTOLOGY_LLM_MODEL") if self.mode != "mock" else "recorded_fixture", "framework": "agentscope-2.0.8", "prompt_hash": digest([SYSTEM, TASK_PROMPTS, KNOWLEDGE_PROMPTS]), "transport": self.transport, "calls": self.calls, "reserved_token_upper_bound": self.reserved_tokens, "provider_reported_tokens": self.actual_tokens if self.mode != "mock" else None, "provider_wire_responses": self.wire_responses if self.mode != "mock" else None, "provider_usage_reported_responses": self.usage_reported_responses if self.mode != "mock" else None, "provider_incomplete_responses": self.incomplete_responses if self.mode != "mock" else None, "provider_finish_reasons": dict(self.finish_reasons) if self.mode != "mock" else None, "cache_hits": self.cached}
+        return {"mode": self.mode, "model": os.getenv("ONTOLOGY_LLM_MODEL") if self.mode != "mock" else "recorded_fixture", "framework": "agentscope-2.0.8", "prompt_hash": digest([SYSTEM, TASK_PROMPTS, KNOWLEDGE_PROMPTS]), "transport": self.transport, "calls": self.calls, "reserved_token_upper_bound": self.reserved_tokens, "provider_reported_tokens": self.actual_tokens if self.mode != "mock" else None, "provider_wire_responses": self.wire_responses if self.mode != "mock" else None, "provider_usage_reported_responses": self.usage_reported_responses if self.mode != "mock" else None, "provider_incomplete_responses": self.incomplete_responses if self.mode != "mock" else None, "provider_finish_reasons": dict(self.finish_reasons) if self.mode != "mock" else None, "cache_hits": self.cached, "call_reservations": deepcopy(self.call_reservations)}
 
     async def close(self):
         if self.model is not None:

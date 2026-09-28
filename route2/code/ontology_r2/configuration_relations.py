@@ -34,6 +34,11 @@ class ConfigurationRelationSpec(Strict):
     # A literal value can be shown to a semantic judge, but is not itself a
     # validated predicate label such as depends_on or contains.
     relation_text_column: str | None = None
+    selector: dict[str, str] = Field(default_factory=dict)
+    source_scope_bindings: dict[str, str] = Field(default_factory=dict)
+    target_scope_bindings: dict[str, str] = Field(default_factory=dict)
+    source_rule_id: str | None = None
+    target_rule_id: str | None = None
 
 
 _RELATION_TEXT = re.compile(
@@ -41,8 +46,8 @@ _RELATION_TEXT = re.compile(
     r"(?:_|$)|关系|依赖|计算公式|关系说明|引用说明", re.I)
 
 
-def _accepted_definition_roots(data, plan, concepts, alignments):
-    accepted_by_record, _ = _type_alignments(plan, concepts, alignments)
+def _accepted_definition_roots(data, plan, concepts, alignments, memberships=()):
+    accepted_by_record, _ = _type_alignments(plan, concepts, alignments, memberships)
     types = {item.id: item for item in plan.object_types}
     roots = defaultdict(set)
     for record_id, match in accepted_by_record.items():
@@ -76,7 +81,7 @@ def _relation_text_candidate(data, table_name, reference_columns):
 
 
 def infer_configuration_specs(
-    data, plan: BuildPlan, concepts, alignments, checked_rules, *, max_specs=100,
+    data, plan: BuildPlan, concepts, alignments, checked_rules, *, max_specs=100, memberships=(),
 ):
     """Pair two checked config→definition code references, never assert a relation.
 
@@ -91,7 +96,7 @@ def infer_configuration_specs(
     if type(max_specs) is not int or max_specs < 1:
         raise ValueError("max_specs must be a positive integer")
     plan = BuildPlan.model_validate(plan)
-    target_roots = _accepted_definition_roots(data, plan, concepts, alignments)
+    target_roots = _accepted_definition_roots(data, plan, concepts, alignments, memberships)
     by_table = defaultdict(list)
     skipped = Counter()
     seen = 0
@@ -111,9 +116,6 @@ def infer_configuration_specs(
                                           ("ambiguous_matches", "missing_in_input", "missing_scope"))):
             skipped["incomplete_or_ambiguous_full_input_check"] += 1
             continue
-        if rule.get("selector") or rule.get("scope_bindings"):
-            skipped["condition_not_supported_by_dual_code_spec"] += 1
-            continue
         source, target = rule.get("source") or {}, rule.get("target") or {}
         source_table, target_table = source.get("table"), target.get("table")
         source_field, target_field = source.get("field"), target.get("field")
@@ -123,6 +125,11 @@ def infer_configuration_specs(
         try:
             _check_column(data, source_table, source_field)
             _check_column(data, target_table, target_field)
+            for field in rule.get("selector") or {}:
+                _check_column(data, source_table, field)
+            for local, remote in (rule.get("scope_bindings") or {}).items():
+                _check_column(data, source_table, local)
+                _check_column(data, target_table, remote)
         except ValueError:
             skipped["invisible_or_unknown_column"] += 1
             continue
@@ -141,6 +148,10 @@ def infer_configuration_specs(
         for (left, left_root), (right, right_root) in combinations(rules, 2):
             total_pairs += 1
             left_source, right_source = left["source"], right["source"]
+            left_selector, right_selector = left.get("selector") or {}, right.get("selector") or {}
+            if any(left_selector[key] != right_selector[key] for key in left_selector.keys() & right_selector.keys()):
+                skipped["incompatible_reference_conditions"] += 1
+                continue
             if left_source["field"] == right_source["field"]:
                 skipped["same_configuration_column"] += 1
                 continue
@@ -168,6 +179,10 @@ def infer_configuration_specs(
                 target_definition_table=right["target"]["table"],
                 target_definition_code_column=right["target"]["field"],
                 relation_text_column=text_column,
+                selector={**left_selector, **right_selector},
+                source_scope_bindings=left.get("scope_bindings") or {},
+                target_scope_bindings=right.get("scope_bindings") or {},
+                source_rule_id=left["rule_id"], target_rule_id=right["rule_id"],
             )
             output.append({
                 "spec": spec.model_dump(), "status": "candidate_only",
@@ -208,7 +223,7 @@ def _check_column(data, table_name, column_name):
         raise ValueError(f"Sensitive configuration reference column: {table_name}.{column_name}")
 
 
-def _type_alignments(plan, concepts, alignments):
+def _type_alignments(plan, concepts, alignments, memberships=()):
     accepted = {item.id for item in plan.object_types if item.category == "business_type"}
     by_concept = {item["id"]: item for item in concepts}
     by_record = {}
@@ -233,7 +248,22 @@ def _type_alignments(plan, concepts, alignments):
                 "type_id": type_id, "concept_id": concept["id"],
                 "alignment_id": alignment.get("id"),
                 "evidence_ids": alignment.get("evidence_ids", []),
+                "mapping_kind": "exact",
             }
+    for member in memberships:
+        record_id, type_id = member.get("record_id"), member.get("type_id", member.get("object_type_id"))
+        if (not record_id or type_id not in accepted
+                or not (member.get("status") == "definition_template_match"
+                        or member.get("mapping_kind") == "template_instance")
+                or not member.get("evidence_ids")):
+            continue
+        old = by_record.get(record_id)
+        if old and old["type_id"] != type_id:
+            conflicting.add(record_id)
+        elif old is None:
+            by_record[record_id] = {"type_id": type_id, "concept_id": member.get("concept_id"),
+                "alignment_id": member["id"], "evidence_ids": member.get("evidence_ids", []),
+                "mapping_kind": member.get("mapping_kind", "shares_definition_type_template")}
     for record_id in conflicting:
         by_record.pop(record_id, None)
     return by_record, conflicting
@@ -245,6 +275,11 @@ def _grouped_pairs(data, spec, limit):
     if spec.relation_text_column:
         cols.append(spec.relation_text_column)
     names = ["source_code", "target_code", "relation_literal"][:len(cols)]
+    for field in sorted(set(spec.source_scope_bindings) | set(spec.target_scope_bindings)):
+        if field not in cols:
+            cols.append(field)
+            names.append("scope_" + field)
+    condition = " AND ".join(f"{qi(column)} = ?" for column in sorted(spec.selector)) or "TRUE"
     select = ", ".join(f"{qi(column)} AS {qi(alias)}" for column, alias in zip(cols, names))
     group = ", ".join(qi(column) for column in cols)
     order = ", ".join(f"{qi(alias)} NULLS LAST" for alias in names)
@@ -253,6 +288,7 @@ def _grouped_pairs(data, spec, limit):
             SELECT {select}, count(*) AS configuration_rows,
                    min(__r2_row) AS witness_row_number
             FROM {qi(table['sql_name'])}
+            WHERE {condition}
             GROUP BY {group}
         )
         SELECT grouped.*, count(*) OVER () AS all_distinct_code_pairs,
@@ -261,7 +297,7 @@ def _grouped_pairs(data, spec, limit):
         ORDER BY configuration_rows DESC, {order}
         LIMIT ?
     """
-    cursor = data.db.execute(query, [limit])
+    cursor = data.db.execute(query, [spec.selector[key] for key in sorted(spec.selector)] + [limit])
     fields = [item[0] for item in cursor.description]
     return [dict(zip(fields, row)) for row in cursor.fetchall()]
 
@@ -296,7 +332,7 @@ def _record_evidence(data, spec, witness, columns):
 
 
 def discover_configuration_relations(
-    data, plan: BuildPlan, concepts, alignments, specs, *, max_pairs_per_spec=1000,
+    data, plan: BuildPlan, concepts, alignments, specs, *, max_pairs_per_spec=1000, memberships=(),
 ):
     """Return bounded, evidence-backed relation *candidates* from explicit codes.
 
@@ -312,17 +348,19 @@ def discover_configuration_relations(
     parsed = [ConfigurationRelationSpec.model_validate(item) for item in specs]
     if len({item.spec_id for item in parsed}) != len(parsed):
         raise ValueError("Duplicate configuration relation spec ID")
-    align_by_record, conflicting_alignments = _type_alignments(plan, concepts, alignments)
+    align_by_record, conflicting_alignments = _type_alignments(plan, concepts, alignments, memberships)
     candidates, reports = [], []
     lookup_cache = {}
 
-    def endpoint(table_name, code_column, code):
+    def endpoint(table_name, code_column, code, scope):
         if code is None or str(code).strip() == "":
             return {"status": "blank_code"}
-        cache_key = (table_name, code_column, code)
+        if any(value in (None, "") for value in scope.values()):
+            return {"status": "missing_scope"}
+        cache_key = (table_name, code_column, code, tuple(sorted(scope.items())))
         if cache_key in lookup_cache:
             return lookup_cache[cache_key]
-        matches = data.lookup(table_name, ((code_column, code),))
+        matches = data.lookup(table_name, ((code_column, code), *sorted(scope.items())))
         if not matches:
             result = {"status": "missing_definition"}
         elif len(matches) > 1:
@@ -348,6 +386,13 @@ def discover_configuration_relations(
             _check_column(data, table, column)
         if spec.relation_text_column:
             _check_column(data, spec.configuration_table, spec.relation_text_column)
+        for field in spec.selector:
+            _check_column(data, spec.configuration_table, field)
+        for bindings, target in ((spec.source_scope_bindings, spec.source_definition_table),
+                                 (spec.target_scope_bindings, spec.target_definition_table)):
+            for local, remote in bindings.items():
+                _check_column(data, spec.configuration_table, local)
+                _check_column(data, target, remote)
         if spec.source_code_column == spec.target_code_column:
             raise ValueError("Configuration source and target code columns must differ")
         rows = _grouped_pairs(data, spec, max_pairs_per_spec)
@@ -357,20 +402,23 @@ def discover_configuration_relations(
         for item in rows:
             witness = _witness(data, spec, item["witness_row_number"])
             columns = [spec.source_code_column, spec.target_code_column]
+            columns.extend(set(spec.selector) | set(spec.source_scope_bindings) | set(spec.target_scope_bindings))
             if spec.relation_text_column:
                 columns.append(spec.relation_text_column)
             config_record_id, config_evidence = _record_evidence(data, spec, witness, columns)
+            source_scope = {remote: witness[local] for local, remote in spec.source_scope_bindings.items()}
+            target_scope = {remote: witness[local] for local, remote in spec.target_scope_bindings.items()}
             source = endpoint(spec.source_definition_table, spec.source_definition_code_column,
-                              item["source_code"])
+                              item["source_code"], source_scope)
             target = endpoint(spec.target_definition_table, spec.target_definition_code_column,
-                              item["target_code"])
+                              item["target_code"], target_scope)
             verified = source["status"] == target["status"] == "accepted_type"
             status = "endpoint_verified_candidate" if verified else "unresolved"
             statuses[status] += 1
             candidate = {
                 "id": "configuration_relation_candidate:" + digest([
                     data.snapshot_id, spec.spec_id, item["source_code"], item["target_code"],
-                    item.get("relation_literal")])[:24],
+                    item.get("relation_literal"), source_scope, target_scope, spec.selector])[:24],
                 "spec_id": spec.spec_id, "status": status,
                 "snapshot_id": data.snapshot_id,
                 "predicate_status": "unjudged", "direction_status": "unjudged",
@@ -379,14 +427,20 @@ def discover_configuration_relations(
                 "source_code_column": spec.source_code_column,
                 "target_code_column": spec.target_code_column,
                 "relation_text_column": spec.relation_text_column,
+                "selector": spec.selector,
+                "source_scope_bindings": spec.source_scope_bindings,
+                "target_scope_bindings": spec.target_scope_bindings,
+                "source_rule_id": spec.source_rule_id, "target_rule_id": spec.target_rule_id,
                 "configuration_record_id": config_record_id,
                 "configuration_witness_row_number": item["witness_row_number"],
                 "configuration_rows_with_same_code_pair": item["configuration_rows"],
                 "source_code": item["source_code"], "target_code": item["target_code"],
                 "source_definition": {"table": spec.source_definition_table,
-                                      "code_column": spec.source_definition_code_column, **source},
+                                      "code_column": spec.source_definition_code_column,
+                                      "lookup_scope": source_scope, **source},
                 "target_definition": {"table": spec.target_definition_table,
-                                      "code_column": spec.target_definition_code_column, **target},
+                                      "code_column": spec.target_definition_code_column,
+                                      "lookup_scope": target_scope, **target},
                 "source_type_id": source.get("type_id") if verified else None,
                 "target_type_id": target.get("type_id") if verified else None,
                 "evidence_ids": sorted(set(config_evidence + source.get("evidence_ids", [])

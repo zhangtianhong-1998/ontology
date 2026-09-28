@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .discovery import validate_candidate
+from .discovery import _fair_source_order, validate_candidate
 from .llm import BudgetExceeded
 from .models import Strict
 from .storage import digest
@@ -514,6 +514,85 @@ async def _react_proposals(data, candidates, checked, options, limits, llm):
                        "tested": state["tested"]}
 
 
+def _order_alias_proposals(proposals, candidates, alias_leads):
+    """Share a fixed validation budget across source fields and target tables.
+
+    Both orientations have independent turns. Sampled value support only
+    orders leads; full-input uniqueness is still checked by the normal DSL.
+    """
+    leads = {lead['candidate_id']: lead for lead in alias_leads}
+    def object_payload(lead):
+        for example in lead.get('examples', []):
+            for side in ('source', 'target'):
+                value = example.get(side, {}).get('raw_value', '')
+                if not isinstance(value, str) or not value.lstrip().startswith('{'):
+                    continue
+                try:
+                    if isinstance(json.loads(value), dict):
+                        return True
+                except (ValueError, TypeError):
+                    pass
+        return False
+    payload_leads = {cid for cid, lead in leads.items() if object_payload(lead)}
+    def source(item):
+        value = candidates[item[0].candidate_id]['source']
+        return value['table'], value['field']
+    def quality(item):
+        candidate = candidates[item[0].candidate_id]
+        lead = leads[candidate['alias_recall_candidate_id']]
+        stats = lead.get('checks', {})
+        forward = candidate['source'] == lead['source']
+        target_side, source_side = ('target', 'source') if forward else ('source', 'target')
+        keys = stats.get('shared_normalized_keys_in_sample', 0)
+        matched = stats.get(target_side + '_raw_values_matched_in_sample', 0)
+        # Several target raw values per key is a collision hint, not proof of
+        # ambiguous target records. Repetition across source records is harmless.
+        # Splitting JSON documents at commas is weaker alias evidence than a
+        # plain lexical list. Keep these leads for later technical verification.
+        return (lead['candidate_id'] in payload_leads,
+                bool(stats.get('numeric_overlap_only')), matched > keys,
+                -keys, -stats.get(source_side + '_sample_coverage', 0),
+                candidate['target']['table'], candidate['target']['field'], item[0].candidate_id)
+    by_source = defaultdict(lambda: defaultdict(list))
+    for item in proposals:
+        by_source[source(item)][candidates[item[0].candidate_id]['target']['table']].append(item)
+    ranks = {}
+    for families in by_source.values():
+        for items in families.values():
+            items.sort(key=quality)
+        keys = sorted(families, key=lambda key: (quality(families[key][0]), key))
+        rank = 0
+        for offset in range(max(map(len, families.values()), default=0)):
+            for key in keys:
+                if offset < len(families[key]):
+                    ranks[families[key][offset][0].candidate_id] = rank
+                    rank += 1
+    return _fair_source_order(proposals, source,
+                              lambda item: (ranks[item[0].candidate_id], quality(item)))
+
+
+def _alias_selection_coverage(proposals, candidates, rules):
+    def groups(values):
+        return ({v['source']['table'] for v in values},
+                {(v['source']['table'], v['source']['field']) for v in values},
+                {(v['source']['table'], v['source']['field'], v['target']['table']) for v in values})
+    full = groups([candidates[p.candidate_id] for p, _ in proposals])
+    # Explicit/Agent proposals may have verified the same canonical rule first.
+    # Origin is provenance, not identity; scope/selector/transform must all agree.
+    alias_rule_ids = {_rule_id(candidates[p.candidate_id], p) for p, _ in proposals}
+    verified = groups([r for r in rules if r['rule_id'] in alias_rule_ids
+                       and r['verification']['scan_scope'] == 'full_input'
+                       and r['verification'].get('error') is None
+                       and isinstance(r['verification'].get('checks'), dict)
+                       and 'eligible_references' in r['verification']['checks']])
+    return {'policy': 'source_table_field_target_table_direction_round_robin',
+            'sample_support_is_not_verification': True,
+            **{name: {'available': len(all_), 'verified': len(some),
+                      'unverified': len(all_ - some)}
+               for name, all_, some in zip(('source_tables', 'source_fields',
+                                           'target_families'), full, verified)}}
+
+
 async def build_association_rules(data, discovery, options=None, llm=None, *, alias_candidates=None,
                                   progress=None):
     """Compile candidates and optional agent proposals into snapshot-checked rules.
@@ -554,6 +633,7 @@ async def build_association_rules(data, discovery, options=None, llm=None, *, al
                 "alias_recall_candidate_id": lead["candidate_id"]}
             alias_proposals.append((RuleProposal(candidate_id=cid, transform=transform,
                 rationale="Observed value/alias coincidence; full-input transform check required"), "value_alias_recall"))
+    alias_proposals = _order_alias_proposals(alias_proposals, candidates, alias_leads)
     checked = {cid: item for cid, item in _checked_index(discovery).items()
                if item.get("snapshot_id") == data.snapshot_id and
                cid in candidates and item.get("source") == candidates[cid]["source"] and
@@ -669,6 +749,7 @@ async def build_association_rules(data, discovery, options=None, llm=None, *, al
                          "new_full_input_validations": new_validations + alias_validations,
                          "alias_full_input_validations": alias_validations,
                          "alias_rule_variants": len(alias_proposals),
+                         "alias_selection": _alias_selection_coverage(alias_proposals, candidates, rules),
                          "statuses": dict(statuses),
                          "partial": len(seen) > len(rules) or bool(errors) or
                                     discovery.get("coverage", {}).get("partial", False) or

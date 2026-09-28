@@ -73,13 +73,14 @@ class DerivedType(Strict):
     # These describe fields on exact definition records. They are not a claim
     # that every business observation has the same populated property.
     source_properties: list[SourceProperty] = Field(default_factory=list)
-    derivation_kind: Literal["exact_definition", "shared_supertype"] | None = None
+    derivation_kind: Literal["exact_definition", "shared_supertype", "template_projection"] | None = None
     induced_from_type_ids: list[str] = Field(default_factory=list)
     # Only object-relation types may narrow their endpoint types.
     domain: list[str] = Field(default_factory=list)
     range: list[str] = Field(default_factory=list)
     endpoint_basis: Literal["record_alignment", "table_binding", "mixed",
-                            "configuration_reference", "calculation_binding"] | None = None
+                            "configuration_reference", "calculation_binding",
+                            "semantic_binding"] | None = None
     predicate_name: str | None = None
     semantic_parameters: dict[str, str] = Field(default_factory=dict)
     evidence_scope: Literal["source_schema", "definition_record",
@@ -87,7 +88,8 @@ class DerivedType(Strict):
                             "sample_semantic_with_full_technical_check",
                             "one_positive_pair_with_exact_type_alignments",
                             "one_configuration_witness_with_exact_type_alignments",
-                            "complete_calculation_definition"] | None = None
+                            "complete_calculation_definition",
+                            "checked_structured_binding", "projected_definition_template"] | None = None
 
     @field_validator("unit", "aggregation_operator", "predicate_name", mode="before")
     @classmethod

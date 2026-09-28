@@ -40,3 +40,5 @@
 - [内部一级模型](../shared/internal_model.yaml)、[YAML 合成示例](../shared/example_result.yaml)
 
 运行命令在对应路线的工程目录执行，例如 `route2/`；不要在 `docs/route2/` 下运行。
+
+- [路线2：定义复用、实例绑定与关系构建](route2/TEMPLATE_BINDING_REDESIGN.md)

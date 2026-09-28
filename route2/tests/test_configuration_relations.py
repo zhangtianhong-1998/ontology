@@ -220,6 +220,14 @@ def test_infer_spec_from_two_checked_rules_and_keep_direction_unjudged(tmp_path)
         rejected = infer_configuration_specs(data, plan, concepts, alignments, conditioned)
         assert rejected["spec_candidates"] == []
         assert rejected["coverage"]["skipped_reasons"][
-            "condition_not_supported_by_dual_code_spec"] == 1
+            "invisible_or_unknown_column"] == 1
+
+        conditioned = [{**rules[0], "selector": {"metric_ref": "I1"}}, rules[1]]
+        supported = infer_configuration_specs(data, plan, concepts, alignments, conditioned)
+        assert supported["spec_candidates"][0]["spec"]["selector"] == {"metric_ref": "I1"}
+        scoped = discover_configuration_relations(
+            data, plan, concepts, alignments, [supported["spec_candidates"][0]["spec"]])
+        assert all(item["source_code"] == "I1" for item in scoped["candidates"])
+        assert scoped["coverage"]["specs"][0]["input_rows"] == 4
     finally:
         data.close()

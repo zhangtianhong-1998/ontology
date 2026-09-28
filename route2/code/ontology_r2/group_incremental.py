@@ -20,6 +20,8 @@ from .relation_contract import (canonical_relation_id, canonical_relation_label,
                                 validate_proposed_relation_label)
 from .storage import digest
 from .validation import validate_plan
+from .template_projection import (TemplateProjectionDecision, compile_projection,
+                                  reuse_projection)
 
 
 ROOTS = ("GeneralObject", "Measure", "Metric", "Dimension", "Term")
@@ -258,6 +260,8 @@ class RecordAlignmentDecision(Strict):
 
 class ConceptBundleDecision(Strict):
     status: Literal["proposed", "no_change", "unresolved"]
+    action: Literal["exact_definition", "project_template"] = "exact_definition"
+    projection: TemplateProjectionDecision | None = None
     label: str = ""
     definition: str = ""
     root_type: Literal["GeneralObject", "Measure", "Metric", "Dimension", "Term"] | None = None
@@ -447,6 +451,8 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
     """Validate a proposed business object and record-to-concept source mappings."""
     if decision.status != "proposed":
         return None
+    if decision.action != "exact_definition":
+        raise ValueError("Template projection must use the projection compiler, not exact identity")
     if not decision.label.strip() or not decision.definition.strip() or decision.root_type is None:
         raise ValueError("Proposed concept lacks label, definition or root type")
     roots = {item["id"] for item in profile["object_roots"]}
@@ -746,6 +752,81 @@ def _merge_relation_plan_evidence(existing, proposed, data):
     })
 
 
+def _numeric_join_path_evidence(data, bundle, source_record, target_record, reference_audit):
+    """A numeric join needs evidence for these exact fields, not a third-party path.
+
+    Identifier overlap alone proves neither an FK nor a business relationship.
+    Accept explicit FK declarations, a checked definition-reference contract, or
+    a source statement naming the actual destination table/column. Model reason
+    text and shared dimension descriptions are never used as path evidence.
+    """
+    rule = bundle["rule"]
+    source, target = rule["source"], rule["target"]
+    values = [[str(entry["value"]).strip() for _, entry in _entries(record)
+               if entry.get("column") == endpoint["field"]]
+              for record, endpoint in ((source_record, source), (target_record, target))]
+    numeric = (all(group and all(re.fullmatch(r"[+-]?\d+(?:\.0+)?", value) for value in group)
+                   for group in values)
+               or rule.get("numeric_overlap_only") is True
+               or "numeric_value_coincidence" in rule.get("risk_flags", []))
+    if not numeric:
+        return []
+    source_info = getattr(data, "tables", {}).get(source["table"], {})
+    target_info = getattr(data, "tables", {}).get(target["table"], {})
+    declaration = next((str(column.get("column_comment") or "") for column in source_info.get("columns", [])
+                        if column.get("column_name") == source["field"]), "")
+    if (reference_audit.get("status") == "supported"
+            and source["field"] not in source_info.get("pk", [])
+            and re.search(r"引用|指向|参照|外键|\b(?:reference|foreign key)\b", declaration, re.I)):
+        # This contract checks the joined source field and target ownership,
+        # including the case where both fields reference a third definition.
+        return []
+    for foreign_key in source_info.get("foreign_keys", []):
+        target_table = foreign_key.get("referenced_table", "")
+        schema = foreign_key.get("referenced_schema")
+        qualified = f"{schema}.{target_table}" if schema else target_table
+        if (foreign_key.get("column_name") != source["field"]
+                or qualified not in {target["table"], target["table"].split(".")[-1]}
+                or foreign_key.get("referenced_column") != target["field"]):
+            continue
+        # Composite FK companions must also be part of the executed scope.
+        companions = [item for item in source_info.get("foreign_keys", [])
+                      if item.get("fk_name") and item.get("fk_name") == foreign_key.get("fk_name")
+                      and item.get("column_name") != source["field"]]
+        if any((rule.get("scope_bindings") or {}).get(item.get("column_name")) != item.get("referenced_column")
+               for item in companions):
+            continue
+        evidence_id = "declared_fk:" + digest([data.snapshot_id, source["table"], foreign_key])[:24]
+        data.evidence[evidence_id] = {
+            "id": evidence_id, "origin": "declared_metadata", "raw_fragment": json.dumps(foreign_key, ensure_ascii=False),
+            "source_ref": {"snapshot_id": data.snapshot_id, "table": source["table"], "column": source["field"]},
+            "join_path": {"source": source, "target": target},
+        }
+        return [evidence_id]
+    destinations = sorted({target["table"], target["table"].split(".")[-1]}, key=len, reverse=True)
+    destination = "(?:" + "|".join(re.escape(item) for item in destinations) + ")"
+    reference = r"(?:引用|指向|参照|references?|refers?\s+to|points?\s+to)\s*"
+    # The target field must be named, unless the destination has exactly one
+    # declared primary-key column equal to the executed target field.
+    key_suffix = r"\s*(?:\.|的|\s+)\s*" + re.escape(target["field"]) + r"(?![a-z0-9_])"
+    if target_info.get("pk") == [target["field"]]:
+        key_suffix = "(?:" + key_suffix + r"|(?=$|[，。;,\s]))"
+    pattern = re.compile(reference + destination + key_suffix, re.I)
+    negated = re.compile(r"(?:不|未|无需|禁止)(?:直接)?(?:引用|指向|参照)|\b(?:not|never|no)\b.{0,16}\b(?:refer|point)", re.I)
+    if pattern.search(declaration) and not negated.search(declaration):
+        return [f"schema:{source['table']}:{source['field']}"]
+    source_prefix = re.compile(r"(?<![a-z0-9_])" + re.escape(source["field"])
+                               + r"(?![a-z0-9_])\s*(?:字段)?\s*" + pattern.pattern, re.I)
+    for role, entry in _entries(source_record):
+        text = str(entry["value"])
+        if (role in {"description", "context"} and not entry.get("truncated")
+                and source_prefix.search(text) and not negated.search(text)):
+            return [_quote_evidence(data, source_record, text, allowed_roles=("description", "context"),
+                                    require_complete=True)]
+    raise ValueError("Numeric identifier overlap lacks evidence for the executed join path; "
+                     "shared dimensions or other references cannot justify this field pair")
+
+
 def compile_relation(data, profile, core, bundle, decision):
     """Turn a technically checked rule and quoted meaning into a validated plan."""
     if decision.status != "proposed":
@@ -793,6 +874,8 @@ def compile_relation(data, profile, core, bundle, decision):
         bundle, decision, source, target, source_field, target_field)
     reference_audit = validate_definition_reference(
         data, bundle, decision, source_record, target_record)
+    join_path_evidence = _numeric_join_path_evidence(
+        data, bundle, source_record, target_record, reference_audit)
     reference_evidence = []
     if reference_audit["status"] == "supported":
         for item in reference_audit["evidence"]:
@@ -860,6 +943,7 @@ def compile_relation(data, profile, core, bundle, decision):
                         require_complete=True),
         *dependency_evidence,
         *reference_evidence,
+        *join_path_evidence,
     ]))
     # Model prose explains this witnessed decision; it cannot redefine a
     # globally shared predicate or disappear when another witness is accepted.
@@ -1095,10 +1179,48 @@ def bundle_request_payload(data, profile, core, bundle):
             "current_relations": [{"id": item.id, "parent": item.parent} for item in core.relation_types[-12:]]}
 
 
+def _compile_checked_projection(data, profile, core, bundle, projection):
+    """Projection changes identity semantics, not the quantity classification rules."""
+    records = _record_map(bundle)
+    witnesses = [records[key] for key in projection.witness_record_ids if key in records]
+    if projection.root_type in {"Measure", "Metric"} and _operator_label(projection.label):
+        raise ValueError("An aggregation operator alone is not a projected quantity type")
+    if projection.root_type == "Measure":
+        if any(slot.role == "business_object" for slot in projection.slots):
+            raise ValueError("A projected Measure cannot bind a business object")
+        if not witnesses or not all(item["supported"] for item in
+                                   _measure_reuse_assessment(data, witnesses, projection.label)):
+            raise ValueError("Projected Measure requires an independent generic source definition")
+    if projection.root_type == "Metric" and not any(slot.role == "business_object"
+                                                     for slot in projection.slots):
+        raise ValueError("Projected Metric requires an explicit business-object binding")
+    for component in projection.components:
+        if component.root_type != "Measure":
+            continue
+        if _operator_label(component.label):
+            raise ValueError("An aggregation operator alone is not a projected Measure component")
+        source = records.get(component.definition_evidence.record_id)
+        if source is None or not all(item["supported"] for item in
+                                     _measure_reuse_assessment(data, [source], component.label)):
+            raise ValueError("Projected Measure component requires an independent generic source definition")
+    for field in projection.field_templates:
+        if "{" not in field.template:
+            continue
+        for record in witnesses:
+            value = (record.get("scope") or {}).get(field.column)
+            if value is None:
+                continue
+            basis = _parameter_basis(data, record, field.column, value)
+            if basis and (basis["basis"] == "source_column_declaration"
+                          or basis.get("fragment", {}).get("effective_role") == "calculation_operator"):
+                raise ValueError("A declared calculation parameter cannot be generalized as an instance slot")
+    return compile_projection(data, profile, core, bundle, projection)
+
+
 async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *, review=True,
                                  max_bundles=20, max_repairs_per_bundle=0, progress=None,
                                  prior_result=None, on_checkpoint=None, concept_batch_size=1,
-                                 relation_batch_size=1):
+                                 relation_batch_size=1, enable_template_projection=False):
     """One bounded group pass; failures do not change accepted plan or objects."""
     from .llm import BudgetExceeded
 
@@ -1114,6 +1236,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
     if prior and prior.get("snapshot_id") != data.snapshot_id:
         raise ValueError("Incremental checkpoint snapshot differs from current input")
     concepts = {item["id"]: item for item in prior.get("concepts", [])}
+    template_projections = {item["template_id"]: item for item in prior.get("template_projections", [])}
+    template_bindings = {item["id"]: item for item in prior.get("template_bindings", [])}
     alignments = prior.get("record_alignments", [])
     accepted_exact = {item["source_record_id"]: item["concept_id"] for item in alignments
                       if item["mapping_kind"] == "exact"}
@@ -1144,6 +1268,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
     def state():
         return {"snapshot_id": data.snapshot_id, "plan": core,
                 "concepts": list(concepts.values()), "record_alignments": alignments,
+                "template_projections": list(template_projections.values()),
+                "template_bindings": list(template_bindings.values()),
                 "concept_relations": list(concept_relations.values()),
                 "concept_relation_derivations": relation_derivations, "steps": steps,
                 "pending_concept_decisions": batch_decisions,
@@ -1161,7 +1287,17 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 await pending
 
     def packet_payload(bundle):
-        return bundle_request_payload(data, profile, core, bundle)
+        payload = bundle_request_payload(data, profile, core, bundle)
+        if enable_template_projection:
+            payload["template_projection"] = {
+                "enabled": True,
+                "identity_contract": "projection is not exact record identity",
+                "existing_templates": [{key: item[key] for key in (
+                    "template_id", "object_type_id", "root_type", "label", "definition", "slots")}
+                    for item in list(template_projections.values())[-12:]],
+                "reuse_policy": "Complete known contracts are matched before model calls; only uncovered changes require decisions.",
+            }
+        return payload
 
     async def prepare_batch(position, kind, size):
         """One request can carry independent decisions without merging evidence."""
@@ -1182,6 +1318,9 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                   default=str).encode()) <= max(1024, int(max_bytes * .65))
         for possible in selected[position:]:
             if (possible.get("task_kind") != kind or possible["bundle_id"] in cache):
+                continue
+            if (is_concept and enable_template_projection and
+                    reuse_projection(data, template_projections.values(), possible) is not None):
                 continue
             packet = packet_payload(possible)
             if not fits(task, [*packets, packet], schema) and chosen:
@@ -1208,7 +1347,12 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 continue
             try:
                 if is_concept:
-                    compile_concept(data, profile, bundle, decision, accepted_exact)
+                    if decision.action == "project_template":
+                        if not enable_template_projection or decision.projection is None:
+                            raise ValueError("Template projection is disabled or missing its contract")
+                        _compile_checked_projection(data, profile, core, bundle, decision.projection)
+                    else:
+                        compile_concept(data, profile, bundle, decision, accepted_exact)
                 else:
                     compile_relation(data, profile, core, bundle, decision)
             except ValueError:
@@ -1245,7 +1389,14 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                     "status": "unresolved", "core_before": digest(core.model_dump())}
             try:
                 payload = packet_payload(bundle)
-                if bundle["task_kind"] == "concept_induction":
+                reusable = (reuse_projection(data, template_projections.values(), bundle)
+                            if enable_template_projection and bundle["task_kind"] == "concept_induction" else None)
+                if reusable is not None:
+                    template_bindings[reusable["id"]] = reusable
+                    step.update(status="no_change", action="reuse_template",
+                                template_id=reusable["template_id"], binding_id=reusable["id"],
+                                llm_calls_avoided=True)
+                elif bundle["task_kind"] == "concept_induction":
                     if concept_batch_size > 1 and bundle["bundle_id"] not in batch_decisions:
                         try:
                             await prepare_batch(position, "concept_induction", concept_batch_size)
@@ -1255,6 +1406,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                             step["batch_fallback_reason"] = str(exc)
                     cached_decision = batch_decisions.get(bundle["bundle_id"])
                     concept_payload = payload
+                    projected = None
                     for attempt in range(max_repairs_per_bundle + 1):
                         if attempt == 0 and cached_decision:
                             decision = ConceptBundleDecision.model_validate(cached_decision["decision"])
@@ -1263,8 +1415,14 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                             decision = await llm.ask(
                                 "concept_bundle", concept_payload, ConceptBundleDecision)
                         try:
-                            compiled = compile_concept(
-                                data, profile, bundle, decision, accepted_exact)
+                            if decision.status == "proposed" and decision.action == "project_template":
+                                if not enable_template_projection or decision.projection is None:
+                                    raise ValueError("Template projection is disabled or missing its contract")
+                                projected = _compile_checked_projection(data, profile, core, bundle, decision.projection)
+                                compiled = None
+                            else:
+                                compiled = compile_concept(
+                                    data, profile, bundle, decision, accepted_exact)
                             break
                         except ValueError as exc:
                             if attempt >= max_repairs_per_bundle:
@@ -1282,7 +1440,26 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                     "formula onto the seed. Conflicting formula ownership is unresolved."),
                             }
                             step["repair_calls"] = attempt + 1
-                    if compiled:
+                    if projected:
+                        candidate, template, bindings = projected
+                        if review:
+                            cached_review = batch_reviews.get(bundle["bundle_id"])
+                            if cached_review and cached_review["decision_digest"] == digest(decision.model_dump()):
+                                check = BundleReview.model_validate(cached_review["review"])
+                            else:
+                                check = await llm.ask("group_review", {**payload, "candidate": decision.model_dump()}, BundleReview)
+                            if not check.accepted or check.errors:
+                                raise ValueError("Template review rejected: " + "; ".join(check.errors))
+                        errors = validate_plan(candidate, data, profile)
+                        if errors:
+                            raise ValueError("Template plan invalid: " + "; ".join(errors))
+                        core = candidate
+                        template_projections[template["template_id"]] = template
+                        template_bindings.update({item["id"]: item for item in bindings})
+                        step.update(status="accepted", action="project_template",
+                                    template_id=template["template_id"],
+                                    object_type_id=template["object_type_id"], binding_count=len(bindings))
+                    elif compiled:
                         concept, new_alignments = compiled
                         old = concepts.get(concept["id"])
                         if old and (old["definition"] != concept["definition"] or old["type"] != concept["type"]):
@@ -1473,6 +1650,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 "bundles_reused": len(bundles) - len(remaining),
                 "steps_this_run": run_step_count,
                 "bundles_not_attempted": skipped, "statuses": statuses,
+                "template_count": len(template_projections), "template_binding_count": len(template_bindings),
+                "template_reused_before_llm": sum(item.get("action") == "reuse_template" for item in latest_steps.values()),
                 "partial": bool(skipped or statuses["unresolved"] or statuses["budget_exhausted"])}
     await checkpoint()
     return {**state(), "bundles_selected": len(selected), "bundles_skipped": skipped,

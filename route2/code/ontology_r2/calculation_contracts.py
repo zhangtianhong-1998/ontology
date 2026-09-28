@@ -13,7 +13,7 @@ import unicodedata
 from collections import Counter, defaultdict
 
 from .models import BuildPlan
-from .storage import digest
+from .storage import digest, qi
 
 
 _OPERATORS = {ast.Add: "add", ast.Sub: "subtract", ast.Mult: "multiply",
@@ -133,8 +133,17 @@ def _declared_single_keys(table):
     return keys
 
 
-def _definition_code_names(data, index, record_id):
-    """Only declared self keys are code aliases; foreign references are not."""
+def _declared_symbol_fields(table):
+    """Metadata can declare a formula variable alias without declaring a PK."""
+    return {column["column_name"] for column in table.get("columns", [])
+            if re.search(r"公式变量|公式符号|英文别名|formula\s+(?:variable|symbol)|parameter\s+alias",
+                         str(column.get("column_comment") or ""), re.I)
+            and not re.search(r"不是|不作为|非公式|\b(?:not|never)\b",
+                              str(column.get("column_comment") or ""), re.I)}
+
+
+def _definition_code_names(data, index, record_id, *, include_self_keys=True):
+    """Self keys and explicitly declared symbol aliases can name operands."""
     if index is None:
         return []
     rows = index.db.execute(
@@ -144,22 +153,69 @@ def _definition_code_names(data, index, record_id):
     for row in rows:
         table_name = row["table_name"]
         table = data.tables.get(table_name, {})
-        keys = _declared_single_keys(table)
-        for entries in json.loads(row["fields_json"]).values():
-            for entry in entries:
-                if entry.get("column") in keys and not entry.get("truncated"):
-                    matches = data.lookup(table_name, ((entry["column"], str(entry["value"])),))
-                    if len(matches) != 1 or data.record_id(table_name, matches[0]) != record_id:
-                        continue
-                    evidence_id = "record:" + digest([data.snapshot_id, record_id, entry["column"]])[:24]
-                    source_ref = {"record_id": record_id, "table": table_name, "column": entry["column"],
-                                  "snapshot_id": data.snapshot_id, "row": row["row_number"]}
-                    data.evidence[evidence_id] = {"id": evidence_id, "origin": "observed_record",
-                        "raw_fragment": str(entry["value"]), "raw_fragment_truncated": False,
-                        "source_ref": source_ref}
-                    result.append((str(entry["value"]), {"evidence_id": evidence_id,
-                        "source_ref": source_ref, "basis": "declared_unique_definition_key"}))
+        keys = _declared_single_keys(table) if include_self_keys else set()
+        aliases = _declared_symbol_fields(table)
+        entries = [entry for values in json.loads(row["fields_json"]).values() for entry in values]
+        if aliases:
+            fields = sorted(aliases)
+            original = data.db.execute(
+                f"SELECT {', '.join(qi(field) for field in fields)} FROM {qi(table['sql_name'])} WHERE __r2_row=?",
+                [row["row_number"]]).fetchone()
+            if original:
+                entries.extend({"column": field, "value": value, "truncated": False}
+                               for field, value in zip(fields, original) if value not in (None, ""))
+        for entry in entries:
+            if entry.get("column") not in keys | aliases or entry.get("truncated"):
+                continue
+            if entry["column"] not in aliases:
+                matches = data.lookup(table_name, ((entry["column"], str(entry["value"])),))
+                if len(matches) != 1 or data.record_id(table_name, matches[0]) != record_id:
+                    continue
+            evidence_id = "record:" + digest([data.snapshot_id, record_id, entry["column"]])[:24]
+            source_ref = {"record_id": record_id, "table": table_name, "column": entry["column"],
+                          "snapshot_id": data.snapshot_id, "row": row["row_number"]}
+            data.evidence[evidence_id] = {"id": evidence_id, "origin": "observed_record",
+                "raw_fragment": str(entry["value"]), "raw_fragment_truncated": False,
+                "source_ref": source_ref}
+            result.append((str(entry["value"]), {"evidence_id": evidence_id,
+                "source_ref": source_ref, "basis": "declared_formula_symbol_alias"
+                if entry["column"] in aliases else "declared_unique_definition_key"}))
     return result
+
+
+def _formula_binding_tasks(calculations, index=None):
+    """Schedule only missing symbols; retrieval results never assert a binding."""
+    tasks = {}
+    for calculation in calculations:
+        if calculation.get("formula_type") != "mathematical":
+            continue
+        for binding in calculation.get("bindings", []):
+            if binding.get("status") == "bound":
+                continue
+            key = (calculation["source_type_id"], binding["symbol"],
+                   digest(calculation.get("applicability_scope", {})),
+                   digest(calculation.get("definition_parameters", {})))
+            if key in tasks:
+                tasks[key]["occurrences"].append(binding["path"])
+                continue
+            task = {"id": "formula_binding_task:" + digest(key)[:24],
+                    "task": "resolve_formula_operand_definition", "status": "unresolved",
+                    "source_type_id": calculation["source_type_id"], "symbol": binding["symbol"],
+                    "occurrences": [binding["path"]], "reason": binding.get("reason"),
+                    "candidate_type_ids": binding.get("candidate_type_ids", []),
+                    "scope": calculation.get("applicability_scope", {}),
+                    "definition_parameters": calculation.get("definition_parameters", {}),
+                    "evidence_ids": calculation["evidence_ids"], "definition_candidates": [],
+                    "proof_required": "complete symbol alias or parameter mapping, compatible unit and scope",
+                    "automatic_relation_created": False}
+            if index is not None and hasattr(index, "search") and len(binding["symbol"]) <= 512:
+                hits = index.search(binding["symbol"], limit=8, kind="definition")
+                task["definition_candidates"] = [
+                    {key: hit.get(key) for key in
+                     ("card_id", "record_id", "table", "name", "root_hint", "retrieval_channels")}
+                    for hit in hits]
+            tasks[key] = task
+    return list(tasks.values())
 
 
 def enrich_calculation_contracts(data, plan, group_result, index=None):
@@ -177,21 +233,45 @@ def enrich_calculation_contracts(data, plan, group_result, index=None):
         type_id = concept.get("ontology_type_id")
         if alignment.get("mapping_kind") == "exact" and type_id in selected:
             records_by_type[type_id].add(alignment["source_record_id"])
+    # A verified projection owns field-level definition evidence without
+    # claiming that its entire physical source row is the projected concept.
+    for type_id, item in selected.items():
+        if item.derivation_kind == "template_projection":
+            for prop in item.source_properties:
+                for evidence_id in prop.evidence_ids:
+                    proof = data.evidence.get(evidence_id, {})
+                    ref = proof.get("source_ref", {})
+                    if (proof.get("origin") == "observed_record"
+                            and not proof.get("raw_fragment_truncated")
+                            and ref.get("snapshot_id") == data.snapshot_id
+                            and ref.get("table") == prop.source_table
+                            and ref.get("column") == prop.source_column and ref.get("record_id")):
+                        records_by_type[type_id].add(ref["record_id"])
     registry = defaultdict(lambda: defaultdict(list))
     formulas = defaultdict(list)
+    variable_fields = defaultdict(set)
+    for projection in group_result.get("template_projections", []):
+        for field in projection.get("field_templates", []):
+            if "{" in field.get("template", ""):
+                variable_fields[projection.get("object_type_id")].add(field["column"])
     for type_id, item in selected.items():
         records = records_by_type[type_id]
         for prop in item.source_properties:
             for evidence_id, evidence in _evidence(data, prop, records):
                 raw = evidence["raw_fragment"]
                 if prop.role in ("name", "alias"):
+                    if prop.source_column in variable_fields[type_id]:
+                        continue
+                    if item.derivation_kind == "template_projection" and prop.role == "name" and _norm(raw) != _norm(item.label):
+                        continue
                     for name in (_aliases(raw) if prop.role == "alias" else [raw]):
                         registry[_norm(name)][type_id].append({"evidence_id": evidence_id,
                                                              "role": prop.role, "source_ref": evidence["source_ref"]})
                 elif prop.role == "formula":
                     formulas[type_id].append((raw, evidence_id, evidence["source_ref"]))
         for record_id in records:
-            for name, source in _definition_code_names(data, index, record_id):
+            for name, source in _definition_code_names(
+                    data, index, record_id, include_self_keys=item.derivation_kind != "template_projection"):
                 registry[_norm(name)][type_id].append(source)
     calculations, dependencies = [], []
     for type_id in sorted(formulas):
@@ -273,11 +353,14 @@ def enrich_calculation_contracts(data, plan, group_result, index=None):
                     for p in binding["binding_evidence"] if "evidence_id" in p])),
                 "binding_evidence": binding["binding_evidence"], "status": "accepted"})
     statuses = Counter(item["status"] for item in calculations)
+    binding_tasks = _formula_binding_tasks(calculations, index)
     return {"calculations": calculations, "dependencies": dependencies,
+            "binding_tasks": binding_tasks,
             "coverage": {"accepted_quantitative_types": len(selected), "types_with_formula": len(formulas),
                 "types_without_formula": len(selected) - len(formulas), "calculations": len(calculations),
                 "accepted": statuses["accepted"], "unresolved": statuses["unresolved"],
                 "dependencies": len(dependencies), "partial": bool(statuses["unresolved"]),
+                "targeted_binding_tasks": len(binding_tasks),
                 "input_scope": "accepted_definition_evidence_and_definition_index",
                 "business_observation_rows_read": 0, "llm_calls": 0,
                 "numeric_evaluation": "not_performed"}}
@@ -319,9 +402,10 @@ def calculation_relation_errors(data, relation, object_types):
         table = data.tables.get(ref.get("table"), {})
         if (proof.get("origin") == "observed_record" and not proof.get("raw_fragment_truncated")
                 and ref.get("snapshot_id") == data.snapshot_id and ref.get("record_id") in target_records
-                and ref.get("column") in _declared_single_keys(table)):
+                and ref.get("column") in _declared_single_keys(table) | _declared_symbol_fields(table)):
             matches = data.lookup(ref["table"], ((ref["column"], proof.get("raw_fragment")),))
-            if len(matches) == 1 and data.record_id(ref["table"], matches[0]) == ref["record_id"]:
+            if (ref["column"] in _declared_symbol_fields(table)
+                    or len(matches) == 1 and data.record_id(ref["table"], matches[0]) == ref["record_id"]):
                 names[_norm(proof["raw_fragment"])].add(evidence_id)
     formulas = [(evidence_id, parse_calculation(proof["raw_fragment"]))
                 for _, evidence_id, proof in property_evidence(source, ("formula",))

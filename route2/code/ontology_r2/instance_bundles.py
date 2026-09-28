@@ -21,6 +21,8 @@ def _size(value):
 
 def validate_bundle_options(options):
     """Validate one shared budget contract before import or model work."""
+    if type(options.get("template_projection_enabled", False)) is not bool:
+        raise ValueError("template_projection_enabled must be a boolean")
     defaults = {"max_concept_bundles": 12, "max_relation_bundles": 12,
                 "max_seeds_per_table": 8, "lexical_top_k": 8,
                 "max_candidates_per_bundle": 3, "max_bundle_bytes": 16000,

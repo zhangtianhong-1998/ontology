@@ -1,6 +1,6 @@
 # 路线 2 当前实现状态
 
-当前分支为 `codex/ontology-association-rebuild`。本轮设计与问题清单见[关联搜索与本体增量重构](ASSOCIATION_REBUILD_20260927.md)，完整合成实验的配置与复现方法见[全量实验说明](FRUIT_FULL_EXPERIMENT.md)。此前实验属于旧代码快照，不作为本轮验收结论。
+当前开发分支为 `codex/ontology-template-rebuild`。本轮增加定义投影、实例绑定、结构关系编译和可交互布局，需求与实验方法见[定义复用与实例绑定](TEMPLATE_BINDING_REDESIGN.md)。v8 冻结结果保留在 `codex/fruit-full-v8-results`，下面的旧实验结论不代表新全量实验已通过。
 
 ## 已实现
 

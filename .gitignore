@@ -29,6 +29,11 @@ route2/offline/
 .AppleDouble
 __MACOSX/
 fixtures/
+# Versioned regression inputs contain only synthetic topology and frozen test code.
+!route2/tests/fixtures/
+route2/tests/fixtures/*
+!route2/tests/fixtures/witness_executor_baseline.py
+!route2/tests/fixtures/viewer_v8_topology.json
 data/
 **/design/field_association/results-*.yaml
 *.csv

@@ -111,7 +111,7 @@ def _bounded_decision(packet):
 def _bounded_packets_and_limit(llm):
     bundles = _batch_packets(3)
     for bundle in bundles:
-        bundle['evidence_padding'] = '原始证据' * 500
+        bundle['evidence_padding'] = '原始证据' * 1000
     data = SimpleNamespace(snapshot_id='snap', evidence={})
     # Budget the same complete payload sent in production, including names and
     # role evidence. A duplicate fixture would drift when the contract grows.
