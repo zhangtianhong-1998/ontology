@@ -29,9 +29,6 @@ def main():
     parser.add_argument('--env-file', type=Path)
     parser.add_argument('--expect-model', default='deepseek-v4-flash')
     args = parser.parse_args()
-    # Detached shells may inherit SIGINT as ignored; keep the run stoppable.
-    signal.signal(signal.SIGINT, signal.default_int_handler)
-    signal.signal(signal.SIGTERM, signal.default_int_handler)
     if args.output.exists():
         parser.error('Output exists; choose a new directory')
     config = load_config(args.config)
@@ -57,6 +54,19 @@ def main():
                 'pid': os.getpid(), 'model': os.environ.get('ONTOLOGY_LLM_MODEL', 'mock')}
     print(json.dumps({'experiment_started': snapshot, 'output': str(args.output.resolve())}, ensure_ascii=False), flush=True)
     started = time.monotonic()
+    # Some model SDKs swallow coroutine cancellation. Termination must not
+    # silently continue to the next paid request; keep the last checkpoint.
+    def stop(signum, _frame):
+        if args.output.exists():
+            (args.output / 'experiment_snapshot.json').write_text(json.dumps(snapshot, ensure_ascii=False, indent=2))
+            (args.output / 'process_exit.json').write_text(json.dumps({
+                'status': 'interrupted', 'exit_code': 128 + signum,
+                'signal': signum, 'elapsed_seconds': round(time.monotonic() - started, 3),
+                'finished_at': dt.datetime.now(dt.timezone.utc).isoformat()}, indent=2))
+        print(f'Experiment stopped by signal {signum}; last checkpoint retained.', flush=True)
+        os._exit(128 + signum)
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
     exit_code = 1
     result = {}
     try:

@@ -1,5 +1,6 @@
 """Strong source-key declarations must override semantic-looking name tokens."""
 import asyncio
+from unittest.mock import patch
 
 from ontology_r2.column_role_inference import infer_column_role_candidates
 from ontology_r2.concept_candidates import _field_roles, field_role_conflicts
@@ -33,11 +34,29 @@ def test_static_rule_ids_stay_as_bindings_while_rule_contents_and_parameters_sur
         assert not roles.get("alias")
         assert set(roles["formula"]) == {"rule_json", "field_rule", "formula_column"}
         assert roles["scope"] == ["rule_type"]
-        # Resolved schema conflicts need no model request, even with a generic
-        # comment containing the word 'business' on the declared primary key.
-        llm = FakeLLM(error=AssertionError("no model call expected"))
-        report = asyncio.run(infer_column_role_candidates(data, llm, {"enabled": True}))
-        assert llm.packets == []
+        # Keys remain excluded, but heuristic rule/formula contents still need
+        # bounded review. An unresolved review must not discard these fields.
+        review_columns = {"rule_json", "field_rule", "formula_column"}
+        llm = FakeLLM({"unresolved_columns": sorted(review_columns)})
+        limits = {"enabled": True, "max_tables": 1, "max_columns_per_table": 3,
+                  "max_sample_rows": 3}
+        with patch.object(data, "db", wraps=data.db) as db:
+            report = asyncio.run(infer_column_role_candidates(data, llm, limits))
+            # Role review reads only the fixed source rows, without a new
+            # full scan or one query per column.
+            assert db.execute.call_count == 1
+            sql, positions = db.execute.call_args.args
+            assert "WHERE __r2_row IN (?, ?, ?)" in sql
+            assert positions == [1, 3, 5]
+        assert len(llm.packets) == report["coverage"]["model_calls_attempted"] == 1
+        packet = llm.packets[0]
+        assert {column["column"] for column in packet["columns"]} == review_columns
+        assert set(packet["role_review_columns"]) == review_columns
+        assert {row["row_number"] for row in packet["sample_rows"]} == {1, 3, 5}
+        assert all(set(row["values"]) == review_columns for row in packet["sample_rows"])
+        assert report["candidates"] == []
+        assert report["coverage"]["partial"]
+        assert _field_roles(table) == roles
         assert len(report["tables"][0]["role_conflicts"]) == 5
         built = build_semantic_cards(data, tmp_path / "cards.sqlite")
         assert built["coverage"]["definition_patterns_indexed"] == 4

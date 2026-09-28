@@ -68,10 +68,10 @@ instance_bundles:
   max_cards: 5000
   max_field_chars: 1024
   max_unknown_fields_per_table: 16
-  max_concept_bundles: 28
+  max_concept_bundles: 12
   max_pattern_seed_pool: 100
   seed_window_index: 0
-  max_relation_bundles: 8
+  max_relation_bundles: 4
   max_exploration_rules: 1
   lexical_top_k: 8
   max_candidates_per_bundle: 4
@@ -83,14 +83,14 @@ instance_bundles:
   max_joined_context_records: 3
   max_joined_context_rules: 256
   max_joined_context_value_chars: 2048
-  max_llm_bundles: 36
+  max_llm_bundles: 16
   concept_batch_size: 1
   relation_batch_size: 4
   max_repairs_per_bundle: 1
   max_definition_memberships: 1200000
   review: true
   template_projection_enabled: true
-  reserve_calls_for_followup: 20
+  reserve_calls_for_followup: 16
 fact_observations:
   enabled: true
   max_candidates_per_table: 50000
@@ -132,7 +132,7 @@ llm:
     mode: disabled
     parameter: thinking
     effort: medium
-  max_calls: 96
+  max_calls: 64
   max_reserved_tokens: 11000000
   max_input_bytes: 100000
   max_output_tokens: 12288

@@ -336,6 +336,16 @@ def compile_projection(data, profile, core, bundle, decision):
     if any("fixed_value" not in slot for slot in slots) and not decision.existing_type_id and not declared_class:
         if len(witnesses) < 2 or not any(len({item["slot_values"][slot["name"]] for item in bindings}) > 1 for slot in slots):
             raise ValueError("A new template requires observed variation, not one invented generalization")
+    if decision.root_type in {"Metric", "GeneralObject"} and not decision.existing_type_id and not declared_class:
+        shared_definition = decision.label in decision.definition and all(
+            any(decision.definition in str(entry["value"])
+                for entry in record.get("fields", {}).get("description", []))
+            for record in witnesses)
+        varying = any(len({item["slot_values"][slot["name"]] for item in bindings}) > 1 for slot in slots)
+        if len(witnesses) < 2 or not varying or not shared_definition:
+            raise ValueError(
+                "A new Metric or GeneralObject requires a quoted class_definition or multiple "
+                "varying witnesses sharing the same source definition including its class label")
     if decision.root_type == "Metric":
         for slot in slots:
             if slot["role"] == "measure" and len({item["slot_values"][slot["name"]] for item in bindings}) > 1:

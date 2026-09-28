@@ -1179,6 +1179,16 @@ def bundle_request_payload(data, profile, core, bundle):
             "current_relations": [{"id": item.id, "parent": item.parent} for item in core.relation_types[-12:]]}
 
 
+def _check_concept_action(decision, enable_template_projection):
+    """Keep configurable instances out of the legacy exact type path."""
+    if (enable_template_projection and decision.status == "proposed"
+            and decision.root_type in {"Metric", "GeneralObject"}
+            and decision.action != "project_template"):
+        raise ValueError(
+            "Template mode requires project_template for proposed Metric and GeneralObject; "
+            "quote the class definition and bind observed records, or return unresolved")
+
+
 def _compile_checked_projection(data, profile, core, bundle, projection):
     """Projection changes identity semantics, not the quantity classification rules."""
     records = _record_map(bundle)
@@ -1350,6 +1360,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 continue
             try:
                 if is_concept:
+                    _check_concept_action(decision, enable_template_projection)
                     if decision.action == "project_template":
                         if not enable_template_projection or decision.projection is None:
                             raise ValueError("Template projection is disabled or missing its contract")
@@ -1418,6 +1429,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                             decision = await llm.ask(
                                 "concept_bundle", concept_payload, ConceptBundleDecision)
                         try:
+                            _check_concept_action(decision, enable_template_projection)
                             if decision.status == "proposed" and decision.action == "project_template":
                                 if not enable_template_projection or decision.projection is None:
                                     raise ValueError("Template projection is disabled or missing its contract")
@@ -1431,9 +1443,10 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                             if attempt >= max_repairs_per_bundle:
                                 raise
                             identity_instruction = (
+                                "Metric and GeneralObject require project_template, including pure class definitions. "
                                 "For project_template, repair the projection contract, source quotes and "
                                 "observed witness bindings; do not add exact record alignments. "
-                                "For exact_definition, an exact alignment to one of "
+                                "Measure, Dimension and Term may use exact_definition with an exact alignment to one of "
                                 "exact_alignment_record_ids with a verbatim quote is required. "
                                 if enable_template_projection else
                                 "A proposed new concept requires an exact alignment to one of "

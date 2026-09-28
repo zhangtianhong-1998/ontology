@@ -124,8 +124,9 @@ TEMPLATE_INDUCTION_PROMPT = """当前任务是从记录中提取可复用定义�
 只有已经存在且本次没有新的匹配契约/绑定，才使用 no_change。no_change不能表示“建议以后将实例绑定到类”。不要为每个成员或展示主题另建子类。
 
 选择两种路径之一：
-A. 独立完整定义记录本身就是类（如通用量、维度定义）：action=exact_definition。
-Metric优先使用B，在定义成立时同时保留经营对象和度量槽位；只创建名称类型会丢失本任务需要的构成关系。
+A. 仅Measure/Dimension/Term的独立完整类定义可以action=exact_definition。
+Metric和GeneralObject的proposed结果必须走B的project_template契约；否则编译器拒绝。
+Metric须保留经营对象绑定及有来源的度量槽，不能仅在reason里声称有关系而省略projection。
 label选canonical_name_choices中的完整原名，definition和classification_quote复制该记录的完整说明。
 exact对齐只引用exact_alignment_record_ids；related_context不代表同一实体。ontology_level=type。
 Metric填写classification_basis=business_driven_metric及逐字经营对象business_object_quote，aggregation_operator=null；
@@ -138,7 +139,8 @@ B. 从配置/实例的说明或多个相容记录提取共同类：action=projec
 不要同时填写exact alignments。外层的label/root_type/definition等exact专用字段可保持默认。
 - label_evidence.quote用组成类名的短片段（如“接口”），每个片段必须真实出现于该列；不要用长句代替名称片段。
 - 若有明确类定义，definition和class_definition.quote必须是同一段逐字原文，且包括label。
-  没有类定义句时class_definition=null，必须由至少两个同表实际见证的变化支持抽象，不能编造普遍性。
+  新Metric/GeneralObject即使没有变化槽，也必须有逐字class_definition或多个同表见证的共同定义依据；
+  单条具体实例不能改一个action就冒充类。没有足够类定义或共同依据则unresolved。
 - witness_record_ids只能使用本包同表、非related_context的记录ID；它们均须匹配以下全部字段规则。
 - field_templates是完整原值的字面文本加{slot_name}。每个变化字段都要列出，未列出的语义字段将严格保持不变。
   名称、说明、同义词、实例坐标、查询示例等只要在见证间变化就要逐一处理；公式、单位、真实计算参数不能通配。
