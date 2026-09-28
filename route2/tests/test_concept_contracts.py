@@ -86,8 +86,9 @@ def test_period_parameters_preserve_identity_without_equal_coordinate_filter():
 @pytest.mark.parametrize("value", ["2025", "2025Q1", "2025-10", "2025年10月", ""])
 def test_observation_period_is_not_a_definition_parameter(value):
     data, bundle, decision = _fixture(period=value)
-    with pytest.raises(ValueError, match="Definition parameter requires"):
+    with pytest.raises(ValueError, match="Definition parameter requires") as error:
         compile_concept(data, PROFILE, bundle, decision, {})
+    assert "field 'period_scope' lacks a checked declaration" in str(error.value)
 
 
 def test_ordinary_scope_cannot_be_erased_as_a_parameter():

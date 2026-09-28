@@ -555,7 +555,9 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         if role == "parameter":
             bases = [_parameter_basis(data, record, key, effective_scope[key]) for record in exact_records]
             if not all(bases):
-                raise ValueError("Definition parameter requires a complete source value and a checked grain/calculation declaration")
+                raise ValueError(
+                    "Definition parameter requires a complete source value and a checked "
+                    f"grain/calculation declaration; field {key!r} lacks a checked declaration")
             parameter_evidence[key] = bases
             continue
         if role != "unrestricted":

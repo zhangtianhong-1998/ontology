@@ -415,10 +415,15 @@ def _template_preview(run, max_nodes):
             "notice": "绑定实例仅作有限预览，不进入本体主图；没有预览不表示不存在。"}
 
 
+def validate_viewer_limit(max_nodes):
+    """Fail on invalid configuration before any import or paid model request."""
+    if type(max_nodes) is not int or not 10 <= max_nodes <= 1000:
+        raise ValueError("max_nodes must be an integer between 10 and 1000")
+
+
 def render_viewer(run, max_nodes=200, *, manifest_override=None):
     run = Path(run).resolve()
-    if not 10 <= max_nodes <= 1000:
-        raise ValueError("max_nodes must be between 10 and 1000")
+    validate_viewer_limit(max_nodes)
 
     def read(name, fallback):
         file = run / name

@@ -63,7 +63,8 @@ field_templates 只能是原文固定片段与 {snake_case_slot} 占位符，slo
 例如有原文证明时，水果合格率 Metric 可以有水果 GeneralObject 和合格率 Measure 成分；
 components 的 label/definition 必须分别逐字引用对应原文。Measure 必须是独立通用量或口径，
 不能用 SUM 操作名或去掉水果前缀代替定义证据。通过 slots.target_component 连接成分；
-固定成分也要提供 slot，无须为了固定值编造 field_template。计算依赖另外核对真实公式。
+每个component都必须有同角色slot.target_component指向它，值必须等于components.name；禁止生成孤立成分。
+固定成分也要提供slot，quote引用实际成分短值，无须为固定值编造field_template。计算依赖另外核对真实公式。
 具体看板记录可匹配看板类，名称与编号留在 record_identity/reference 槽位；
 有明确看板类说明时从说明抽取类型，再将当前看板作为实例绑定，不把展示主题升为看板子类。
 引用编码不自动成为类型参数。信息不足时使用 exact_definition 原路径或 unresolved，不能补造类定义。
@@ -146,12 +147,15 @@ B. 从配置/实例的说明或多个相容记录提取共同类：action=projec
   名称、说明、同义词、实例坐标、查询示例等只要在见证间变化就要逐一处理；公式、单位、真实计算参数不能通配。
 - slots.name使用英文snake_case；evidence引用某个witness实际捕获到的值，编码和中文名不能共用同一槽。
   source_column只用于“槽值等于该列完整值”，不要将“苹果合格率”列指定为“苹果”槽的source_column。
-  固定成分也要有slot，但不需要field_template；其evidence必须逐字引用成分/实际值。
+  固定成分也要有slot，但不需要field_template；其evidence.quote引用实际成分短值，
+  例如“水果”，不要把“经营对象为水果”整句当作固定槽值。短值必须逐字存在于引文列。
 - 具体名称/编号使用record_identity/reference；地区、具体年份等使用dimension；经营对象用business_object。
   一个完整配置JSON可以用source_column约束的reference槽保留，不生成JSON内部路径或复杂正则。
 - components只放共同类的独立语义成分，不能把共同类自身再复制成component。
   components的label和definition必须分别等于各自的引文quote。Measure成分需要独立的通用定义来源。
-  已有相容成分用slots.target_type_id连接；新成分用slots.target_component连接。
+  已有相容成分用slots.target_type_id连接；新成分用slots.target_component连接，值精确使用components.name。
+  每个component至少有一个同角色slot.target_component指向它；没有连接的component会被编译器拒绝。
+  若连接缺少来源依据，删除该component并保留未决槽，不能留下孤立类型。
 - Metric须有business_object槽及原文依据，可同时绑定独立Measure、Dimension。
   Measure不绑定具体经营对象；SUM/AVG/过滤/RANK是运算，不是量本身。时间、预算、排名可以是量的口径。
 - 保留definition_parameters中的已声明计算参数，值必须是完整且保持不变的来源值。
@@ -259,7 +263,8 @@ class StructuredLLM:
                 "经营对象成员、地区与具体期间属于观察绑定，不能成为新的类名。Measure必须有独立通用定义，操作符不能成类。"
                 "Metric必须有原文经营对象依据与槽位；缺某个度量端点可保留未决，不能从名称推测公式依赖。"
                 "逐一核对全部变化字段、槽值、固定片段、单位、公式、真实计算参数和作用域；编码不等于中文名称。"
-                "components是独立成分，不得复制主类型充数；相似、技术连接与模型解释均不证明来源身份。"
+                "components是独立成分，不得复制主类型充数；每个成分都须由同角色slot.target_component精确引用其name。"
+                "固定槽quote应为源文中的实际成分短值。相似、技术连接与模型解释均不证明来源身份。"
                 "只评估本候选实际声明的契约，其他召回记录不必合并。成立则accepted=true，否则errors逐项指出矛盾或缺证。")
         prompt = SYSTEM + "\n" + task_prompt
         if task in ("plan", "final_plan", "review"):

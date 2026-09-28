@@ -94,6 +94,28 @@ def test_projection_separates_quantity_object_and_observed_bindings():
         ("苹果", "华东"), ("橙子", "华南")}
 
 
+def test_components_require_explicit_same_role_slot_connections():
+    data, bundle = setup()
+    proposed = decision()
+    proposed.slots[0].target_component = None
+    with pytest.raises(ValueError, match="Orphan projected components: operating_object") as error:
+        compile_projection(data, PROFILE, BuildPlan(), bundle, proposed)
+    assert "same-role slot.target_component" in str(error.value)
+    # An explicit reference to the wrong semantic role does not remove the gap.
+    proposed.slots[1].target_component = "operating_object"
+    with pytest.raises(ValueError, match="different semantic role"):
+        compile_projection(data, PROFILE, BuildPlan(), bundle, proposed)
+    proposed.slots[1].target_component = None
+    proposed.slots[0].target_component = "operating_object"
+    _, template, _ = compile_projection(data, PROFILE, BuildPlan(), bundle, proposed)
+    assert all(slot["target_type_id"] for slot in template["slots"] if slot["target_component"])
+    # Removing an ungrounded component is also valid; an untyped slot remains pending.
+    proposed.slots[0].target_component = None
+    proposed.components = [component for component in proposed.components if component.name != "operating_object"]
+    _, template, _ = compile_projection(data, PROFILE, BuildPlan(), bundle, proposed)
+    assert template["slots"][0]["target_type_id"] is None
+
+
 def test_reuse_requires_formula_unit_grain_and_complete_definition_compatibility():
     data, bundle = setup()
     _, template, _ = compile_projection(data, PROFILE, BuildPlan(), bundle, decision())

@@ -81,6 +81,7 @@ def test_empty_single_record_projection_cannot_bypass_class_evidence(root):
     proposed.root_type = root
     proposed.witness_record_ids = ["row1"]
     proposed.slots = []
+    proposed.components = []
     proposed.field_templates = []
     with pytest.raises(ValueError, match="requires a quoted class_definition"):
         compile_projection(data, PROFILE, BuildPlan(), bundle, proposed)

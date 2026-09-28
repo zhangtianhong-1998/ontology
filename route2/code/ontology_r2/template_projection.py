@@ -151,12 +151,25 @@ def match_projection(template, record):
         return None
     slots = {item["name"]: item for item in template["slots"]}
     captures = {name: slot["fixed_value"] for name, slot in slots.items() if "fixed_value" in slot}
-    for item in template["field_templates"]:
-        if item["column"] not in values:
-            return None
-        captures = _match_text(item["template"], values[item["column"]], slots, values, captures)
-        if captures is None:
-            return None
+    pending = list(template["field_templates"])
+    while pending:
+        progressed = False
+        for item in pending[:]:
+            if item["column"] not in values:
+                return None
+            try:
+                matched = _match_text(item["template"], values[item["column"]], slots, values, captures)
+            except ValueError as exc:
+                if str(exc) == "Adjacent unbound slots are ambiguous":
+                    continue  # An anchored field may bind these same slots first.
+                raise
+            if matched is None:
+                return None
+            captures = matched
+            pending.remove(item)
+            progressed = True
+        if not progressed:
+            raise ValueError("Adjacent unbound slots are ambiguous")
     if not set(slots) <= set(captures):
         return None
     return {"record_id": record["record_id"], "source_table": record["table"],
@@ -202,7 +215,7 @@ def compile_projection(data, profile, core, bundle, decision):
         fragments.append(item.quote)
     # Abstract names can concatenate grounded fragments (fruit + quality rate),
     # but cannot erase a qualifier and pretend the result was an exact record.
-    label_remaining = decision.label
+    label_remaining = "" if any(decision.label in fragment for fragment in fragments) else decision.label
     for fragment in sorted(fragments, key=len, reverse=True):
         label_remaining = label_remaining.replace(fragment, "")
     if label_remaining.strip(" -_·/（）()"):
@@ -252,6 +265,7 @@ def compile_projection(data, profile, core, bundle, decision):
         if not re.fullmatch(r"[a-z][a-z0-9_]*", slot["name"]):
             raise ValueError("Projection slot names must be snake_case")
         witness = slot.pop("evidence")
+        slot["value_evidence"] = witness
         if witness["record_id"] not in records:
             raise ValueError("Slot evidence refers outside its bundle")
         slot["evidence_ids"] = [_evidence(data, records[witness["record_id"]], witness["column"], witness["quote"])]
@@ -268,6 +282,13 @@ def compile_projection(data, profile, core, bundle, decision):
             slot["evidence_ids"] = sorted(set(slot["evidence_ids"] + component["evidence_ids"]))
         if slot["target_type_id"] and slot["target_type_id"] not in known:
             raise ValueError("Slot target must be an existing accepted object type")
+    orphan_components = sorted(set(components) - {slot["target_component"] for slot in slots
+                                                   if slot["target_component"]})
+    if orphan_components:
+        raise ValueError(
+            "Orphan projected components: " + ", ".join(orphan_components)
+            + "; set a same-role slot.target_component to each exact component.name, "
+            "or remove the component if its connection lacks source evidence")
     field_templates = [item.model_dump() for item in decision.field_templates]
     if len({item["column"] for item in field_templates}) != len(field_templates):
         raise ValueError("Duplicate projected field")
@@ -281,9 +302,10 @@ def compile_projection(data, profile, core, bundle, decision):
             raise ValueError("Projected field is absent from the source record")
         if item["column"] in protected and _SLOT.search(item["template"]):
             raise ValueError("Formula, unit and calculation operators cannot be wildcarded")
-        if not _SLOT.search(item["template"]) or re.sub(_SLOT, "", item["template"]).count("{"):
+        if _SLOT.search(item["template"]) and re.sub(_SLOT, "", item["template"]).count("{"):
             raise ValueError("A projected field needs declared literal placeholders")
-    changed = {item["column"] for item in field_templates}
+    # Explicit literal fields remain invariants, including formula/unit parameters.
+    changed = {item["column"] for item in field_templates if _SLOT.search(item["template"])}
     template = {"snapshot_id": data.snapshot_id,
                 "source_table": witnesses[0]["table"], "root_type": decision.root_type,
                 "label": decision.label, "definition": decision.definition,
@@ -315,12 +337,19 @@ def compile_projection(data, profile, core, bundle, decision):
     for source_slot, compiled_slot in zip(decision.slots, slots):
         if "fixed_value" in compiled_slot:
             continue
-        # A citation proves this captured value, not an implicit name/code
-        # translation. Related records cannot stand in for a matching witness.
+        # Context is allowed, but the literal captured value must be supported
+        # on this witness's actual matching path; never infer a name/code map.
         citation = source_slot.evidence
         binding = bindings_by_record.get(citation.record_id)
-        if binding is None or binding["slot_values"].get(source_slot.name) != citation.quote:
-            raise ValueError("Variable slot evidence must equal its captured value in the cited witness")
+        captured = binding["slot_values"].get(source_slot.name) if binding else None
+        field_paths = {item["column"] for item in field_templates
+                       if source_slot.name in _SLOT.findall(item["template"])}
+        if source_slot.source_column:
+            field_paths.add(source_slot.source_column)
+        if not captured or captured not in citation.quote or citation.column not in field_paths:
+            raise ValueError(
+                "Variable slot evidence must support its captured value in the cited witness and matching field path")
+        compiled_slot["witness_value"] = captured
     # A new generalized matcher must be witnessed by variation. A separately
     # accepted type can instead supply a structural instantiation contract.
     declared_class = False

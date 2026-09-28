@@ -165,4 +165,4 @@ processing:
   max_references_per_record: 100
 visualization:
   enabled: true
-  max_nodes: 2000
+  max_nodes: 1000
