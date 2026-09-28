@@ -1,0 +1,33 @@
+synthetic: true
+schema: fruit_market
+source: Hand-coded deterministic fixture from user-supplied fruit-domain prompt; no
+  real data
+table_count: 23
+row_count: 1102238
+counts:
+  fruit_market_api: 2500
+  fruit_api_tag: 95813
+  fruit_op_log: 5000
+  fruit_api_input_param: 151937
+  fruit_api_output_param: 274444
+  fruit_dashboard_card: 1000
+  fruit_dim_definition: 80
+  fruit_dim_member: 5000
+  fruit_dim_field: 3000
+  fruit_dim_anchor: 200
+  fruit_dim_combo_rule: 500
+  fruit_measure_def: 5000
+  fruit_metric_detail: 16000
+  fruit_metric_attr: 16000
+  fruit_metric_anchor: 9
+  fruit_param_ref_rule: 433645
+  fruit_business_rule: 2000
+  fruit_db_connection: 10
+  fruit_wide_table_def: 200
+  fruit_wide_table_column: 50000
+  fruit_synonym_dict: 5000
+  fruit_org_dim_data: 20000
+  fruit_import_staging_temp: 14900
+assumption: Prompt lists 22 tables; fruit_import_staging_temp is the synthetic 23rd
+  table
+semantic_status: Test fixture only; not ground truth for ontology quality

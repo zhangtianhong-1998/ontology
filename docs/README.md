@@ -13,6 +13,10 @@
 ## 路线2专题
 
 - [完成状态与待实现范围](route2/STATUS.md)
+- [本轮关联重构与需求核对](route2/ASSOCIATION_REBUILD_ACCEPTANCE.md)
+- [完整输入实验及失败记录](route2/FRUIT_FULL_EXPERIMENT.md)
+- [语义样本核查方法](route2/SEMANTIC_SAMPLE_AUDIT.md)
+- [记录关系执行性能核查](route2/WITNESS_EXECUTION_AUDIT.md)
 - [安装、运行与实现边界](route2/IMPLEMENTED.md)
 - [LLM 流式接口与思考模式配置](route2/LLM_CONFIGURATION.md)
 - [RIGOR 源码对照](route2/RIGOR_COMPARISON.md)

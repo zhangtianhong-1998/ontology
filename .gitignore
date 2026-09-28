@@ -36,3 +36,7 @@ data/
 *.pptx
 *.zip
 *.tar.gz
+
+# Explicitly authorized synthetic experiment snapshot; other local runs stay ignored.
+!experiments/fruit-full-v8-20260928/synthetic-data.tar.gz
+!experiments/fruit-full-v8-20260928/extraction-results.tar.gz

@@ -35,7 +35,7 @@
 
 `calculation_contracts.yaml` 保存完整原式、表达式树、操作数角色、类型绑定和未决原因。`depends_on` 是一级关系，`calculation_dependency` 是派生关系；分子、分母、被减数、减数等是关系参数，模型不能自行造谓词名。
 
-DataHub 在此版本负责元数据格式互通。元数据图由本地程序从导入内容构建与查询；没有运行 DataHub 服务，也不声称 DataHub 自动发现了隐式关联。`datahub-metadata.json` 是本地文件，不会上传到网站。
+本地适配器采用 DataHub 兼容 URN 与导出格式。元数据图由本地程序从导入内容构建与查询；没有运行 DataHub 服务，也不声称 DataHub 自动发现了隐式关联。`datahub-metadata.json` 是本地文件，不会上传到网站。
 
 当前 DataHub 导出范围为表属性、列定义和声明主键，仅包含 `datasetProperties`、`schemaMetadata` 两类 aspect。技术关联、外键及其他约束保留在本地 `meta_graph.yaml`，尚未导出为 DataHub 关联或血缘。组包读取本地图时保留 `declared`、`checked_technical`、`observed_subset` 原始状态及数字值重合风险；这些技术证据不能直接作为业务关系。
 

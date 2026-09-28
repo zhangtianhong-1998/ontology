@@ -1,0 +1,317 @@
+counts:
+  assertions: 1400
+  definition_memberships: 22913
+  evidence: 18480
+  objects: 590
+  record_alignments: 556
+extraction:
+  records_examined: 23
+  not_applicable: 0
+  empty_reference: 0
+  accepted: 23
+  unresolved: 0
+  text_groups: 0
+  unprocessed_records: 0
+  semantic_budget_exhausted: false
+  plans:
+  - plan_id: plan:f489be94844e19b81afe1075
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    matched_record_ratio: 1.0
+  - plan_id: plan:70e95fa461ccbad6378da1d0
+    total_source_records: 274444
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 274443
+    matched_record_ratio: 1.0
+  - plan_id: plan:7b46382cd375bae188598417
+    total_source_records: 95813
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 95812
+    matched_record_ratio: 1.0
+  - plan_id: plan:5528bb1516c82cefffb0b6c1
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    matched_record_ratio: 1.0
+  - plan_id: plan:77583897132e19f7ea8debe3
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    matched_record_ratio: 1.0
+  - plan_id: plan:ff7f21a32545f892dbdf4cf2
+    total_source_records: 500
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 499
+    matched_record_ratio: 1.0
+  - plan_id: plan:5a85f8012a8ac993d3a6b9ba
+    total_source_records: 274444
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 274443
+    matched_record_ratio: 1.0
+  - plan_id: plan:48289645775cd841012e1f1d
+    total_source_records: 5000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 4999
+    matched_record_ratio: 1.0
+  - plan_id: plan:0ef4cfbe0603f6ca1439e3bf
+    total_source_records: 500
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 499
+    matched_record_ratio: 1.0
+  - plan_id: plan:9071ba7cbe4f1a8857b87eaf
+    total_source_records: 95813
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 95812
+    matched_record_ratio: 1.0
+  - plan_id: plan:cfb10ef0785fd36cbda8e852
+    total_source_records: 151937
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 151936
+    matched_record_ratio: 1.0
+  - plan_id: plan:a17b7d89b5eb0f7b994b3fdc
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    matched_record_ratio: 1.0
+  - plan_id: plan:6302b0349a953938c554de38
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    matched_record_ratio: 1.0
+  - plan_id: plan:07f9c87b0a14aa8ef4733148
+    total_source_records: 16000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 15999
+    matched_record_ratio: 1.0
+  - plan_id: plan:de05a7519159e9db87658c45
+    total_source_records: 16000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 15999
+    matched_record_ratio: 1.0
+  - plan_id: plan:afa651824bcbfe8ff1e7991d
+    total_source_records: 274444
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 274443
+    matched_record_ratio: 1.0
+  - plan_id: plan:06d3c39bfccd15a1235a6977
+    total_source_records: 16000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 15999
+    matched_record_ratio: 1.0
+  - plan_id: plan:92516c4d5cbfad8377eda255
+    total_source_records: 500
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 499
+    matched_record_ratio: 1.0
+  - plan_id: plan:1c1d7b379e15aadfef41376c
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    matched_record_ratio: 1.0
+  - plan_id: plan:8d6a2aeba8ee34bc4ab377bb
+    total_source_records: 95813
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 95812
+    matched_record_ratio: 1.0
+  - plan_id: plan:5774c820f2aa518bfc6fbb0c
+    total_source_records: 151937
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 151936
+    matched_record_ratio: 1.0
+  - plan_id: plan:d753eacd12b4367a02a534e6
+    total_source_records: 16000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 15999
+    matched_record_ratio: 1.0
+  - plan_id: plan:ee67e97fbcd4b50eea6fd7f6
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    matched_record_ratio: 1.0
+materialized_records: 69
+preview_materialized_records: 69
+llm:
+  mode: agentscope
+  model: deepseek-v4-flash
+  framework: agentscope-2.0.8
+  prompt_hash: 760712d0a294d7de74a1d316836c55703e6d0fc044ee12b25823ee3e81114b67
+  transport:
+    stream: false
+    thinking:
+      mode: disabled
+      parameter: thinking
+      effort: medium
+  calls: 800
+  reserved_token_upper_bound: 66203833
+  provider_reported_tokens: 18747517
+  provider_wire_responses: 800
+  provider_usage_reported_responses: 800
+  provider_incomplete_responses: 5
+  provider_finish_reasons:
+    tool_calls: 791
+    stop: 4
+    length: 5
+  cache_hits: 23
+semantic_quality: synthetic_only
