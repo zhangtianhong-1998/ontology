@@ -185,6 +185,8 @@ def test_checked_membership_can_bind_definition_but_never_claims_exact_identity(
             checked_rules=rules, memberships=[member]))
         assert result["coverage"]["accepted"] == 1
         assert result["bindings"][0]["identity_claim"] == "none"
+        assert result["bindings"][0]["contract"]["endpoints"]["target"]["mapping_kind"] == (
+            "shares_definition_type_template")
     finally:
         data.close()
 

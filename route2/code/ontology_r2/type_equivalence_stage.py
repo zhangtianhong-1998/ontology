@@ -22,6 +22,7 @@ def _packet(data, candidate, types):
             "label": item.label, "definition": item.definition,
             "unit": item.unit, "applicability_scope": item.applicability_scope,
             "definition_parameters": item.definition_parameters,
+            "identity_qualifiers": item.identity_qualifiers,
             "complete_source_definitions": [
                 {"role": role, "evidence_id": fragment["evidence_id"],
                  "value": fragment["value"], "source_ref": fragment["source_ref"]}

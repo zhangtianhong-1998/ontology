@@ -86,6 +86,11 @@ def _endpoints(types, source_id, target_id, role):
     common = source.applicability_scope.keys() & target.applicability_scope.keys()
     if any(source.applicability_scope[key] != target.applicability_scope[key] for key in common):
         raise ValueError("Binding endpoint applicability scopes conflict")
+    source_identity = getattr(source, "identity_qualifiers", {})
+    target_identity = getattr(target, "identity_qualifiers", {})
+    if any(source_identity[key] != target_identity[key]
+           for key in source_identity.keys() & target_identity.keys()):
+        raise ValueError("Binding endpoint identity qualifiers conflict")
 
 
 def _publish_binding(data, plan, source_id, slot, contract):
@@ -363,7 +368,7 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
     plan = BuildPlan.model_validate(core).model_copy(deep=True)
     types = {item.id: item for item in plan.object_types}
     role = purpose["role"]
-    endpoints, rule_proofs = {}, []
+    endpoints, endpoint_matches, rule_proofs = {}, {}, []
     for side in ("source", "target"):
         rule = rules.get(candidate.get(side + "_rule_id"))
         expected = candidate[side + "_definition"]
@@ -392,7 +397,7 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
         scope = {remote: witness.get(local) for local, remote in (rule.get("scope_bindings") or {}).items()}
         if scope != expected.get("lookup_scope", {}):
             raise ValueError("Configuration reference lookup scope differs from its checked rule")
-        endpoints[side], _, _ = _endpoint(data, plan, candidate, side, aligned)
+        endpoints[side], endpoint_matches[side], _ = _endpoint(data, plan, candidate, side, aligned)
         rule_proofs.append({"rule_id": rule["rule_id"], "source": rule["source"], "target": rule["target"],
                             "selector": rule.get("selector") or {}, "scope_bindings": rule.get("scope_bindings") or {},
                             "declaration": declaration,
@@ -412,10 +417,10 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
                 "configuration_table": candidate["configuration_table"],
                 "configuration_row_number": witness["__r2_row"],
                 "endpoints": {
-                    "source": {"type_id": source.id, **candidate[
-                        "source_definition" if source.id == left.id else "target_definition"]},
-                    "target": {"type_id": target.id, **candidate[
-                        "target_definition" if target.id == right.id else "source_definition"]}},
+                    "source": {**candidate["source_definition" if source.id == left.id else "target_definition"],
+                               **endpoint_matches["source" if source.id == left.id else "target"], "type_id": source.id},
+                    "target": {**candidate["target_definition" if target.id == right.id else "source_definition"],
+                               **endpoint_matches["target" if target.id == right.id else "source"], "type_id": target.id}},
                 "declaration": purpose, "reference_paths": rule_proofs,
                 "selector": candidate.get("selector", {}),
                 "support_scope": "checked_reference_pattern_and_observed_definition_pair"}

@@ -9,15 +9,16 @@ from __future__ import annotations
 
 import re
 
-from .column_roles import classify_columns
+from .column_roles import CONTEXT_ROLES, classify_columns
 from .concept_candidates import _field_roles
 from .storage import qi
 
 
 _TIME = re.compile(r"(?:^|_)(?:year|quarter|month|period|date|time|week)(?:_|$)|年|季|月|期间|账期|会计期", re.I)
 _DIMENSION = re.compile(
-    r"(?:^|_)(?:dim|dimension|region|area|country|city|fruit|product|"
-    r"category|channel|customer|market|org)(?:_|$)|维度|地区|区域|国家|城市|水果|品类|渠道|客户|市场|组织", re.I)
+    r"(?:^|_)(?:dim|dimension|region|area|country|city|product|"
+    r"category|channel|customer|market|org)(?:_|$)|维度|地区|区域|国家|城市|品类|渠道|客户|市场|组织", re.I)
+_COORDINATE_KEY = re.compile(r"(?:^|_)(?:code|key)$|(?:编码|代码)$", re.I)
 _VALUE = re.compile(
     r"(?:^|_)(?:amount|revenue|profit|cost|quantity|qty|price|volume|"
     r"count|rate|ratio|total|sales|value)(?:_|$)|金额|收入|利润|成本|"
@@ -73,15 +74,20 @@ def classify_row_purpose(table, *, accepted_dimension_fields=()):
     for item in table.get("inferred_semantic_roles", ()):
         if item.get("status") == "source_verified_role_candidate":
             inferred.setdefault(item["column"], set()).add(item["role"])
+    identity_fields = set(roles.get("identity", ()))
     for name in table["column_names"]:
-        if name not in safe or name in pk:
+        if name not in safe or (name in pk and name not in identity_fields):
+            continue
+        if (name not in accepted_dimension_fields
+                and any(name in roles.get(role, ()) for role in CONTEXT_ROLES - {"identity"})):
             continue
         column = columns[name]
         comment = str(column.get("column_comment") or "")
         proposed = inferred.get(name, set())
         # Match each source independently: appending an empty comment changes
         # the boundary of plain names such as "value" and "region".
-        numeric_business_value = bool((_VALUE.search(name) or _VALUE.search(comment)
+        numeric_business_value = bool(name not in identity_fields and
+                                     (_VALUE.search(name) or _VALUE.search(comment)
                                       or "numeric_business_value" in proposed) and
                                       _numeric_value(column, profiles.get(name, {})))
         temporal_shape = _temporal_value(column, profiles.get(name, {}))
@@ -92,7 +98,11 @@ def classify_row_purpose(table, *, accepted_dimension_fields=()):
                               or "business_time" in proposed)
         if time_candidate and (temporal_shape or not numeric_business_value):
             times.append(name)
-        if (_DIMENSION.search(name) or _DIMENSION.search(comment) or name in accepted_dimension_fields
+        # A non-PK business code is a grain candidate, regardless of the
+        # domain noun in its name. It is not an accepted Dimension or a join.
+        if (_DIMENSION.search(name) or _DIMENSION.search(comment)
+                or _COORDINATE_KEY.search(name) or _COORDINATE_KEY.search(comment)
+                or name in accepted_dimension_fields or name in identity_fields
                 or "dimension_coordinate" in proposed):
             dimensions.append(name)
         if numeric_business_value and name not in times:
@@ -129,6 +139,7 @@ def classify_row_purpose(table, *, accepted_dimension_fields=()):
             "evidence_columns": {"name": names, "definition": list(roles.get("description", ())),
                                  "formula": list(roles.get("formula", ())),
                                  "business_time": times, "dimension_coordinate": dimensions,
+                                 "identity_coordinate": sorted(identity_fields & set(dimensions)),
                                  "numeric_business_value": values},
             "scope": "imported_csv_snapshot_only",
             "classification_granularity": "table_level_candidate_from_column_evidence",

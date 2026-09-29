@@ -223,6 +223,116 @@ def test_incomplete_packet_or_no_budget_is_explicitly_unresolved(tmp_path):
         data.close()
 
 
+def _large_context(data, count=12):
+    return {'edges': [
+        {'type': 'table_has_column', 'source': 'fruit.sales_fact', 'target': 'fruit.sales_fact.id'},
+        {'type': 'table_has_column', 'source': 'catalog.definitions', 'target': 'catalog.definitions.id'},
+        *[{'type': 'technical_link', 'status': 'checked_technical', 'snapshot_id': data.snapshot_id,
+           'source': 'fruit.sales_fact.id', 'target': 'catalog.definitions.id',
+           'selector': {'complete_condition': str(index) + 'x' * 1700},
+           'verification': {'scan_scope': 'full_input', 'checks': {'unique_matches': index + 1}}}
+          for index in range(count)]]}
+
+
+def test_fact_context_is_split_on_complete_links_and_every_page_agrees(tmp_path):
+    data = _dataset(tmp_path)
+    try:
+        graph = _large_context(data)
+        llm = _LLM()
+        _, result = _induce(data, llm, association_context=graph, max_packet_bytes=6000)
+        assert len(llm.calls) > 1
+        assert result['coverage']['accepted_templates'] == 1
+        assert result['coverage']['model_calls'] == len(llm.calls)
+        assert result['steps'][0]['context_pages_reviewed'] == len(llm.calls)
+        observed = [link for packet in llm.calls for link in packet['checked_association_conditions']]
+        assert len(observed) == 12
+        assert {link['selector']['complete_condition'] for link in observed} == {
+            edge['selector']['complete_condition'] for edge in graph['edges'][2:]}
+        assert all(packet['source_declaration']['value'] == '水果销售收入' for packet in llm.calls)
+        assert [row['values']['水果销售收入'] for packet in llm.calls for row in packet['sample_rows']] == ['100', '120']
+        import json
+        assert all(len(json.dumps(packet, ensure_ascii=False).encode()) <= 6000 for packet in llm.calls)
+    finally:
+        data.close()
+
+
+def test_fact_context_page_disagreement_cannot_publish_partial_identity(tmp_path):
+    class Disagree(_LLM):
+        async def ask(self, task, payload, schema):
+            result = await super().ask(task, payload, schema)
+            return result if len(self.calls) == 1 else schema(status='unresolved', reason='conflicting evidence')
+
+    data = _dataset(tmp_path)
+    try:
+        _, result = _induce(data, Disagree(), association_context=_large_context(data), max_packet_bytes=6000)
+        assert result['field_templates'] == []
+        assert result['steps'][0]['reason'] == 'fact_schema_context_pages_disagree'
+    finally:
+        data.close()
+
+
+def test_fact_context_preflights_all_pages_against_stage_call_limit(tmp_path):
+    data = _dataset(tmp_path)
+    try:
+        _, result = _induce(data, _NoLLM(), association_context=_large_context(data),
+                           max_packet_bytes=6000, max_calls=1)
+        assert result['coverage']['model_calls'] == 0
+        assert result['steps'][0]['reason'] == 'fact_schema_call_budget_exhausted'
+    finally:
+        data.close()
+
+
+def test_indivisible_fact_evidence_remains_complete_and_does_not_call_model(tmp_path):
+    data = _dataset(tmp_path)
+    try:
+        graph = _large_context(data, count=1)
+        graph['edges'][-1]['selector']['complete_condition'] = 'x' * 20000
+        _, result = _induce(data, _NoLLM(), association_context=graph, max_packet_bytes=6000)
+        step = result['steps'][0]
+        assert result['coverage']['model_calls'] == 0 and result['field_templates'] == []
+        assert step['budget_kind'] == 'input_bytes' and step['exceeded_limit'] == 'max_packet_bytes'
+        assert step['packet_bytes'] > step['max_packet_bytes']
+        assert len(graph['edges'][-1]['selector']['complete_condition']) == 20000
+    finally:
+        data.close()
+
+
+def test_fact_packet_preflights_full_request_envelope(tmp_path):
+    from ontology_r2.llm import StructuredLLM
+
+    data = _dataset(tmp_path)
+    try:
+        fixture = tmp_path / 'responses.yaml'; fixture.write_text('{}')
+        llm = StructuredLLM({'mode': 'mock', 'responses': str(fixture),
+                             'max_input_bytes': 100, 'max_calls': 2}, tmp_path)
+        _, result = _induce(data, llm, max_packet_bytes=100000)
+        assert llm.calls == result['coverage']['model_calls'] == 0
+        assert result['steps'][0]['exceeded_limit'] == 'max_input_bytes'
+    finally:
+        data.close()
+
+
+def test_fact_schema_retry_cannot_exceed_stage_call_budget(tmp_path):
+    from ontology_r2.llm import StructuredLLM
+
+    class RetryingLLM(StructuredLLM):
+        async def ask(self, task, payload, schema):
+            self.admit({})
+            self.admit({})  # Simulate a retry through the real shared admission.
+            raise AssertionError('The stage ceiling must reject this retry')
+
+    data = _dataset(tmp_path)
+    try:
+        fixture = tmp_path / 'responses.yaml'; fixture.write_text('{}')
+        llm = RetryingLLM({'mode': 'mock', 'responses': str(fixture), 'max_calls': 10}, tmp_path)
+        _, result = _induce(data, llm, max_calls=1)
+        assert llm.calls == result['coverage']['model_calls'] == 1
+        assert result['steps'][0]['budget_kind'] == 'shared_calls_or_tokens'
+        assert result['field_templates'] == [] and not llm._call_ceilings
+    finally:
+        data.close()
+
+
 def test_changed_checked_association_condition_invalidates_template(tmp_path):
     data = _dataset(tmp_path)
     try:

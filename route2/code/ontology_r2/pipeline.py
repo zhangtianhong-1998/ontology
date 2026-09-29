@@ -784,6 +784,8 @@ async def build(config, output):
                                       + config_decisions.get("bindings", []),
                     calculation_contracts=calculations, concepts=group_result["concepts"],
                     record_alignments=group_result["record_alignments"], memberships=memberships["memberships"],
+                    definition_templates=memberships.get("templates", []),
+                    record_relations=group_result["concept_relations"],
                     fact_instances=fact_binding["instances"],
                     **{key: value for key, value in instance_options.items() if key != "enabled"})
                 if task:

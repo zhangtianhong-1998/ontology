@@ -231,26 +231,20 @@ def _conditioned_pairs(data, fields, max_values):
                 columns = set(info["column_names"])
                 if reference.endswith("_id"):
                     targets = info.get("pk") or []
-                elif cue == "dim":
-                    targets = [name for name in info["column_names"]
-                               if name.endswith("_code") and
-                               ("dim" in _tokens(name) or name == "member_code")]
                 else:
                     targets = [name for name in info["column_names"]
-                               if name == cue + "_code" or name == cue + "_name"]
+                               if name == cue + "_name" or
+                               set(_tokens(name)) & {"code", "key"}]
                 for target_field in targets:
                     if (target_table, target_field) not in available:
                         continue
-                    scope_field = ("dim_code" if "dim_code" in columns else
-                                   "dim_head_code" if "dim_head_code" in columns else None)
-                    scope = ({type_field: scope_field}
-                             if cue == "dim" and target_field == "member_code" and
-                             scope_field else {})
                     proposals.append({
                         "source": (table, reference),
                         "target": (target_table, target_field),
                         "suggested_selector": {type_field: literal},
-                        "suggested_scope_bindings": scope,
+                        # Scope is learned from joint values below, never from
+                        # a fixed table/column vocabulary such as dim/member.
+                        "suggested_scope_bindings": {},
                         "target_role_priority": (0 if target_tokens[-1] == cue else
                                                  1 if target_tokens[-1] in
                                                  {"def", "definition", "detail"} else 2),
@@ -293,7 +287,8 @@ def _conditioned_order(items, shared):
         count = shared.get((item['source'], item['target']), (0, False))[0]
         evidence = item.get('condition_evidence', {})
         rows, matches = evidence.get('branch_rows', 0), evidence.get('branch_matches', 0)
-        return (not bool(count or matches), -(matches / rows if rows else 0),
+        return (-evidence.get('scoped_unique_gain', 0),
+                not bool(count or matches), -(matches / rows if rows else 0),
                 -count, item['target_role_priority'], item['target'])
     for item in items:
         branch = tuple(sorted(item['suggested_selector'].items()))
@@ -350,10 +345,12 @@ def _value_conditioned_pairs(data, fields, shared, *, max_values, max_pairs=64,
     fields_by_table = defaultdict(list)
     for table, field in fields:
         fields_by_table[table].append(field)
-    selectors, selector_omissions = {}, []
+    selectors, scope_selectors, selector_omissions = {}, {}, []
+    constant_scope_fields = []
     for table, names in fields_by_table.items():
         info = data.tables[table]
         choices = []
+        cardinalities = {}
         profiles = {p['column']: p for p in info.get('profiles', [])}
         for field in names:
             if field in info.get('pk', []):
@@ -365,39 +362,51 @@ def _value_conditioned_pairs(data, fields, shared, *, max_values, max_pairs=64,
             st, sf = _checked_field(data, table, field)
             values = data.db.execute(f"SELECT DISTINCT {sf} FROM {st} WHERE {sf} IS NOT NULL "
                                      f"AND trim({sf}) <> '' LIMIT ?", [max_values + 1]).fetchall()
-            if 2 <= len(values) <= max_values:
+            if 1 <= len(values) <= max_values:
                 usable = profile.get('usable_count')
                 if type(usable) is not int:
                     usable = data.db.execute(f"SELECT count(*) FROM {st} WHERE {sf} IS NOT NULL AND trim({sf}) <> ''").fetchone()[0]
                 # A unique ID/value would select individual rows, not a reusable
                 # discriminator. Explicit type names remain bounded hints.
-                if len(values) < usable or set(_tokens(field)) & {'type', 'kind', 'category'}:
+                if (len(values) == 1 or len(values) < usable
+                        or set(_tokens(field)) & {'type', 'kind', 'category'}):
                     choices.append(field)
-        choices.sort(key=lambda name: (not bool(set(_tokens(name)) & {'type', 'kind', 'category'}), name))
-        selectors[table] = choices[:max_selector_fields]
+                    cardinalities[field] = len(values)
+        choices.sort(key=lambda name: (not bool(set(_tokens(name)) & {'type', 'kind', 'category'}),
+                                       cardinalities[name] == 1, name))
+        # Both paths share the field budget. A constant is useful to resolve
+        # a composite target key but cannot prove a discriminator branch.
+        scope_selectors[table] = choices[:max_selector_fields]
+        selectors[table] = [field for field in scope_selectors[table] if cardinalities[field] > 1]
+        constant_scope_fields.extend(f'{table}.{field}' for field in scope_selectors[table]
+                                     if cardinalities[field] == 1)
         selector_omissions.extend(f'{table}.{field}' for field in choices[max_selector_fields:])
     ranked = _fair_source_order(
         [(source, target) for source, target in shared
-         if source[0] != target[0] and selectors[source[0]]], lambda pair: pair[0],
+         if source[0] != target[0] and scope_selectors[source[0]]], lambda pair: pair[0],
         lambda pair: (pair[0][1] in data.tables[pair[0][0]].get('pk', []),
                       -shared[pair][0], pair))
     results = []
+    scoped_checks = 0
+    scoped_omitted = 0
     for source, target in ranked[:max_pairs]:
         st, sk = _checked_field(data, *source)
         tt, tk = _checked_field(data, *target)
-        for discriminator in selectors[source[0]]:
+        for discriminator in scope_selectors[source[0]]:
             if discriminator == source[1]:
                 continue
             rows = data.db.execute(f"""WITH keys AS (
-                SELECT DISTINCT {tk} AS ref FROM {tt} WHERE {tk} IS NOT NULL AND trim({tk}) <> ''
-            ) SELECT s.{qi(discriminator)}, count(*), count(t.ref)
+                SELECT {tk} AS ref, count(*) AS n FROM {tt}
+                WHERE {tk} IS NOT NULL AND trim({tk}) <> '' GROUP BY {tk}
+            ) SELECT s.{qi(discriminator)}, count(*), count(t.ref), count(*) FILTER (WHERE t.n=1)
               FROM {st} s LEFT JOIN keys t ON s.{sk}=t.ref
               WHERE s.{sk} IS NOT NULL AND trim(s.{sk}) <> ''
               GROUP BY s.{qi(discriminator)}""").fetchall()
             total, matches = sum(r[1] for r in rows), sum(r[2] for r in rows)
-            for literal, count, matched in rows:
+            for literal, count, matched, raw_unique in rows:
                 outside, outside_match = total - count, matches - matched
-                if (literal is None or not str(literal).strip() or not matched or not outside
+                if (discriminator not in selectors[source[0]]
+                        or literal is None or not str(literal).strip() or not matched or not outside
                         or matched / count <= outside_match / outside):
                     continue
                 results.append({'source': source, 'target': target,
@@ -405,9 +414,57 @@ def _value_conditioned_pairs(data, fields, shared, *, max_values, max_pairs=64,
                     'target_role_priority': 1, 'condition_discovery': 'observed_value_containment',
                     'condition_evidence': {'branch_rows': count, 'branch_matches': matched,
                                            'outside_rows': outside, 'outside_matches': outside_match}})
+            # Existing full-input counts already prove whether a scope could
+            # improve uniqueness. Reuse them and avoid repeating target scans
+            # for keys whose matches are already unique.
+            raw_unique_by_value = {row[0]: row[3] for row in rows}
+            if not any(row[2] > row[3] for row in rows):
+                continue
+            # A discriminator can also be part of the target's composite key.
+            # Use the existing value index to recall the other column, then
+            # check actual paired rows. Names, literal prefixes and domain
+            # roots are irrelevant; numeric matches remain risky candidates.
+            remote_fields = [field for field in fields_by_table[target[0]]
+                             if field != target[1] and
+                             ((source[0], discriminator), (target[0], field)) in shared]
+            remote_fields.sort(key=lambda field: (
+                shared[((source[0], discriminator), (target[0], field))][1], field))
+            for remote in remote_fields:
+                if scoped_checks >= max_pairs:
+                    scoped_omitted += 1
+                    continue
+                scoped_checks += 1
+                scoped = data.db.execute(f"""WITH scoped_keys AS (
+                    SELECT {tk} AS ref, {qi(remote)} AS discriminator, count(*) AS n
+                    FROM {tt} WHERE {tk} IS NOT NULL AND trim({tk}) <> ''
+                      AND {qi(remote)} IS NOT NULL AND trim({qi(remote)}) <> ''
+                    GROUP BY {tk}, {qi(remote)}
+                ) SELECT s.{qi(discriminator)}, count(*), count(t.ref),
+                         count(*) FILTER (WHERE t.n=1)
+                  FROM {st} s LEFT JOIN scoped_keys t
+                    ON s.{sk}=t.ref AND s.{qi(discriminator)}=t.discriminator
+                  WHERE s.{sk} IS NOT NULL AND trim(s.{sk}) <> ''
+                  GROUP BY s.{qi(discriminator)}""").fetchall()
+                for literal, count, matched, unique in scoped:
+                    raw_unique = raw_unique_by_value.get(literal, 0)
+                    if (literal is None or not str(literal).strip()
+                            or unique <= raw_unique):
+                        continue
+                    results.append({'source': source, 'target': target,
+                        'suggested_selector': {discriminator: literal},
+                        'suggested_scope_bindings': {discriminator: remote},
+                        'target_role_priority': 0,
+                        'condition_discovery': 'observed_composite_key_scope',
+                        'condition_evidence': {'branch_rows': count, 'branch_matches': matched,
+                            'scoped_unique_matches': unique, 'unscoped_unique_matches': raw_unique,
+                            'scoped_unique_gain': unique - raw_unique,
+                            'semantic_relation': 'unresolved'}})
     return results, {'conditional_pair_checks': min(len(ranked), max_pairs),
                      'conditional_pairs_not_probed': max(0, len(ranked)-max_pairs),
-                     'conditional_selector_fields_not_probed': selector_omissions}
+                     'conditional_selector_fields_not_probed': selector_omissions,
+                     'constant_scope_fields_considered': constant_scope_fields,
+                     'conditional_scope_checks': scoped_checks,
+                     'conditional_scope_checks_not_probed': scoped_omitted}
 
 
 def propose_candidates(data, *, max_candidates_total=2000,
@@ -590,10 +647,12 @@ def propose_candidates(data, *, max_candidates_total=2000,
         data, fields, shared, max_values=max_condition_values_per_field,
         max_pairs=max_conditional_pair_checks, max_selector_fields=max_condition_fields_per_table)
         if value_index_mode == "full_distinct" else ([], {}))
-    seen_conditions = {(item["source"], item["target"], tuple(sorted(item["suggested_selector"].items())))
+    seen_conditions = {(item["source"], item["target"], tuple(sorted(item["suggested_selector"].items())),
+                        tuple(sorted(item["suggested_scope_bindings"].items())))
                        for item in conditional}
     conditional.extend(item for item in learned if
-        (item["source"], item["target"], tuple(sorted(item["suggested_selector"].items()))) not in seen_conditions)
+        (item["source"], item["target"], tuple(sorted(item["suggested_selector"].items())),
+         tuple(sorted(item["suggested_scope_bindings"].items()))) not in seen_conditions)
     conditional = _conditioned_order(conditional, shared)
     retained_conditioned = conditional[:min(max_conditional_candidates, max_candidates_total)]
     retained = ranked[:max(0, max_candidates_total - len(retained_conditioned))]

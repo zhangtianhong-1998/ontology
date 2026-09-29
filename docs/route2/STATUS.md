@@ -1,6 +1,6 @@
 # 路线 2 当前实现状态
 
-当前开发分支为 `codex/ontology-template-rebuild`。本轮增加定义投影、实例绑定、结构关系编译和可交互布局，需求与实验方法见[定义复用与实例绑定](TEMPLATE_BINDING_REDESIGN.md)。v8 冻结结果保留在 `codex/fruit-full-v8-results`，下面的旧实验结论不代表新全量实验已通过。
+当前开发分支为 `codex/generalized-extraction-v11`。本轮修复通用字段角色、引用召回、模板关系端点、来源实例化及请求超限调度；需求、真实数据报告对应场景和待办见 [v11 修复说明](GENERALIZATION_V11.md)。v10 冻结代码和模拟结果保留在 `codex/fruit-full-v10-results`；新全量实验尚待结果验收。
 
 2026-09-29 的修改沿用 v3 输入，重点是完整模板复用、第二轮定向修复、公式/配置关系和来源实例化。预算改为 3,000 次，新增可配置请求间隔；需求、v9 证据与验收边界见[定向迭代说明](ITERATIVE_REUSE_REPAIR.md)。新实验完成前，不能把本轮代码修复视为语义验收通过。
 

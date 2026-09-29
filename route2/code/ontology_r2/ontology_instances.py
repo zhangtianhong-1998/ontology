@@ -15,6 +15,8 @@ from .template_projection import match_projection
 def materialize_ontology_instances(data, plan, *, template_projections=(), template_bindings=(),
                                   ontology_bindings=(), calculation_contracts=None,
                                   concepts=(), record_alignments=(), memberships=(),
+                                  definition_templates=(),
+                                  record_relations=(),
                                   fact_instances=(), max_records=1200000,
                                   max_assertions=1200000):
     """Return Sink-compatible objects/assertions plus mapping coverage and pending.
@@ -30,6 +32,8 @@ def materialize_ontology_instances(data, plan, *, template_projections=(), templ
     types = {item.id: item for item in plan.object_types if item.category == "business_type"}
     relations = {item.id: item for item in plan.relation_types}
     templates = {item["template_id"]: item for item in template_projections}
+    definition_templates_by_id = {item["id"]: item for item in definition_templates}
+    replayed_definition_templates = {}
     concepts_by_id = {item["id"]: item for item in concepts}
     pending, objects, assertions, mappings = [], {}, {}, []
     by_record_type, template_nodes, rows = {}, defaultdict(list), {}
@@ -73,7 +77,7 @@ def materialize_ontology_instances(data, plan, *, template_projections=(), templ
     for candidate in candidates:
         rid, type_id = candidate.get("record_id"), candidate.get("object_type_id")
         ref = evidence_refs.get(rid, {})
-        table = candidate.get("source_table", ref.get("table"))
+        table = candidate.get("source_table", candidate.get("table", ref.get("table")))
         number = candidate.get("row_number", ref.get("row"))
         if (type_id not in types or table not in data.tables or type(number) is not int
                 or candidate.get("snapshot_id", data.snapshot_id) != data.snapshot_id):
@@ -107,7 +111,20 @@ def materialize_ontology_instances(data, plan, *, template_projections=(), templ
             if not proofs:
                 unresolved("mapping_has_no_source_evidence", record_id=rid, type_id=type_id)
                 continue
-            if channel != "template":
+            if channel == "definition_membership":
+                from .definition_instance_bindings import replay_definition_membership
+                try:
+                    fields = replay_definition_membership(data, binding,
+                        definition_templates_by_id.get(binding.get("template_id")), row,
+                        types[type_id], replayed_definition_templates)
+                except ValueError as exc:
+                    unresolved("definition_membership_replay_failed", record_id=rid,
+                               type_id=type_id, detail=str(exc))
+                    continue
+                # Membership evidence cites the representative. Register the
+                # replayed member's own complete values, keeping its identity.
+                proofs.extend(register_record_proof(key[0], row, rid, field) for field in fields)
+            elif channel != "template":
                 source_values = [data.evidence[eid] for prop in types[type_id].source_properties
                                  for eid in prop.evidence_ids if eid in data.evidence
                                  and data.evidence[eid].get("source_ref", {}).get("record_id") == rid]
@@ -317,6 +334,28 @@ def materialize_ontology_instances(data, plan, *, template_projections=(), templ
                 calculation_id=calculation["id"], expression_path=dependency["expression_path"],
                 operand_role=dependency["operand_role"], symbol=dependency["symbol"],
                 raw_formula=calculation["raw_formula"])
+    relation_plans = {item.id: item for item in plan.relations}
+    for assertion in record_relations:
+        # Only a reviewed source pair may connect the newly materialized
+        # records. A shared definition never authorizes table-wide promotion.
+        pair = assertion.get("source_record_pair") or {}
+        if not assertion.get("source_relation_plan_id") or not pair:
+            continue
+        subject = by_record_type.get((pair.get("source"), assertion.get("subject_type")))
+        target = by_record_type.get((pair.get("target"), assertion.get("object_type")))
+        if subject is None or target is None:
+            unresolved("record_relation_definition_instance_missing", assertion_id=assertion.get("id"))
+            continue
+        from .record_relation_instances import verify_record_relation
+        try:
+            verify_record_relation(data, relation_plans.get(assertion["source_relation_plan_id"]),
+                relations.get(assertion.get("predicate")), assertion, objects[subject], objects[target], rows, relations)
+        except ValueError as exc:
+            unresolved("record_relation_replay_failed", assertion_id=assertion.get("id"), detail=str(exc))
+            continue
+        add_edge(subject, target, assertion.get("predicate"), assertion.get("evidence_ids", []),
+                 source_relation_assertion_id=assertion.get("id"),
+                 source_relation_plan_id=assertion["source_relation_plan_id"], source_record_pair=pair)
     materialized = {node["type"] for node in objects.values()} | {node.get("type") for node in fact_instances}
     missing_types = sorted(set(types) - materialized)
     missing_relations = sorted({item.id for item in relations.values() if item.category == "business_relation_type"}

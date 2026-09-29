@@ -159,11 +159,12 @@ def _recall_types(data, core, table, column, *, max_candidates, max_definition_c
     found = []
     excluded = Counter()
     for item in core.object_types:
-        # A generic Measure can also have values, but safely binding one would
-        # need proof that the column has no unmodeled business object. This
-        # prototype therefore binds only fully named business Metrics.
+        # A measured quantity need not be a composed business Metric. Its
+        # observation keeps the source coordinates; binding a Measure never
+        # promotes it to a Metric or invents an object identity. An operator
+        # annotation describes its definition; it never runs an aggregation.
         if (item.category != "business_type" or item.derivation_kind == "shared_supertype"
-                or _root_of(item, by_id) != "Metric"
+                or _root_of(item, by_id) not in {"Metric", "Measure"}
                 or not item.label or not item.definition):
             continue
         if item.evidence_scope == "source_schema" and not any(
@@ -194,7 +195,13 @@ def _recall_types(data, core, table, column, *, max_candidates, max_definition_c
 
 def _scope_consistent(item, table, column_comment, coordinates, scope_bindings=None):
     scope_bindings = scope_bindings or {}
-    for key, value in item.applicability_scope.items():
+    # Tenant/version identity qualifiers must bind to the observed coordinates
+    # just as applicability scope does; matching labels cannot cross them.
+    identity = getattr(item, "identity_qualifiers", {})
+    if any(key in item.applicability_scope and item.applicability_scope[key] != value
+           for key, value in identity.items()):
+        return False
+    for key, value in {**item.applicability_scope, **identity}.items():
         field = scope_bindings.get(key, key)
         if field in coordinates:
             if _norm(coordinates[field]) != _norm(value):
@@ -427,6 +434,7 @@ def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
             "source_definition_evidence_id": decision.source_definition_evidence_id,
             "scope_bindings": decision.scope_bindings,
             "bound_scope_values": {key: coordinates[field] for key, field in decision.scope_bindings.items()},
+            "identity_qualifiers": dict(getattr(item, "identity_qualifiers", {})),
             "unit_column": decision.unit_column,
         },
     }, None
@@ -556,14 +564,16 @@ async def bind_fact_observations(
             payload = {
                 "contract": (
                     "One decision for this value field, not per row. Only choose an exact "
-                    "accepted Metric ontology type whose full definition fits the "
+                    "accepted Metric or Measure ontology type whose full definition fits the "
                     "column's business meaning. A lexical match is candidate recall only. "
                     "Use the complete column comment, or the exact source field declaration "
                     "when comments are absent. If business identity, unit or "
                     "scope is uncertain, or several types remain plausible, return unresolved. "
                     "For bind, copy the ENTIRE source declaration, the ENTIRE type definition "
                     "and the ENTIRE source definition from one listed original fragment "
-                    "with its evidence ID. Do not infer type identity from observed values."),
+                    "with its evidence ID. A Measure observation retains the source's business "
+                    "coordinates and does not imply a Metric or a business-object identity. "
+                    "Do not infer type identity from observed values."),
                 "table": table_name, "table_comment": table.get("table_comment") or "",
                 "value_column": name, "column_comment": comment,
                 "source_declaration": comment or name,
@@ -577,6 +587,7 @@ async def bind_fact_observations(
                      "canonical_type_id": canonical_type_map.get(item.id, item.id),
                      "definition": item.definition,
                      "unit": item.unit, "applicability_scope": item.applicability_scope,
+                     "identity_qualifiers": getattr(item, "identity_qualifiers", {}),
                      "full_source_definitions": evidence}
                     for _, item, evidence in choices],
             }
@@ -606,6 +617,7 @@ async def bind_fact_observations(
             if (_norm(canonical_item.label) != _norm(item.label)
                     or _norm(canonical_item.unit) != _norm(item.unit)
                     or canonical_item.applicability_scope != item.applicability_scope
+                    or getattr(canonical_item, "identity_qualifiers", {}) != getattr(item, "identity_qualifiers", {})
                     or canonical_item.definition_parameters != item.definition_parameters):
                 status["reason"] = "canonical_type_business_signature_conflict"
                 skipped[status["reason"]] += len(candidates)

@@ -70,7 +70,7 @@ def projection_match_report(template, record):
     class_quote = (template.get("class_definition") or {}).get("quote") or template.get("definition", "")
     class_supported = bool(class_quote and any(class_quote in values[column]
                            for column in values if "description" in roles[column]))
-    protected = {column for column in values if roles[column] & {"formula", "unit"}}
+    protected = {column for column in values if roles[column] & {"formula", "unit", "identity"}}
     unresolved_slots = [{"name": slot["name"], "role": slot["role"], "label": slot["label"],
                          "observed_value": captures.get(slot["name"])}
                         for slot in template["slots"]
@@ -107,7 +107,7 @@ def template_reuse_context(templates, bundle, *, limit=4):
         # an identity match. The full contract remains available for review.
         report["accepted_template"] = {key: deepcopy(template.get(key)) for key in (
             "template_id", "object_type_id", "source_table", "root_type", "label", "definition",
-            "class_definition", "definition_parameters", "applicability_scope", "semantic_columns", "invariants", "field_templates")}
+            "class_definition", "definition_parameters", "identity_qualifiers", "applicability_scope", "semantic_columns", "invariants", "field_templates")}
         report["accepted_template"]["slots"] = [{key: deepcopy(slot.get(key)) for key in (
             "name", "role", "label", "source_column", "fixed_value", "target_type_id", "target_component")
             if key in slot} for slot in template["slots"]]
@@ -137,6 +137,7 @@ def component_type_candidates(core, record, *, limit=24):
                   and item.label and item.label in text]
     return [{"id": item.id, "parent": item.parent, "label": item.label, "definition": item.definition,
              "unit": item.unit, "definition_parameters": item.definition_parameters,
+             "identity_qualifiers": item.identity_qualifiers,
              "applicability_scope": item.applicability_scope,
              "retrieval_basis": "literal_source_mention_only_not_endpoint_identity"}
             for item in sorted(candidates, key=lambda item: (-len(item.label), item.id))[:limit]]

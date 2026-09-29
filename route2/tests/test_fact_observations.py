@@ -96,7 +96,8 @@ def test_numeric_value_column_does_not_become_a_dimension_from_business_comment(
         result = build_fact_observation_candidates(data)
         fact = next(item for item in result["tables"]
                     if item["table"] == "fruit.fruit_profit_fact")
-        assert fact["selected_columns"]["dimensions"] == ["fruit_code", "region_code"]
+        # Field order is a recall priority, not part of the coordinate meaning.
+        assert set(fact["selected_columns"]["dimensions"]) == {"fruit_code", "region_code"}
         assert fact["selected_columns"]["values"] == ["profit_amount"]
         assert fact["emitted_candidates"] == 3
     finally:

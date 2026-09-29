@@ -13,6 +13,27 @@ from test_semantic_cards import _table
 from ontology_r2.configuration_relation_stage import adjudicate_configuration_relations
 
 
+def test_generated_definition_memberships_materialize_with_template_replay(tmp_path):
+    from test_definition_memberships import _fixture
+    from ontology_r2.definition_memberships import build_definition_memberships
+    from ontology_r2.group_incremental import _compiled_object_type
+
+    data, index, group = _fixture(tmp_path)
+    try:
+        compiled = build_definition_memberships(data, index, group)
+        plan = BuildPlan(object_types=[_compiled_object_type(item) for item in group["concepts"]])
+        result = materialize_ontology_instances(data, plan, concepts=group["concepts"],
+            record_alignments=group["record_alignments"], memberships=compiled["memberships"],
+            definition_templates=compiled["templates"])
+        assert result["coverage"]["definition_record_instances"] == 3
+        assert result["coverage"]["partial"] is False
+        assert result["assertions"] == []
+        assert {node["source_ref"]["row"] for node in result["objects"]} == {1, 2, 3}
+    finally:
+        index.close()
+        data.close()
+
+
 def test_configuration_edges_execute_only_the_witness_paths(tmp_path):
     data, plan, concepts, alignments, candidate, rules = _configuration_case(tmp_path, "度量提供指标的量定义")
     try:

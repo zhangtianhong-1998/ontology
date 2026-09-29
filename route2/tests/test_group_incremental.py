@@ -201,6 +201,52 @@ def test_group_repair_rechecks_one_invalid_model_alignment_without_inventing_it(
     assert [item["source_record_id"] for item in result["record_alignments"]] == ["seed"]
 
 
+def test_oversized_group_does_not_stop_other_complete_bundles():
+    from ontology_r2.llm import InputBudgetExceeded
+
+    class SizedLLM:
+        async def ask(self, task, payload, schema):
+            record_id = payload['bundle']['records'][0]['record_id']
+            if record_id == 'large':
+                raise InputBudgetExceeded(2000, 1000)
+            return _concept_decision([record_id])
+
+    bundles = [{'bundle_id': name, 'task_kind': 'concept_induction', 'records': [_record(name)]}
+               for name in ('large', 'small')]
+    result = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id='snap', evidence={}), PROFILE, BuildPlan(), bundles,
+        SizedLLM(), review=False, max_bundles=2))
+    assert [step['status'] for step in result['steps']] == ['input_over_budget', 'accepted']
+    assert result['coverage']['bundles_not_attempted'] == 0
+    assert result['coverage']['statuses']['input_over_budget'] == 1
+    assert result['partial']
+    assert [item['source_record_id'] for item in result['record_alignments']] == ['small']
+
+
+def test_repair_request_interns_duplicate_context_without_mutating_saved_bundle():
+    import copy
+
+    class CaptureLLM:
+        async def ask(self, task, payload, schema):
+            assert 'template_repair_task' not in payload['bundle']
+            repair = payload['targeted_repair']
+            assert 'known_template_matches' not in repair
+            assert repair['known_template_matches_location'] == 'template_projection'
+            assert repair['component_type_candidates_location'] == 'component_type_candidates'
+            assert payload['bundle']['records'][0]['fields'] == original['records'][0]['fields']
+            return ConceptBundleDecision(status='unresolved')
+
+    bundle = {'bundle_id': 'repair', 'task_kind': 'concept_induction', 'records': [_record('seed')],
+              'template_repair_task': {'scope': 'unresolved_source_definition',
+                  'known_template_matches': [], 'component_type_candidates': []}}
+    original = copy.deepcopy(bundle)
+    result = asyncio.run(construct_from_bundles(SimpleNamespace(snapshot_id='snap', evidence={}),
+        PROFILE, BuildPlan(), [bundle], CaptureLLM(), review=False, enable_template_projection=True))
+    assert bundle == original
+    assert result['steps'][0]['status'] == 'unresolved'
+    assert 'error_type' not in result['steps'][0]
+
+
 def test_incremental_reuses_concept_without_losing_second_source():
     data = SimpleNamespace(snapshot_id="snap", evidence={})
     bundles = [
@@ -658,7 +704,7 @@ def test_relation_quotes_must_come_from_one_validated_positive_pair(tmp_path):
         lifted, assertion, reason = compile_business_relation(
             data, PROFILE, typed, bundle, decision, plan, concepts, only_one_exact)
         assert lifted is assertion is None
-        assert reason == "both_positive_records_require_exact_type_alignment"
+        assert reason == "positive_record_requires_unambiguous_accepted_type_binding"
         mistyped = compiled.model_copy(deep=True)
         mistyped.relation_types[0].domain = ["Metric"]
         assert any("violates domain" in error
@@ -871,6 +917,30 @@ def test_resume_preserves_paid_batch_decisions_when_review_budget_stops_run():
     assert result["coverage"]["statuses"]["accepted"] == 3
     assert result["coverage"]["statuses"]["budget_exhausted"] == 0
     assert not result["partial"] and result["pending_concept_decisions"] == {}
+
+
+def test_oversized_batch_review_retains_paid_proposal_and_continues_queue():
+    from ontology_r2.llm import InputBudgetExceeded
+
+    class LargeBatchReview(_BatchConceptLLM):
+        async def ask(self, task, payload, schema):
+            if task == 'group_review_batch':
+                self.calls.append(task)
+                raise InputBudgetExceeded(2000, 1000)
+            return await super().ask(task, payload, schema)
+
+    data = SimpleNamespace(snapshot_id='snap', evidence={})
+    packets = _batch_packets(3)
+    prior = asyncio.run(construct_from_bundles(
+        data, PROFILE, BuildPlan(), packets, LargeBatchReview(), concept_batch_size=3))
+    assert [step['status'] for step in prior['steps']] == ['input_over_budget', 'accepted', 'accepted']
+    assert len(prior['pending_concept_decisions']) == 1
+    assert prior['coverage']['bundles_not_attempted'] == 0
+    llm = _BatchConceptLLM()
+    result = asyncio.run(construct_from_bundles(
+        data, PROFILE, prior['plan'], packets, llm, concept_batch_size=3, prior_result=prior))
+    assert llm.calls == ['group_review']
+    assert not result['partial'] and result['pending_concept_decisions'] == {}
 
 
 def test_relation_batch_keeps_per_rule_compilation_and_reviews(tmp_path):

@@ -44,7 +44,8 @@ def validate_plan(plan: BuildPlan, data, profile):
             business_ids = {t.id for t in plan.object_types if t.category == "business_type"}
             valid_basis = (
                 (item.endpoint_basis == "record_alignment"
-                 and item.evidence_scope == "one_positive_pair_with_exact_type_alignments")
+                 and item.evidence_scope in ("one_positive_pair_with_exact_type_alignments",
+                                             "one_positive_pair_with_type_bindings"))
                 or (item.endpoint_basis == "configuration_reference"
                     and item.evidence_scope == "one_configuration_witness_with_exact_type_alignments")
                 or (item.endpoint_basis == "calculation_binding"
@@ -57,7 +58,7 @@ def validate_plan(plan: BuildPlan, data, profile):
             if (not item.domain or not item.range
                     or not set(item.domain + item.range) <= business_ids
                     or not valid_basis):
-                errors.append("business relation requires exact business type endpoints: " + item.id)
+                errors.append("business relation requires accepted business type endpoints: " + item.id)
             if len(item.domain) != 1 or len(item.range) != 1:
                 errors.append("business relation requires one directed endpoint type per side: " + item.id)
             else:

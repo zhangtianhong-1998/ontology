@@ -129,7 +129,8 @@ def _eligible_groups(plan, data):
         # Parameters preserve literal source values. Normalizing punctuation,
         # case or whitespace here could erase a meaningful calculation setting.
         parameters = tuple(sorted(item.definition_parameters.items()))
-        key = (root, _norm(item.label), unit, scope, item.aggregation_operator, parameters)
+        key = (root, _norm(item.label), unit, scope, item.aggregation_operator, parameters,
+               tuple(sorted(item.identity_qualifiers.items())))
         groups[key].append((item, fragments))
     for values in groups.values():
         values.sort(key=lambda pair: pair[0].id)
@@ -198,6 +199,9 @@ def compile_equivalence(data, core: BuildPlan, candidate, decision):
             or decision.target_type_id != target_id):
         raise ValueError("Decision does not name the exact candidate pair")
     current_types = {item.id: item for item in core.object_types}
+    if (source_id in current_types and target_id in current_types
+            and current_types[source_id].identity_qualifiers != current_types[target_id].identity_qualifiers):
+        raise ValueError("Definition identity qualifiers differ; cross-namespace equivalence is unsupported")
     if (source_id in current_types and target_id in current_types
             and current_types[source_id].definition_parameters != current_types[target_id].definition_parameters):
         raise ValueError("Definition parameters differ; exact equivalence is unsupported")

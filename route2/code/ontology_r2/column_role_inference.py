@@ -12,12 +12,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .column_roles import classify_columns
+from .column_roles import CONTEXT_ROLES, classify_columns, declared_context_role
 from .concept_candidates import _field_roles, field_role_conflicts
 from .storage import qi
 
 
 _ROLES = ("name", "alias", "description", "formula", "unit", "scope",
+          "provenance", "metadata", "identity",
           "calculation_operator", "operand_reference",
           "business_time", "dimension_coordinate", "numeric_business_value")
 _FRAGMENT_ROLES = frozenset(("calculation_operator", "operand_reference"))
@@ -63,6 +64,7 @@ class ObservedValue(_Strict):
 class ColumnRoleProposal(_Strict):
     column: str
     role: Literal["name", "alias", "description", "formula", "unit", "scope",
+                  "provenance", "metadata", "identity",
                   "calculation_operator", "operand_reference",
                   "business_time", "dimension_coordinate", "numeric_business_value"]
     observations: list[ObservedValue] = Field(default_factory=list)
@@ -296,6 +298,12 @@ def _validate_response(data, table_name, response, eligible, observed):
                      "schema_evidence_id": f"schema:{table_name}:{column}",
                      "evidence_kind": "source_values_supported_role_candidate",
                      "observations": evidence}
+        context_role = declared_context_role(next(
+            item for item in data.tables[table_name]["columns"]
+            if item["column_name"] == column))
+        if role == "scope" and context_role:
+            candidate.update(role=context_role, proposed_role=role,
+                             role_resolution="explicit_context_declaration_not_business_scope")
         fragment = classify_formula_fragment(data.tables[table_name], candidate)
         if role in _FRAGMENT_ROLES and fragment is None:
             rejected.append({"column": column, "role": role,
@@ -387,6 +395,13 @@ async def infer_column_role_candidates(data, llm, config=None):
             "role_review_columns": [column for column in selected
                                     if column in _field_roles(table).get("formula", ())],
             "sample_rows": sampled, "allowed_roles": list(_ROLES),
+            "context_role_contract": {
+                "provenance": "source system, import or lineage context; not business applicability",
+                "metadata": "lexical language, display or administrative context; not definition identity",
+                "identity": "definition tenant, namespace or version; never row IDs or business observation keys",
+                "scope": "business applicability or declared calculation grain; not a catch-all for constant fields",
+                "reference_discriminator": "A value selecting a reference namespace is neither a description nor a formula. Leave it unresolved when its target is not visible.",
+            },
             "contract": "proposals are uncertain column-role candidates, not business types; "
                         "cite exact sampled row_number and original value for each proposal; "
                         "known_column_roles are metadata recall hints, not verified roles; "
@@ -419,7 +434,7 @@ async def infer_column_role_candidates(data, llm, config=None):
             item["used_in_candidate_recall"] = item["column"] in consumed_roles.get(
                 item["role"], ()) or conflict is not None or item["role"] in {
                     "business_time", "dimension_coordinate", "numeric_business_value",
-                    "calculation_operator", "operand_reference"}
+                    "calculation_operator", "operand_reference", *CONTEXT_ROLES}
             item["consumer"] = ("row_semantics" if item["role"] in {
                 "business_time", "dimension_coordinate", "numeric_business_value"}
                 else "semantic_card_recall")

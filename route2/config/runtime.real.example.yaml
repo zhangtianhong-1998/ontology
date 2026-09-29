@@ -26,16 +26,16 @@ column_role_inference:
   max_tables: 32
   max_columns_per_table: 64
   max_sample_rows: 8
-  max_value_chars: 128
+  max_value_chars: 512
 # Fact candidates are observed CSV tuples only. Exact DISTINCT scans the
 # selected value fields but writes at most this many tuples per table; it does
 # not create ontology instances or call the LLM for each row.
 fact_observations:
   enabled: true
   max_candidates_per_table: 200
-  max_dimension_columns: 4
-  max_time_columns: 2
-  max_value_columns: 8
+  max_dimension_columns: 64
+  max_time_columns: 16
+  max_value_columns: 64
   # Above this estimated tuple count, select bounded observed seeds and
   # reverse-check their full coordinates; unvisited tuple count is unknown.
   max_exact_group_tuples: 50000
@@ -61,7 +61,14 @@ discovery:
   enabled: true
   value_index_mode: full_distinct
   max_indexed_fields: 0
-  max_candidate_validations: 50
+  max_candidates_total: 10000
+  max_per_source_per_channel: 1000
+  max_candidate_validations: 10000
+  max_validations_per_source_table: 10000
+  max_condition_values_per_field: 64
+  max_conditional_pair_checks: 2000
+  max_conditional_candidates: 4000
+  max_condition_fields_per_table: 16
   max_evidence_per_unit: 3
   # Checked raw and allowlisted alias transforms support joined examples.
   max_joint_pairs_per_candidate: 1
@@ -78,7 +85,7 @@ concept_recall:
 # Sample alias leads are rechecked over full input before executable rules.
 alias_recall:
   enabled: true
-  max_fields: 64
+  max_fields: 512
   max_rows_per_table: 5000
   max_values_per_field: 128
   max_pairs: 200
@@ -87,30 +94,30 @@ alias_recall:
 association_rules:
   enabled: true
   agent_enabled: true
-  max_rules: 60
-  max_explicit_validations: 8
+  max_rules: 14000
+  max_explicit_validations: 10000
   max_alias_validations: 16
   max_agent_candidates: 6
   max_agent_model_calls: 3
   max_agent_tool_calls: 8
   max_agent_full_scans: 3
-  agent_timeout_seconds: 180
+  agent_timeout_seconds: 300
 # All source rows are scanned. Only bounded, deduplicated definition cards
 # enter the local FTS index; omitted rows are counted in coverage.
 instance_bundles:
   enabled: true
-  max_cards: 100000
+  max_cards: 1200000
   max_field_chars: 512
-  max_unknown_fields_per_table: 4
+  max_unknown_fields_per_table: 16
   # A definition with complete description/formula may form a singleton packet.
   # These are budgets, not a claim that all distinct definitions are processed.
-  max_concept_bundles: 80
-  max_relation_bundles: 40
+  max_concept_bundles: 2000
+  max_relation_bundles: 1000
   # Page candidate semantic patterns rather than raw code/reference variants.
   # A pattern is only a scheduling group, not a business identity or alignment.
   # Keep the window at the concept budget so every pattern has a reachable page.
   # A larger request is automatically capped to max_concept_bundles.
-  max_pattern_seed_pool: 80
+  max_pattern_seed_pool: 2000
   # Use --resume-from previous_run to retain accepted types across pattern pages.
   seed_window_index: 0
   lexical_top_k: 8
@@ -120,14 +127,27 @@ instance_bundles:
   max_vector_cards: 20000
   vector_top_k: 8
   max_joint_pairs_per_rule: 2
-  # Packet decisions and reviews may be batched; the shared call budget remains 800.
-  max_llm_bundles: 120
-  concept_batch_size: 4
+  # Packet decisions and reviews share the global call budget; no per-row model calls.
+  max_llm_bundles: 3000
+  concept_batch_size: 1
   relation_batch_size: 4
-  max_definition_memberships: 100000
+  max_definition_memberships: 1200000
   # One correction attempt for a structured proposal rejected by the compiler.
   max_repairs_per_bundle: 1
   review: true
+  template_projection_enabled: true
+  reserve_calls_for_followup: 600
+targeted_repair:
+  enabled: true
+  max_rounds: 5
+  max_tasks_per_round: 80
+  max_examples_per_task: 3
+  max_calls_per_round: 400
+  reserve_calls_for_followup: 300
+ontology_instantiation:
+  enabled: true
+  max_records: 1200000
+  max_assertions: 2400000
 # A separate bounded pass may induce a shared superclass only from two
 # already accepted, source-grounded business definitions. It adds LLM calls.
 type_generalization:
@@ -174,7 +194,7 @@ llm:
   max_response_repairs: 1
   # Retry transient 5xx/network errors; a timeout does not repeat unchanged semantic repairs.
   max_retries: 3
-  timeout_seconds: 180
+  timeout_seconds: 300
 # Optional local semantic recall for external ontology cards and accepted core. Set enabled to
 # true after placing the model at ONTOLOGY_EMBEDDING_MODEL_PATH in .env.
 embedding:

@@ -65,7 +65,7 @@ class TemplateProjectionDecision(Strict):
 
 
 _SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
-_SEMANTIC = {"name", "alias", "description", "formula", "unit", "scope", "unknown"}
+_SEMANTIC = {"name", "alias", "description", "formula", "unit", "scope", "identity", "unknown"}
 
 
 def _fields(record):
@@ -214,7 +214,7 @@ def compile_projection(data, profile, core, bundle, decision):
             raise ValueError("Projection label evidence refers outside its bundle")
         evidence_ids.append(_evidence(data, records[item.record_id], item.column, item.quote))
         fragments.append(item.quote)
-    # Abstract names can concatenate grounded fragments (fruit + quality rate),
+    # Abstract names can concatenate source-grounded semantic fragments,
     # but cannot erase a qualifier and pretend the result was an exact record.
     label_remaining = "" if any(decision.label in fragment for fragment in fragments) else decision.label
     for fragment in sorted(fragments, key=len, reverse=True):
@@ -234,12 +234,21 @@ def compile_projection(data, profile, core, bundle, decision):
         expected = {"business_object": "GeneralObject", "measure": "Measure", "dimension": "Dimension"}
         if component.root_type != expected[component.role]:
             raise ValueError("Projected component role conflicts with its root")
-        ceids, properties = [], []
+        ceids, properties, component_qualifiers = [], [], {}
         for citation, text in ((component.label_evidence, component.label),
                                (component.definition_evidence, component.definition)):
             if citation.record_id not in records or text != citation.quote:
                 raise ValueError("Component label and definition must be quoted source fragments")
             rec = records[citation.record_id]
+            for qualifier in rec.get("fields", {}).get("identity", []):
+                column, value = qualifier["column"], str(qualifier["value"])
+                if column in component_qualifiers and component_qualifiers[column] != value:
+                    raise ValueError("Component citations have conflicting definition identity qualifiers")
+                component_qualifiers[column] = value
+                qeid = _evidence(data, rec, column, value)
+                ceids.append(qeid)
+                properties.append({"role": "identity", "source_table": rec["table"],
+                                   "source_column": column, "evidence_ids": [qeid]})
             eid = _evidence(data, rec, citation.column, citation.quote)
             ceids.append(eid)
             roles_for_column = _fields(rec)[1][citation.column]
@@ -247,16 +256,21 @@ def compile_projection(data, profile, core, bundle, decision):
             if role:
                 properties.append({"role": role, "source_table": rec["table"],
                                    "source_column": citation.column, "evidence_ids": [eid]})
-        component_id = "type:" + digest(["projected_component", component.root_type,
-                                         component.label, component.definition])[:24]
+        component_identity = ["projected_component", component.root_type,
+                              component.label, component.definition]
+        if component_qualifiers:
+            component_identity.append({"identity_qualifiers": component_qualifiers})
+        component_id = "type:" + digest(component_identity)[:24]
         prior = next((item for item in candidate.object_types if item.parent == component.root_type
-                      and item.label == component.label and item.definition == component.definition), None)
+                      and item.label == component.label and item.definition == component.definition
+                      and item.identity_qualifiers == component_qualifiers), None)
         if prior:
             component_id = prior.id
         else:
             item = DerivedType(id=component_id, parent=component.root_type, label=component.label,
                                definition=component.definition, category="business_type",
                                evidence_ids=sorted(set(ceids)), source_properties=properties,
+                               identity_qualifiers=component_qualifiers,
                                derivation_kind="template_projection", evidence_scope="projected_definition_template")
             candidate.object_types.append(item)
             known[item.id] = item
@@ -295,7 +309,7 @@ def compile_projection(data, profile, core, bundle, decision):
         raise ValueError("Duplicate projected field")
     values, roles = _fields(witnesses[0])
     semantic = {column: value for column, value in values.items() if roles[column] & _SEMANTIC}
-    protected = {column for column, rs in roles.items() if rs & {"formula", "unit"}}
+    protected = {column for column, rs in roles.items() if rs & {"formula", "unit", "identity"}}
     protected.update(item["column"] for item in witnesses[0].get("calculation_fragments", [])
                      if item.get("effective_role") == "calculation_operator")
     for item in field_templates:
@@ -318,6 +332,10 @@ def compile_projection(data, profile, core, bundle, decision):
         if not name or value not in template["invariants"].values():
             raise ValueError("Definition parameter must retain a complete invariant source value")
     template["definition_parameters"] = dict(decision.definition_parameters)
+    # Definition namespace/version is preserved independently of business scope.
+    identity_qualifiers = {column: value for column, value in values.items()
+                           if "identity" in roles[column]}
+    template["identity_qualifiers"] = identity_qualifiers
     for column, value in decision.applicability_scope.items():
         if not value or column in changed:
             raise ValueError("Projection applicability scope must use complete invariant scope fields")
@@ -334,7 +352,8 @@ def compile_projection(data, profile, core, bundle, decision):
     for record in witnesses:
         raw_values, raw_roles = _fields(record)
         for column, role_set in raw_roles.items():
-            for role in role_set & {"name", "alias", "description", "formula", "unit", "scope"}:
+            for role in role_set & {"name", "alias", "description", "formula", "unit", "scope",
+                                   "metadata", "provenance", "identity"}:
                 eid = _evidence(data, record, column, raw_values[column])
                 source_properties.setdefault((role, record["table"], column), set()).add(eid)
                 evidence_ids.append(eid)
@@ -412,6 +431,7 @@ def compile_projection(data, profile, core, bundle, decision):
                 or existing.definition != decision.definition
                 or (existing.unit or "") != (witnesses[0].get("unit") or "")
                 or existing.definition_parameters != decision.definition_parameters
+                or existing.identity_qualifiers != identity_qualifiers
                 or existing.applicability_scope != decision.applicability_scope
                 or existing_formulas != source_formulas):
             raise ValueError("Template target must match an existing type definition, unit, formula, parameters and applicability scope")
@@ -426,6 +446,8 @@ def compile_projection(data, profile, core, bundle, decision):
                     witnesses[0].get("unit") or None, formulas, decision.definition_parameters]
         if decision.applicability_scope:
             identity.append({"applicability_scope": decision.applicability_scope})
+        if identity_qualifiers:
+            identity.append({"identity_qualifiers": identity_qualifiers})
         template["object_type_id"] = "type:" + digest(identity)[:24]
         if template["object_type_id"] not in known:
             candidate.object_types.append(DerivedType(
@@ -434,6 +456,7 @@ def compile_projection(data, profile, core, bundle, decision):
                 derivation_kind="template_projection", evidence_scope="projected_definition_template",
                 unit=witnesses[0].get("unit") or None,
                 definition_parameters=decision.definition_parameters,
+                identity_qualifiers=identity_qualifiers,
                 applicability_scope=decision.applicability_scope, source_properties=properties))
     # Add projection mappings without inventing exact record-to-type identity.
     current = next(item for item in candidate.object_types if item.id == template["object_type_id"])

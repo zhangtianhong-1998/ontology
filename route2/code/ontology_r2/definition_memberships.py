@@ -14,7 +14,7 @@ from .template_projection import reuse_projection
 from .template_reuse import template_reuse_context
 
 
-_SEMANTIC_ROLES = {"name", "alias", "description", "formula", "unit", "scope", "unknown"}
+_SEMANTIC_ROLES = {"name", "alias", "description", "formula", "unit", "scope", "identity", "unknown"}
 
 
 def build_projection_bindings(data, index, templates, *, max_records=100000, max_gap_examples=32):

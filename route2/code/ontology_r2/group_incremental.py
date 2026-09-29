@@ -281,7 +281,7 @@ class ConceptBundleDecision(Strict):
     # Existing responses without this field remain instance-level candidates.
     ontology_level: Literal["type", "instance", "unresolved"] = "unresolved"
     scope: dict[str, str] = Field(default_factory=dict)
-    scope_roles: dict[str, Literal["applicability", "observation", "unrestricted", "parameter"]] = Field(default_factory=dict)
+    scope_roles: dict[str, Literal["applicability", "observation", "unrestricted", "parameter", "identity"]] = Field(default_factory=dict)
     alignments: list[RecordAlignmentDecision] = Field(default_factory=list)
     reason: str = ""
 
@@ -553,6 +553,13 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         raise ValueError("Scope role names a field absent from exact source definitions")
     parameter_evidence = {}
     for key, role in decision.scope_roles.items():
+        if role == "identity":
+            if not all(any(source_role == "identity" and entry.get("column") == key
+                           and not entry.get("truncated")
+                           and str(entry.get("value")) == effective_scope[key]
+                           for source_role, entry in _entries(record)) for record in exact_records):
+                raise ValueError("Identity qualifier requires a complete source identity field")
+            continue
         if role == "parameter":
             bases = [_parameter_basis(data, record, key, effective_scope[key]) for record in exact_records]
             if not all(bases):
@@ -576,6 +583,10 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
             raise ValueError("Type induction requires every scope field to be classified")
         if "observation" in decision.scope_roles.values():
             raise ValueError("Observation coordinates cannot become type identity")
+        for record in exact_records:
+            if any(decision.scope_roles.get(entry.get("column")) != "identity"
+                   for role, entry in _entries(record) if role == "identity"):
+                raise ValueError("Definition identity qualifiers cannot be erased or reclassified")
     quantity_subjects = []
     if decision.root_type in ("Metric", "Measure"):
         quantity_subjects = [{"record_id": record["record_id"], **quantity_subject_assessment(
@@ -605,12 +616,16 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                      if decision.scope_roles.get(key) == "applicability"}
     parameters = {key: value for key, value in effective_scope.items()
                   if decision.scope_roles.get(key) == "parameter"}
+    identity_qualifiers = {key: value for key, value in effective_scope.items()
+                           if decision.scope_roles.get(key) == "identity"}
     coordinates = {key: value for key, value in effective_scope.items()
                    if decision.scope_roles.get(key) == "observation"}
     identity = [decision.root_type, normalized_label, normalized_definition, applicability, unit, operator,
                 source_formulas]
     if parameters:
         identity.append({"definition_parameters": parameters})
+    if identity_qualifiers:
+        identity.append({"identity_qualifiers": identity_qualifiers})
     type_id = ("type:" + digest(identity)[:24]
                if decision.ontology_level == "type" else None)
     alignments, all_evidence = [], set()
@@ -639,7 +654,8 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
     property_sources = {}
     for record in exact_records:
         for role, entry in _entries(record):
-            if role not in ("name", "alias", "description", "formula", "unit", "scope"):
+            if role not in ("name", "alias", "description", "formula", "unit", "scope",
+                            "metadata", "provenance", "identity"):
                 continue
             column = entry["column"]
             evidence_id = "record:" + digest([data.snapshot_id, record["record_id"], column])[:24]
@@ -674,6 +690,7 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                "ontology_type_id": type_id,
                "scope": effective_scope, "applicability_scope": applicability,
                "definition_parameters": parameters, "parameter_evidence": parameter_evidence,
+               "identity_qualifiers": identity_qualifiers,
                "scope_roles": dict(decision.scope_roles),
                "unrestricted_scope": {key: value for key, value in effective_scope.items()
                                       if decision.scope_roles.get(key) == "unrestricted"},
@@ -703,6 +720,7 @@ def _compiled_object_type(concept):
         evidence_scope="definition_record",
         applicability_scope=concept["applicability_scope"],
         definition_parameters=concept.get("definition_parameters", {}),
+        identity_qualifiers=concept.get("identity_qualifiers", {}),
         unit=concept["unit"], derivation_kind="exact_definition",
         aggregation_operator=concept.get("aggregation_operator"),
         source_concept_ids=[concept["id"]],
@@ -1023,9 +1041,50 @@ def compile_relation(data, profile, core, bundle, decision):
     return candidate, plan
 
 
+def _relation_endpoint(data, core, record, concepts, alignments, bindings, templates):
+    """Resolve one source record; a template is rechecked, never treated as exact identity."""
+    from .template_projection import bind_projection
+
+    types = {item.id: item for item in core.object_types if item.category == "business_type"}
+    by_concept = {item["id"]: item for item in concepts}
+    candidates = []
+    for alignment in alignments:
+        if (alignment.get("source_record_id") != record["record_id"]
+                or alignment.get("mapping_kind") != "exact"):
+            continue
+        concept = by_concept.get(alignment.get("concept_id"))
+        if (concept and concept.get("ontology_level") == "type"
+                and concept.get("ontology_type_id") in types):
+            candidates.append({"type_id": concept["ontology_type_id"], "concept_id": concept["id"],
+                               "mapping_kind": "exact", "evidence_ids": alignment["evidence_ids"]})
+    contracts = {item["template_id"]: item for item in templates
+                 if item.get("status") == "accepted" and item.get("snapshot_id") == data.snapshot_id}
+    for binding in bindings:
+        if (binding.get("record_id") != record["record_id"] or binding.get("status") != "accepted"
+                or binding.get("snapshot_id") != data.snapshot_id
+                or binding.get("object_type_id") not in types):
+            continue
+        template = contracts.get(binding.get("template_id"))
+        if template is None or template.get("object_type_id") != binding["object_type_id"]:
+            continue
+        try:
+            replay = bind_projection(data, template, record)
+        except ValueError:
+            continue
+        if replay is None or replay["slot_values"] != binding.get("slot_values"):
+            continue
+        candidates.append({"type_id": binding["object_type_id"], "concept_id": None,
+                           "mapping_kind": "template_instance",
+                           "evidence_ids": replay["evidence_ids"]})
+    if not candidates or len({item["type_id"] for item in candidates}) != 1:
+        return None
+    # Prefer exact proof when both routes agree on one type.
+    return next((item for item in candidates if item["mapping_kind"] == "exact"), candidates[0])
+
+
 def compile_business_relation(data, profile, core, bundle, decision, plan,
-                              concepts, alignments):
-    """Lift one reviewed record pair, never the whole-table execution plan."""
+                              concepts, alignments, *, template_bindings=(), template_projections=()):
+    """Type a reviewed pair; instance bindings never imply a universal type assertion."""
     rule = bundle["rule"]
     source, target = rule["source"], rule["target"]
     left, right = _quoted_positive_pair(
@@ -1035,27 +1094,21 @@ def compile_business_relation(data, profile, core, bundle, decision, plan,
                 (item.source_record_id, item.target_record_id)
                 for item in plan.witnessed_pairs}):
         return None, None, "concept_pair_is_not_in_executable_relation_witnesses"
-    exact = {item["source_record_id"]: item for item in alignments
-             if item["mapping_kind"] == "exact"}
-    source_alignment = exact.get(left["record_id"])
-    target_alignment = exact.get(right["record_id"])
+    source_alignment = _relation_endpoint(data, core, left, concepts, alignments,
+                                         template_bindings, template_projections)
+    target_alignment = _relation_endpoint(data, core, right, concepts, alignments,
+                                         template_bindings, template_projections)
     if source_alignment is None or target_alignment is None:
-        return None, None, "both_positive_records_require_exact_type_alignment"
-    concept_by_id = {item["id"]: item for item in concepts}
-    source_concept = concept_by_id.get(source_alignment["concept_id"])
-    target_concept = concept_by_id.get(target_alignment["concept_id"])
-    if (source_concept is None or target_concept is None
-            or source_concept["id"] == target_concept["id"]
-            or source_concept["ontology_level"] != "type"
-            or target_concept["ontology_level"] != "type"):
-        return None, None, "positive_record_alignment_lacks_distinct_business_types"
+        return None, None, "positive_record_requires_unambiguous_accepted_type_binding"
+    source_type, target_type = source_alignment["type_id"], target_alignment["type_id"]
     object_types = {item.id: item for item in core.object_types}
-    source_type = source_concept["ontology_type_id"]
-    target_type = target_concept["ontology_type_id"]
-    if (source_type not in object_types or target_type not in object_types
-            or object_types[source_type].category != "business_type"
-            or object_types[target_type].category != "business_type"):
-        return None, None, "aligned_business_type_is_not_in_accepted_core"
+    both_exact = all(item["mapping_kind"] == "exact" for item in (source_alignment, target_alignment))
+    if both_exact and source_alignment["concept_id"] == target_alignment["concept_id"]:
+        return None, None, "positive_record_alignment_lacks_distinct_business_types"
+    source_concept = {"id": source_alignment["concept_id"] if both_exact else left["record_id"],
+                      "applicability_scope": object_types[source_type].applicability_scope}
+    target_concept = {"id": target_alignment["concept_id"] if both_exact else right["record_id"],
+                      "applicability_scope": object_types[target_type].applicability_scope}
     source_scope = source_concept["applicability_scope"]
     target_scope = target_concept["applicability_scope"]
     if any(source_scope[key] != target_scope[key] for key in source_scope.keys() & target_scope.keys()):
@@ -1076,7 +1129,8 @@ def compile_business_relation(data, profile, core, bundle, decision, plan,
         definition=base_type.definition, evidence_ids=evidence_ids,
         category="business_relation_type", domain=[source_type], range=[target_type],
         endpoint_basis="record_alignment",
-        evidence_scope="one_positive_pair_with_exact_type_alignments",
+        evidence_scope=("one_positive_pair_with_exact_type_alignments" if both_exact
+                        else "one_positive_pair_with_type_bindings"),
     )
     candidate = core.model_copy(deep=True)
     existing = next((item for item in candidate.relation_types
@@ -1084,7 +1138,17 @@ def compile_business_relation(data, profile, core, bundle, decision, plan,
     if existing is None:
         candidate.relation_types.append(relation_type)
     else:
-        candidate.relation_types[candidate.relation_types.index(existing)] = merge_relation_type_evidence(
+        index = candidate.relation_types.index(existing)
+        record_scopes = {"one_positive_pair_with_exact_type_alignments",
+                         "one_positive_pair_with_type_bindings"}
+        if (existing.endpoint_basis == "record_alignment"
+                and {existing.evidence_scope, relation_type.evidence_scope} <= record_scopes
+                and existing.evidence_scope != relation_type.evidence_scope):
+            # Mixed endpoint proof does not change the predicate meaning. Its
+            # witness assertions retain their individual mapping kinds.
+            existing = existing.model_copy(update={"evidence_scope": "one_positive_pair_with_type_bindings"})
+            relation_type = relation_type.model_copy(update={"evidence_scope": "one_positive_pair_with_type_bindings"})
+        candidate.relation_types[index] = merge_relation_type_evidence(
             existing, relation_type)
     errors = validate_plan(candidate, data, profile)
     if errors:
@@ -1101,8 +1165,11 @@ def compile_business_relation(data, profile, core, bundle, decision, plan,
         "scope": dict(sorted({**target_scope, **source_scope}.items())),
         "identity_scope": "input_snapshot",
         "evidence_ids": evidence_ids,
-        "decision": {"status": "accepted", "method": "same_positive_pair_exact_type_alignments",
-                     "evidence_scope": "one_positive_pair_with_exact_type_alignments"},
+        "endpoint_scope": "exact_definition_pair" if both_exact else "typed_record_witness",
+        "endpoint_mapping_kinds": {"source": source_alignment["mapping_kind"],
+                                   "target": target_alignment["mapping_kind"]},
+        "decision": {"status": "accepted", "method": "same_positive_pair_accepted_type_bindings",
+                     "evidence_scope": relation_type.evidence_scope},
     }
     return candidate, assertion, None
 
@@ -1150,6 +1217,7 @@ def _type_context(core, bundle, limit=12):
     return [{"id": item.id, "parent": item.parent, "definition": item.definition,
              "label": item.label, "applicability_scope": item.applicability_scope,
              "definition_parameters": item.definition_parameters,
+             "identity_qualifiers": item.identity_qualifiers,
              "unit": item.unit, "category": item.category} for item in chosen]
 
 
@@ -1256,7 +1324,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                  prior_result=None, on_checkpoint=None, concept_batch_size=1,
                                  relation_batch_size=1, enable_template_projection=False):
     """One bounded group pass; failures do not change accepted plan or objects."""
-    from .llm import BudgetExceeded
+    from .llm import BudgetExceeded, InputBudgetExceeded
 
     if type(max_bundles) is not int or max_bundles < 0:
         raise ValueError("max_bundles must be nonnegative")
@@ -1343,7 +1411,18 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
             if seed is not None:
                 payload["component_type_candidates"] = component_type_candidates(core, seed)
             if bundle.get("template_repair_task"):
-                payload["targeted_repair"] = bundle["template_repair_task"]
+                # Keep complete repair evidence once. The persisted bundle is
+                # unchanged; only exact duplicate transport context is removed.
+                repair = dict(bundle["template_repair_task"])
+                payload["bundle"] = {key: value for key, value in bundle.items()
+                                     if key != "template_repair_task"}
+                if repair.get("known_template_matches") == matches:
+                    repair.pop("known_template_matches")
+                    repair["known_template_matches_location"] = "template_projection"
+                if repair.get("component_type_candidates") == payload.get("component_type_candidates"):
+                    repair.pop("component_type_candidates")
+                    repair["component_type_candidates_location"] = "component_type_candidates"
+                payload["targeted_repair"] = repair
         return payload
 
     async def prepare_batch(position, kind, size):
@@ -1540,7 +1619,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                         resolved.append(source["bundle_id"])
                             step["resolved_source_bundle_ids"] = resolved
                             for old_step in steps:
-                                if old_step["bundle_id"] in resolved and old_step["status"] in {"unresolved", "budget_exhausted"}:
+                                if old_step["bundle_id"] in resolved and old_step["status"] in {"unresolved", "budget_exhausted", "input_over_budget"}:
                                     old_step.update(superseded=True, resolved_by=bundle["bundle_id"])
                     elif compiled:
                         concept, new_alignments = compiled
@@ -1574,6 +1653,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                   or existing.definition != new_type.definition
                                   or existing.applicability_scope != new_type.applicability_scope
                                   or existing.definition_parameters != new_type.definition_parameters
+                                  or existing.identity_qualifiers != new_type.identity_qualifiers
                                   or existing.unit != new_type.unit
                                   or existing.aggregation_operator != new_type.aggregation_operator):
                                 raise ValueError("Conflicting derived object type ID")
@@ -1627,6 +1707,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                                 old["ontology_type_id"] = concept["ontology_type_id"]
                                 old["applicability_scope"] = concept["applicability_scope"]
                                 old["definition_parameters"] = concept["definition_parameters"]
+                                old["identity_qualifiers"] = concept.get("identity_qualifiers", {})
                                 old["parameter_evidence"] = concept["parameter_evidence"]
                                 old["scope_roles"] = concept["scope_roles"]
                                 old["unrestricted_scope"] = concept["unrestricted_scope"]
@@ -1678,6 +1759,12 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                         step.update(status=decision.status, reason=decision.reason)
                 else:
                     raise ValueError("Unknown bundle task kind")
+            except InputBudgetExceeded as exc:
+                # A single oversized unit must not consume or stop the shared
+                # call queue. Retain its identity and exact required byte count.
+                step.update(status="input_over_budget", error_type=type(exc).__name__,
+                            reason=str(exc), request_bytes=exc.request_bytes,
+                            max_input_bytes=exc.max_input_bytes)
             except BudgetExceeded as exc:
                 step.update(status="budget_exhausted", error_type=type(exc).__name__)
                 steps.append(step)
@@ -1692,10 +1779,13 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                     step["compiler_evidence_audit"] = exc.audit
             step["core_after"] = digest(core.model_dump())
             steps.append(step)
-            batch_decisions.pop(bundle["bundle_id"], None)
-            batch_reviews.pop(bundle["bundle_id"], None)
-            relation_batch_decisions.pop(bundle["bundle_id"], None)
-            relation_batch_reviews.pop(bundle["bundle_id"], None)
+            if step["status"] != "input_over_budget":
+                # A paid batched proposal remains reusable when only its
+                # review packet failed admission.
+                batch_decisions.pop(bundle["bundle_id"], None)
+                batch_reviews.pop(bundle["bundle_id"], None)
+                relation_batch_decisions.pop(bundle["bundle_id"], None)
+                relation_batch_reviews.pop(bundle["bundle_id"], None)
             run_step_count += 1
             await checkpoint()
             if stage:
@@ -1709,7 +1799,9 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
         try:
             candidate, assertion, reason = compile_business_relation(
                 data, profile, core, bundle, decision, plan,
-                list(concepts.values()), alignments)
+                list(concepts.values()), alignments,
+                template_bindings=list(template_bindings.values()),
+                template_projections=list(template_projections.values()))
             if candidate is None:
                 derivation["reason"] = reason
             else:
@@ -1728,7 +1820,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
         relation_derivations.append(derivation)
     latest_steps = {item["bundle_id"]: item for item in steps}
     statuses = {status: sum(item["status"] == status and not item.get("superseded") for item in latest_steps.values())
-                for status in ("accepted", "no_change", "unresolved", "budget_exhausted")}
+                for status in ("accepted", "no_change", "unresolved", "budget_exhausted", "input_over_budget")}
     resolved_source_ids = {source_id for item in latest_steps.values()
                            for source_id in item.get("resolved_source_bundle_ids", [])}
     attempted_source_ids = set(latest_steps) | resolved_source_ids
@@ -1747,6 +1839,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 "template_count": len(template_projections), "template_binding_count": len(template_bindings),
                 "template_reused_before_llm": sum(item.get("action") == "reuse_template" for item in latest_steps.values()),
                 "partial": bool(retained_skipped or statuses["unresolved"] or statuses["budget_exhausted"]
+                                or statuses["input_over_budget"]
                                 or any(item.get("repair_remaining_slots") for item in latest_steps.values()))}
     await checkpoint()
     return {**state(), "bundles_selected": len(selected), "bundles_skipped": retained_skipped,

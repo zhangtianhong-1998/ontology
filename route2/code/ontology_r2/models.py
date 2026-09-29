@@ -14,7 +14,8 @@ class Strict(BaseModel):
 
 
 class SourceProperty(Strict):
-    role: Literal["name", "alias", "description", "formula", "unit", "scope"]
+    role: Literal["name", "alias", "description", "formula", "unit", "scope",
+                  "metadata", "provenance", "identity"]
     source_table: str
     source_column: str
     evidence_ids: list[str] = Field(default_factory=list)
@@ -64,6 +65,8 @@ class DerivedType(Strict):
     # Definition-level calculation settings/grain, never observed coordinates.
     # These participate in exact type identity even when no row filter applies.
     definition_parameters: dict[str, str] = Field(default_factory=dict)
+    # Namespace/tenant/version of a definition, not a row ID or observation.
+    identity_qualifiers: dict[str, str] = Field(default_factory=dict)
     unit: str | None = None
     # Optional calculation attribute of a reusable Measure quantity. SUM/AVG
     # alone are operations, never Measure ontology types.
@@ -87,6 +90,7 @@ class DerivedType(Strict):
                             "multiple_definition_records",
                             "sample_semantic_with_full_technical_check",
                             "one_positive_pair_with_exact_type_alignments",
+                            "one_positive_pair_with_type_bindings",
                             "one_configuration_witness_with_exact_type_alignments",
                             "complete_calculation_definition",
                             "checked_structured_binding", "projected_definition_template"] | None = None

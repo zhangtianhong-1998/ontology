@@ -46,10 +46,18 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
     first_coverage = dict(result.get('coverage', {}))
     first_skipped = result.get('bundles_skipped', 0)
     stop_reason = 'round_limit'
+    pending = {'repair_tasks_not_attempted': 0, 'groups_not_selected': 0,
+               'observed_value_tasks_not_selected': 0}
     for number in range(2, settings['max_rounds'] + 1):
         tasks = build_targeted_repair_tasks(
             data, bundles, result, max_tasks=settings['max_tasks_per_round'],
             max_examples=settings['max_examples_per_task'], round_number=number)
+        # Discovery is refreshed after every changed round. Count its current
+        # omissions, rather than retaining gaps a later round already repaired.
+        pending = {'repair_tasks_not_attempted': 0,
+                   'groups_not_selected': tasks['coverage'].get('groups_not_selected', 0),
+                   'observed_value_tasks_not_selected': tasks['coverage'].get(
+                       'observed_value_tasks_not_selected', 0)}
         report['tasks'].extend(tasks['tasks'])
         observed = {item['id']: item for item in report['observed_value_tasks']}
         observed.update({item['id']: item for item in tasks.get('observed_value_tasks', [])})
@@ -67,7 +75,8 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
         ceiling = min(total - settings['reserve_calls_for_followup'],
                       llm.calls + settings['max_calls_per_round'])
         if llm.calls >= ceiling:
-            report['rounds'].append({**row, 'status': 'budget_exhausted', 'model_calls': 0})
+            pending['repair_tasks_not_attempted'] = len(tasks['bundles'])
+            report['rounds'].append({**row, **pending, 'status': 'budget_exhausted', 'model_calls': 0})
             stop_reason = 'budget_exhausted'
             break
         before = _semantic_digest(result)
@@ -78,24 +87,38 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
                 max_repairs_per_bundle=bundle_options.get('max_repairs_per_bundle', 0),
                 enable_template_projection=True, concept_batch_size=1, relation_batch_size=1,
                 progress=progress, on_checkpoint=on_checkpoint)
-        row.update(status='partial' if result.get('partial') else 'complete',
+        pending['repair_tasks_not_attempted'] = result.get('coverage', {}).get(
+            'repair_tasks_not_attempted', 0)
+        row.update(**pending,
+                   status='partial' if result.get('partial') or any(pending.values()) else 'complete',
                    model_calls=llm.calls - row['calls_before'], coverage=result.get('coverage', {}))
+        current_ids = {item['bundle_id'] for item in tasks['bundles'] if 'bundle_id' in item}
+        current_steps = [item for item in result.get('steps', []) if item['bundle_id'] in current_ids]
+        row['input_over_budget_tasks'] = sum(item['status'] == 'input_over_budget' for item in current_steps)
+        row['budget_exhausted_tasks'] = sum(item['status'] == 'budget_exhausted' for item in current_steps)
         report['rounds'].append(row)
         if _semantic_digest(result) == before:
-            stop_reason = 'no_semantic_change'
+            # A queue that could not inspect its evidence did not converge.
+            stop_reason = ('budget_exhausted' if row['budget_exhausted_tasks'] else
+                           'input_budget_blocked' if row['input_over_budget_tasks'] else
+                           'discovery_limit' if any(pending.values()) else
+                           'no_semantic_change')
             break
     # A later small queue must not erase the original input coverage limits.
     # New group checkpoints retain the original source inventory and may prove
     # formerly unattempted records through a repair. Legacy callers lack it.
     if 'source_bundles_not_attempted' not in result.get('coverage', {}):
         result['bundles_skipped'] = max(first_skipped, result.get('bundles_skipped', 0))
-    result['partial'] = bool(result.get('partial') or result['bundles_skipped'])
+    result['partial'] = bool(result.get('partial') or result['bundles_skipped'] or any(pending.values()))
     result.setdefault('coverage', {})['first_pass'] = first_coverage
+    result['coverage']['targeted_repair_pending'] = dict(pending)
+    result['coverage']['partial'] = result['partial']
     partial = bool(result['partial'] or report['observed_value_tasks'])
     report['coverage'] = {'status': 'partial' if partial else 'complete',
                          'rounds_executed': len(report['rounds']), 'stop_reason': stop_reason,
                          'model_calls': llm.calls - start_calls,
                          'first_pass_unattempted': first_skipped,
                          'observed_value_tasks': len(report['observed_value_tasks']),
+                         **pending,
                          'partial': partial}
     return result, report

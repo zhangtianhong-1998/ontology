@@ -26,7 +26,8 @@ _WORDS = re.compile(r"[a-z0-9]+")
 _REFERENCE = re.compile(r"(?:^|_)(?:code|id|key|source|target|ref|reference|type|field|value)(?:_|$)", re.I)
 _CONTENT_REFERENCE = re.compile(r"(?:^|_)(?:code|field|value)(?:_|$)", re.I)
 _PURE_TECHNICAL = re.compile(r"(?:\d+(?:\.\d+)?|[0-9a-f]{16,}|\d{4}-\d\d-\d\d)", re.I)
-_CARD_ROLES = ("name", "alias", "description", "formula", "unit", "scope")
+_CARD_ROLES = ("name", "alias", "description", "formula", "unit", "scope",
+               "provenance", "metadata", "identity")
 _PHYSICAL_NAME_DECLARATION = re.compile(
     r"^(?:物理(?:数据表|表|数据库|文件)(?:名称|名)|"
     r"physical\s+(?:table|database|file)\s+name)(?:\b|[\s,，;；:：。(.（]|$)", re.I)
@@ -191,7 +192,10 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
         not bool(_HAN.search(entry["value"])),
         entry["column"] in {"schema_name", "physical_table_name"}))
     aliases = [value["value"] for value in fields.get("alias", ())]
-    scope = {value["column"]: value["value"] for value in fields.get("scope", ())}
+    # Definition identity qualifiers must survive with their original values;
+    # administrative/lexical context stays visible outside business scope.
+    scope = {value["column"]: value["value"] for role in ("scope", "identity")
+             for value in fields.get(role, ())}
     units = [value["value"] for value in fields.get("unit", ())]
     search_text = " ".join(value["value"] for role in ("name", "alias", "description", "formula", "unknown")
                            for value in fields.get(role, ()))

@@ -137,8 +137,9 @@ def _endpoint(data, plan, candidate, side, aligned):
     type_id = candidate.get(side + "_type_id")
     if (record_id != stated.get("record_id") or matched is None
             or matched["type_id"] != type_id
+            or matched.get("snapshot_id") not in (None, data.snapshot_id)
             or matched["concept_id"] != stated.get("concept_id")):
-        raise ValueError("Definition row lacks the cited exact accepted business type")
+        raise ValueError("Definition row lacks the cited current accepted business type binding")
     business_type = next((item for item in plan.object_types
                           if item.id == type_id and item.category == "business_type"), None)
     if business_type is None:

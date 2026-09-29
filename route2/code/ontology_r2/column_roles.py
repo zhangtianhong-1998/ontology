@@ -47,6 +47,43 @@ _SENSITIVE_NAME = re.compile(
 )
 _SENSITIVE_COMMENT = re.compile(r"密码|密钥|令牌|凭据|私钥|认证头|连接口令|身份证|手机号")
 
+# Context is retained as evidence, without becoming an applicability condition.
+# Identity qualifiers remain separate because removing a tenant or version can
+# merge equal labels that denote different definitions.
+CONTEXT_ROLES = frozenset(("provenance", "metadata", "identity"))
+_IDENTITY_CONTEXT = re.compile(
+    r"^(?:(?:tenant|namespace|version|revision)(?:_(?:id|code|name|number))?|"
+    r"(?:definition|schema|model|contract)_(?:version|revision))$", re.I)
+_PROVENANCE_CONTEXT = re.compile(
+    r"^(?:(?:data_)?source_(?:system|database|schema|code)|"
+    r"(?:origin|upstream|ingestion|ingest)_(?:system|source)|lineage)$", re.I)
+_METADATA_CONTEXT = re.compile(
+    r"^(?:language|lang|locale|(?:language|locale)_(?:code|name)|"
+    r"owner(?:_team|_name)?|steward(?:_team|_name)?|"
+    r"(?:sync|refresh)_(?:type|mode|method)|"
+    r"(?:record|definition|publication|lifecycle)_(?:status|state))$", re.I)
+
+
+def declared_context_role(column: dict[str, Any]) -> str | None:
+    """Separate explicit context from scope, without using value cardinality.
+
+    Opaque names may receive these roles through checked model proposals.
+    Generic status/type/source fields remain undecided because they can be
+    business coordinates or polymorphic references.
+    """
+    name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(column.get("column_name") or "")).casefold()
+    comment = str(column.get("column_comment") or "")
+    if (_IDENTITY_CONTEXT.fullmatch(name)
+            or re.search(r"定义(?:版本|命名空间)|租户(?:标识|编码)|\b(?:definition version|tenant identifier|namespace)\b", comment, re.I)):
+        return "identity"
+    if (_PROVENANCE_CONTEXT.fullmatch(name)
+            or re.search(r"数据(?:来源|血缘)|来源系统|\b(?:source system|data provenance|data lineage)\b", comment, re.I)):
+        return "provenance"
+    if (_METADATA_CONTEXT.fullmatch(name)
+            or re.search(r"(?:词条|标签|显示|定义文本)(?:语言|语种)|负责人|负责团队|同步方式|同步类型|生命周期状态|\b(?:lexical language|display locale|record status)\b", comment, re.I)):
+        return "metadata"
+    return None
+
 
 def is_sensitive_column(column: dict[str, Any]) -> bool:
     """Conservative value-redaction boundary for common credential fields."""

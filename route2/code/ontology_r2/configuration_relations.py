@@ -44,6 +44,7 @@ class ConfigurationRelationSpec(Strict):
 _RELATION_TEXT = re.compile(
     r"(?:^|_)(?:relation|relationship|dependency|depends|formula|description|rule)"
     r"(?:_|$)|关系|依赖|计算公式|关系说明|引用说明", re.I)
+_RELATION_VALUE = re.compile(r"包含|含有|依赖|取决于|指向|引用|关联|相关于|\b(?:contains|depends on|points to|references|related to)\b", re.I)
 
 
 def _accepted_definition_roots(data, plan, concepts, alignments, memberships=()):
@@ -66,17 +67,28 @@ def _accepted_definition_roots(data, plan, concepts, alignments, memberships=())
 
 def _relation_text_candidate(data, table_name, reference_columns):
     table = data.tables[table_name]
+    visible = []
     for column in table["columns"]:
         name = column["column_name"]
         if name in reference_columns:
-            continue
-        if not _RELATION_TEXT.search(name + " " + str(column.get("column_comment") or "")):
             continue
         try:
             _check_column(data, table_name, name)
         except ValueError:
             continue
-        return name
+        if _RELATION_TEXT.search(name + " " + str(column.get("column_comment") or "")):
+            return name
+        visible.append(name)
+    # Opaque names and absent comments do not erase an explicit source
+    # statement. This is bounded recall only: compilation still checks the
+    # entire positive clause, both endpoint names and the exact witness.
+    if visible:
+        select = ", ".join(f"substr(CAST({qi(name)} AS VARCHAR), 1, 1025)" for name in visible)
+        rows = data.db.execute(f"SELECT {select} FROM {qi(table['sql_name'])} ORDER BY __r2_row LIMIT 16").fetchall()
+        for position, name in enumerate(visible):
+            if any(isinstance(row[position], str) and len(row[position]) <= 1024
+                   and _RELATION_VALUE.search(row[position]) for row in rows):
+                return name
     return None
 
 
@@ -110,7 +122,7 @@ def infer_configuration_specs(
     Each input rule must have exact raw-code matching over the full snapshot,
     no missing/ambiguous referenced rows, and no selector/scope condition that
     this simple dual-code contract cannot represent. Distinct accepted target
-    business roots block shared-key alignment from becoming a relation lead.
+    business roots without an explicit statement remain alignment-only leads.
     The returned `spec` mappings can feed `discover_configuration_relations`;
     their evidence remains candidate-level until both endpoints and the
     predicate have been judged separately.
@@ -187,19 +199,19 @@ def infer_configuration_specs(
             if left_source["field"] == right_source["field"]:
                 skipped["same_configuration_column"] += 1
                 continue
-            if left_root == right_root:
+            text_column = _relation_text_candidate(
+                data, table_name, {left_source["field"], right_source["field"]})
+            if left_root == right_root and text_column is None:
                 # Two code paths into records of one business root are often
                 # alternate descriptions of the same type, not a predicate.
                 skipped["same_business_root_alignment_lead"] += 1
                 continue
-            if left["target"]["table"] == right["target"]["table"]:
+            if left["target"]["table"] == right["target"]["table"] and text_column is None:
                 skipped["same_definition_table_alignment_lead"] += 1
                 continue
             if len(output) >= max_specs:
                 skipped["spec_limit"] += 1
                 continue
-            text_column = _relation_text_candidate(
-                data, table_name, {left_source["field"], right_source["field"]})
             spec = ConfigurationRelationSpec(
                 spec_id="config_spec:" + digest([
                     data.snapshot_id, table_name, left["rule_id"], right["rule_id"]])[:24],
@@ -233,7 +245,7 @@ def infer_configuration_specs(
                 "semantic_status": "two_verified_reference_rules_are_not_a_business_predicate",
             })
     return {
-        "method": "pair_full_input_checked_config_references_to_distinct_accepted_definition_roots",
+        "method": "pair_full_input_checked_config_references_with_separate_semantic_adjudication",
         "snapshot_id": data.snapshot_id,
         "spec_candidates": output,
         "coverage": {"rules_inspected": seen, "eligible_rule_groups": len(by_table),
@@ -286,7 +298,8 @@ def _type_alignments(plan, concepts, alignments, memberships=()):
         record_id, type_id = member.get("record_id"), member.get("type_id", member.get("object_type_id"))
         if (not record_id or type_id not in accepted
                 or not (member.get("status") == "definition_template_match"
-                        or member.get("mapping_kind") == "template_instance")
+                        or (member.get("mapping_kind") == "template_instance"
+                            and member.get("status") == "accepted"))
                 or not member.get("evidence_ids")):
             continue
         old = by_record.get(record_id)
@@ -295,6 +308,7 @@ def _type_alignments(plan, concepts, alignments, memberships=()):
         elif old is None:
             by_record[record_id] = {"type_id": type_id, "concept_id": member.get("concept_id"),
                 "alignment_id": member["id"], "evidence_ids": member.get("evidence_ids", []),
+                "snapshot_id": member.get("snapshot_id"),
                 "mapping_kind": member.get("mapping_kind", "shares_definition_type_template")}
     for record_id in conflicting:
         by_record.pop(record_id, None)
@@ -370,7 +384,7 @@ def discover_configuration_relations(
 
     The SQL scans every configuration row and groups only observed code tuples.
     Each definition code must match exactly one row in the full imported table,
-    and that row must have an accepted exact type alignment.  Missing, multiple,
+    and that row must have an accepted type alignment or definition membership. Missing, multiple,
     or unaligned endpoints remain unresolved.  Even two verified endpoints do
     not authorize a business predicate without a separate semantic decision.
     """

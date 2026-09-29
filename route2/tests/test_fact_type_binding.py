@@ -178,16 +178,16 @@ def test_one_field_call_instantiates_only_exact_observed_tuples_with_full_source
         data.close()
 
 
-def test_aggregation_operator_is_not_a_business_fact_value_type(tmp_path):
+def test_measure_binding_does_not_execute_its_aggregation_metadata(tmp_path):
     data, core = _fixture(tmp_path)
     try:
         core.object_types[0].parent = "Measure"
         core.object_types[0].aggregation_operator = "sum"
         llm = _LLM()
         result = _bind(data, core, llm)
-        assert result["instances"] == []
-        assert result["coverage"]["accepted_fields"] == 0
-        assert llm.calls == []
+        assert result["coverage"]["accepted_fields"] == 1
+        assert {item["observed_value"] for item in result["instances"]} == {"100", "120"}
+        assert len(llm.calls) == 1
     finally:
         data.close()
 

@@ -9,7 +9,7 @@ from itertools import combinations
 import re
 import unicodedata
 
-from .column_roles import is_sensitive_column
+from .column_roles import CONTEXT_ROLES, declared_context_role, is_sensitive_column
 from .storage import digest, qi
 
 
@@ -27,6 +27,9 @@ _IDENTIFIER_DECLARATION = re.compile(
     r"\b(?:identifier|primary key|foreign key|reference key)\b", re.I)
 _RULE_PARAMETER = re.compile(
     r"(?:^|_)(?:rule|formula|expression|calculation)_(?:type|kind|mode|operator)$", re.I)
+_REFERENCE_SELECTOR_DECLARATION = re.compile(
+    r"(?:引用|关联|目标)(?:类型|种类|类别)|"
+    r"\b(?:reference|referenced|target)\s+(?:type|kind|category|discriminator)\b", re.I)
 
 
 def _raw_field_roles(table):
@@ -50,12 +53,19 @@ def _raw_field_roles(table):
                          if re.search(pattern, comment)), None)
         if role:
             selected[role].append(name)
+        context_role = declared_context_role(column)
+        if context_role:
+            # A governance/source field may carry a readable name; retain that
+            # source text, but never route its context candidate into scope.
+            if name in selected.get("scope", ()):
+                selected["scope"].remove(name)
+            selected[context_role].append(name)
     # Competing source-backed role candidates coexist for recall. Neither a
     # metadata cue nor a model proposal establishes the final business role.
     for item in table.get("inferred_semantic_roles", ()):
         name, role = item.get("column"), item.get("role")
         if (item.get("status") != "source_verified_role_candidate"
-                or role not in ROLE_CUES or name not in profiles
+                or role not in {*ROLE_CUES, *CONTEXT_ROLES} or name not in profiles
                 or name in excluded or name in selected.get(role, ())):
             continue
         column = next((c for c in table["columns"] if c["column_name"] == name), None)
@@ -63,7 +73,12 @@ def _raw_field_roles(table):
                 or profiles[name].get("scan_scope") != "full_input"
                 or profiles[name].get("usable_count", 0) == 0):
             continue
-        selected[role].append(name)
+        context_role = declared_context_role(column)
+        effective_role = context_role if role == "scope" and context_role else role
+        if effective_role in CONTEXT_ROLES and name in selected.get("scope", ()):
+            selected["scope"].remove(name)
+        if name not in selected[effective_role]:
+            selected[effective_role].append(name)
     return dict(selected)
 
 
@@ -79,20 +94,23 @@ def field_role_conflicts(table, roles=None):
     table_name = table.get("name") or ".".join(filter(None, (
         table.get("schema"), table.get("table_name"))))
     conflicts = []
-    for role in ("name", "alias", "formula"):
+    for role in ("name", "alias", "formula", "description"):
         for field in roles.get(role, ()):
             column = columns[field]
             normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", field).casefold()
             identifier_name = bool(_IDENTIFIER_SUFFIX.search(normalized))
             identifier_declared = bool(_IDENTIFIER_DECLARATION.search(str(column.get("column_comment") or "")))
+            reference_selector = bool(_REFERENCE_SELECTOR_DECLARATION.search(
+                str(column.get("column_comment") or "")))
             base = {"column": field, "proposed_role": role,
                     "schema_evidence_id": f"schema:{table_name}:{field}",
                     "resolution_origin": "source_declaration_conflict",
                     "semantic_identity_claim": False}
-            if identifier_name or identifier_declared:
+            if identifier_name or identifier_declared or reference_selector:
                 conflicts.append({**base, "effective_role": "reference", "binding_only": True,
                     "reason": "identifier_declaration_does_not_support_name_alias_or_formula",
                     "identifier_name": identifier_name, "identifier_declared": identifier_declared,
+                    "reference_selector_declared": reference_selector,
                     "declared_primary_key": field in table.get("pk", ())})
             elif role == "formula" and _RULE_PARAMETER.search(normalized):
                 conflicts.append({**base, "effective_role": "scope", "binding_only": False,
