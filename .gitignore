@@ -45,3 +45,7 @@ data/
 # Explicitly authorized synthetic experiment snapshot; other local runs stay ignored.
 !experiments/fruit-full-v8-20260928/synthetic-data.tar.gz
 !experiments/fruit-full-v8-20260928/extraction-results.tar.gz
+
+# Authorized v10 synthetic inputs and completed experiment results.
+!experiments/fruit-full-v10-20260929/synthetic-data.tar.gz
+!experiments/fruit-full-v10-20260929/extraction-results.tar.gz

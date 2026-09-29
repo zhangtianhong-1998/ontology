@@ -1,0 +1,1116 @@
+{
+  "source_commit": "cf6ba4f46400a39336bd53536c7050608fc239d3",
+  "run": "fruit-templates-full-v10-20260929",
+  "run_status": "partial",
+  "synthetic": true,
+  "source_files_matching_snapshot": 92,
+  "credential_scan_files": 209,
+  "credential_scan_findings": 0,
+  "sqlite_quick_check": "ok",
+  "input_files": [
+    {
+      "path": "data/fruit_api_input_param.csv",
+      "bytes": 26972227,
+      "sha256": "aaf030ba695480dd0a6ec1940121f19c7a626d6b17f5ab57d45ecb18f0c09450"
+    },
+    {
+      "path": "data/fruit_api_output_param.csv",
+      "bytes": 47654508,
+      "sha256": "69e90dca6608de8632d1813c68b0e41004d6cc357895027019a72fe6ad9f18ba"
+    },
+    {
+      "path": "data/fruit_api_tag.csv",
+      "bytes": 14789018,
+      "sha256": "b41d93ec31bb782fdfc584215130a349686a705b3bc021a9df0c29f661ee96ee"
+    },
+    {
+      "path": "data/fruit_business_rule.csv",
+      "bytes": 488259,
+      "sha256": "ee27ec003cecae1a8218de6c7cb1efd22c9bce004c8a7a92c4c75c0a1faa551d"
+    },
+    {
+      "path": "data/fruit_dashboard_card.csv",
+      "bytes": 653546,
+      "sha256": "37d5e65520dc7917f5ff990ea39072b0bcac2c39f6f855ab6a5311e6cd2b62f7"
+    },
+    {
+      "path": "data/fruit_db_connection.csv",
+      "bytes": 2998,
+      "sha256": "7405e3adf292039546705d0c6a32974a388eb7062122979f8ffe3400036c12d1"
+    },
+    {
+      "path": "data/fruit_dim_anchor.csv",
+      "bytes": 48934,
+      "sha256": "f411501a681a6243a62501ccf9d852f97e7d5c00a3cfbd263e2d14fe44db7e7a"
+    },
+    {
+      "path": "data/fruit_dim_combo_rule.csv",
+      "bytes": 120800,
+      "sha256": "be70829ef961f1639b14fd50f5a4006d3a0ffe3baff773c385693df0866c740a"
+    },
+    {
+      "path": "data/fruit_dim_definition.csv",
+      "bytes": 30639,
+      "sha256": "371f7a0804243209a69d2d2f4c3f3c77d4fcb11b26e8b1309dd23f08cd3dc088"
+    },
+    {
+      "path": "data/fruit_dim_field.csv",
+      "bytes": 656565,
+      "sha256": "1711db3ccf6b7d3bcce489501b334aa816ed24b83e51d5ceaa23a4d17875bb29"
+    },
+    {
+      "path": "data/fruit_dim_member.csv",
+      "bytes": 1178543,
+      "sha256": "25e6cfa61ab7da2daf07b3d45983f722f0b753748d972e98b83146dfb4117d18"
+    },
+    {
+      "path": "data/fruit_import_staging_temp.csv",
+      "bytes": 4865626,
+      "sha256": "f6e37520ee35deeb3eaedfb80e7010887e218b5cf9fca51bdd960be042473c32"
+    },
+    {
+      "path": "data/fruit_market_api.csv",
+      "bytes": 1309548,
+      "sha256": "021e7a61a5ee81666171ab2521f9dd692afc985e2d58345fc4f8fa806395fd79"
+    },
+    {
+      "path": "data/fruit_measure_def.csv",
+      "bytes": 1709163,
+      "sha256": "fb61c5e0486661369013ba5f4bc43fa2cc309c686de18de72fb1e30282483900"
+    },
+    {
+      "path": "data/fruit_metric_anchor.csv",
+      "bytes": 2338,
+      "sha256": "ff62261a6c8af8e2329cd11ad348cb16aed5837cf243eac34aafd15951bd4100"
+    },
+    {
+      "path": "data/fruit_metric_attr.csv",
+      "bytes": 5139466,
+      "sha256": "2cb1c8e5249fddc9773e797b6d26c23daa75cfff925fc618d81fb715a5963ca2"
+    },
+    {
+      "path": "data/fruit_metric_detail.csv",
+      "bytes": 10002952,
+      "sha256": "b2be3c07d94345bc44868c9562862cbed1ba7c2985c775f7e37bdf3cba8e4e18"
+    },
+    {
+      "path": "data/fruit_op_log.csv",
+      "bytes": 879614,
+      "sha256": "23e032ba76dbc5313f9b20ac2972e658766f97225a35e359d6ffcd72d2cc02c3"
+    },
+    {
+      "path": "data/fruit_org_dim_data.csv",
+      "bytes": 3066722,
+      "sha256": "06d3f3e1bbfb45da1de1102d5fede0fbe4139b4abc00be63c7d1029516067ecf"
+    },
+    {
+      "path": "data/fruit_param_ref_rule.csv",
+      "bytes": 86663335,
+      "sha256": "8fe70a74c0d8fcccb6129b55ab6c79d19b4006d183af1124ea85f55d667d40b2"
+    },
+    {
+      "path": "data/fruit_synonym_dict.csv",
+      "bytes": 484922,
+      "sha256": "eefc12a7b1cd91fea2da30d18b520b44362d5009d9904584a397f1dd961f84b3"
+    },
+    {
+      "path": "data/fruit_wide_table_column.csv",
+      "bytes": 9551557,
+      "sha256": "1669f2f757b1b89c8765fc825d5f51fc02f9a1fb6950fc14c7f7101aece3fb2f"
+    },
+    {
+      "path": "data/fruit_wide_table_def.csv",
+      "bytes": 55128,
+      "sha256": "27727f64da3859b0656623d7f5711f053f9fd97f8fb75c7667bd0ad25be88ab0"
+    },
+    {
+      "path": "schema/constraints/fruit_api_input_param.yaml",
+      "bytes": 220,
+      "sha256": "2846346d0bae17c612f1ad4c598173a3d1f77ba9cc9aeed55de9da9f6a5418c7"
+    },
+    {
+      "path": "schema/constraints/fruit_api_output_param.yaml",
+      "bytes": 223,
+      "sha256": "891504b34c12c529ebd7984795e8b10f32c7b760a49b5919e0f2a8f7d667199a"
+    },
+    {
+      "path": "schema/constraints/fruit_api_tag.yaml",
+      "bytes": 196,
+      "sha256": "b4219690277595ff932a280480f9b278dbb9678075e1f215c7b6e4cc8d181bfc"
+    },
+    {
+      "path": "schema/constraints/fruit_business_rule.yaml",
+      "bytes": 209,
+      "sha256": "8a6744a47931311ff52f240939b425e955bad96aed8f9eb5c242d71fefe783f7"
+    },
+    {
+      "path": "schema/constraints/fruit_dashboard_card.yaml",
+      "bytes": 211,
+      "sha256": "a44a0f623c885323a73233d18459b4064bf98c56a07cc504714da92f190a7ec5"
+    },
+    {
+      "path": "schema/constraints/fruit_db_connection.yaml",
+      "bytes": 212,
+      "sha256": "68311b9471f4a83db89e39560728c1992456b1a79b458a674d5df02fbba5a6a2"
+    },
+    {
+      "path": "schema/constraints/fruit_dim_anchor.yaml",
+      "bytes": 205,
+      "sha256": "1a523da5220a2dd098caf3ca8e8c04e4c48f570010539182ee286b70746c24b2"
+    },
+    {
+      "path": "schema/constraints/fruit_dim_combo_rule.yaml",
+      "bytes": 217,
+      "sha256": "1fd88e766bfc52bfc66978b5716687595ba369663a8aadc6dac6c6bcebfaa95f"
+    },
+    {
+      "path": "schema/constraints/fruit_dim_definition.yaml",
+      "bytes": 214,
+      "sha256": "a0185218d57b173fe028ea76d82f6dded86536546364289b1bad8cc9f784deea"
+    },
+    {
+      "path": "schema/constraints/fruit_dim_field.yaml",
+      "bytes": 202,
+      "sha256": "6158051af9d2d37212e0581944b324e24ad14c4d896a616f3763595e78dda0fb"
+    },
+    {
+      "path": "schema/constraints/fruit_dim_member.yaml",
+      "bytes": 205,
+      "sha256": "503bd6f48925376458222722ee5e55872131d100d2c86c1e61e16f2270a22d91"
+    },
+    {
+      "path": "schema/constraints/fruit_import_staging_temp.yaml",
+      "bytes": 75,
+      "sha256": "54c23f18f7a7f785c6002bbf6ef1edaf82bd3c32e6b8279ef17ca52b21756ae9"
+    },
+    {
+      "path": "schema/constraints/fruit_market_api.yaml",
+      "bytes": 202,
+      "sha256": "5605dfe150f6ab1a8d4828d20c9de353b552e02b61e730db6ce687164b024b88"
+    },
+    {
+      "path": "schema/constraints/fruit_measure_def.yaml",
+      "bytes": 208,
+      "sha256": "406e41e312d2cc14d1ba76975448b8320598c9679204b0a99f00c072bdd4b987"
+    },
+    {
+      "path": "schema/constraints/fruit_metric_anchor.yaml",
+      "bytes": 218,
+      "sha256": "8c52582822bf6e02019e30b73725c165601c0bfae1cb9fa36e81c31038b477b0"
+    },
+    {
+      "path": "schema/constraints/fruit_metric_attr.yaml",
+      "bytes": 212,
+      "sha256": "2ac41ad044cb36555a1fe8c48cc39a3b7e6e89b6f43156dd23745744cad645be"
+    },
+    {
+      "path": "schema/constraints/fruit_metric_detail.yaml",
+      "bytes": 218,
+      "sha256": "7175c8f18ce61509507c83887c1dd6a1e24383d49fb806ffb5d9f1f169fab4f8"
+    },
+    {
+      "path": "schema/constraints/fruit_op_log.yaml",
+      "bytes": 194,
+      "sha256": "acd665727b6d4b958dadcde082f04d27a0f3aec38720e7c9d1de3e337a77bf60"
+    },
+    {
+      "path": "schema/constraints/fruit_org_dim_data.yaml",
+      "bytes": 68,
+      "sha256": "f1bf6ac1ab62e74dc57ea49a10dbc2d1335c094204292ecc35d851fc8ccdff4b"
+    },
+    {
+      "path": "schema/constraints/fruit_param_ref_rule.yaml",
+      "bytes": 215,
+      "sha256": "08bcddb88e6057953ef3724b780e524ab7e5e173e74525bdf31607a2da2fe3cc"
+    },
+    {
+      "path": "schema/constraints/fruit_synonym_dict.yaml",
+      "bytes": 68,
+      "sha256": "0edb6be3b302432727f76a34607a491a5acfca0c3ed4d03e7078cc1ad7204858"
+    },
+    {
+      "path": "schema/constraints/fruit_wide_table_column.yaml",
+      "bytes": 219,
+      "sha256": "962c50c2085443a58aaf4a8a41b40bc3243b6749d49911045145ee67d7077d6a"
+    },
+    {
+      "path": "schema/constraints/fruit_wide_table_def.yaml",
+      "bytes": 217,
+      "sha256": "ed1530517ad8ef334983f11dcfff7a6937897b850adf1b5776a6c4b299101165"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_api_input_param.yaml",
+      "bytes": 72,
+      "sha256": "e2b136e53904609158ab9e8107ee67d56883bc9b04eeb439a7a2bc995fe0b128"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_api_output_param.yaml",
+      "bytes": 73,
+      "sha256": "43f6b7f9f18c8508a0fe4ce3d51ca9f4613f2e61ddf4a5f6dd74a632b0937626"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_api_tag.yaml",
+      "bytes": 64,
+      "sha256": "07b65002333f7e90e3a1d72a9c2fab8175f860c7af32bb6414af9f1f749003cf"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_business_rule.yaml",
+      "bytes": 70,
+      "sha256": "357032a4bd4cb79589ce44af88073e3310f0564fc8a32ea596b7d4ca67737baf"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_dashboard_card.yaml",
+      "bytes": 71,
+      "sha256": "87efbcf1e6c634af0f921746dcfcdf13a048dbc6d362c992d6c8a09d87cad851"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_db_connection.yaml",
+      "bytes": 70,
+      "sha256": "0c0dca247d746a678638356f71c19c096e3b80ecd5ff9193fefe5ebd7cabc41f"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_dim_anchor.yaml",
+      "bytes": 67,
+      "sha256": "3da83a837ec9be054216ae35f0e006951c4dc3e7978918ef509f5d9dbd7daf17"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_dim_combo_rule.yaml",
+      "bytes": 71,
+      "sha256": "4233445f00e1b6c37ed021ac78ba1363bc2f3054d425dcdecbc531b921ae5759"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_dim_definition.yaml",
+      "bytes": 71,
+      "sha256": "739f089fd90a0d7ac02d7860233a5cf9a54d7a375d0e60684a642fd2556fb028"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_dim_field.yaml",
+      "bytes": 66,
+      "sha256": "c41721e703e417d478c00281f538380bdb74c8dbed158fad852a0c2179846f04"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_dim_member.yaml",
+      "bytes": 67,
+      "sha256": "2ba9c11898585caba4a36881763a1d24b99edcbab09799978ed0951f3cf0711d"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_import_staging_temp.yaml",
+      "bytes": 76,
+      "sha256": "f1a8feb5be9d0d81b292db425f7c11c683368f03511fb7ca7b4a16830758eb19"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_market_api.yaml",
+      "bytes": 67,
+      "sha256": "ad637f764aeb2b65ad911fc9d33d64e49b481be0c9777f551198bb2ae3dc40bf"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_measure_def.yaml",
+      "bytes": 68,
+      "sha256": "df0d20d8ee4e6ecb5b6119c48152bf483f48e42b2399fa6454a136ac56fc1f34"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_metric_anchor.yaml",
+      "bytes": 70,
+      "sha256": "a4612831e286b20a2f2b33c5f38783c69d31110436891a1fad788c039f16a4d1"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_metric_attr.yaml",
+      "bytes": 68,
+      "sha256": "8c54575d5b16cf2952c12c4d97229e29a8ef51d408a4b23f7bea2850dde768a6"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_metric_detail.yaml",
+      "bytes": 70,
+      "sha256": "1de9d939e92f64f94a983ae2f47c54e974d62c1c1a150fdccd5fbb13b4b0965b"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_op_log.yaml",
+      "bytes": 63,
+      "sha256": "d2d04d57cd2ae7ac63635c3fef6bf0a98d19ec8fb8de80ca1b069036f4c14d80"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_org_dim_data.yaml",
+      "bytes": 69,
+      "sha256": "a4b6e48cc1688454aceb7f41aba6bab7730b25079d6b85d1d6e9cfa4c95de877"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_param_ref_rule.yaml",
+      "bytes": 71,
+      "sha256": "c02811516b6228c84b3a7c5b86051355385e9172aa526cbbcb484401ab453617"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_synonym_dict.yaml",
+      "bytes": 69,
+      "sha256": "7e9e0c7fbc94640ea99d368440e2d6d04275ad626f8eda8f43a1797cc3e1b4b3"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_wide_table_column.yaml",
+      "bytes": 74,
+      "sha256": "301b2acfd0cb85352d1834f8e3c24e2ffc6b26e957f6591a15474c70212ba3cf"
+    },
+    {
+      "path": "schema/foreign_keys/fruit_wide_table_def.yaml",
+      "bytes": 71,
+      "sha256": "aa01a19e66bc10ca5a0777a1fde92f1b9648c6e9ccb03de13ced09c87c404d80"
+    },
+    {
+      "path": "schema/tables/fruit_api_input_param.yaml",
+      "bytes": 2875,
+      "sha256": "b6c3c80536037645a0358ce20c70992d5f5a862888172dc8367e40732c3e1a12"
+    },
+    {
+      "path": "schema/tables/fruit_api_output_param.yaml",
+      "bytes": 2696,
+      "sha256": "6828c229bed323149eb318a19c128d98bd95c398bac9ec965c186065b65a40c4"
+    },
+    {
+      "path": "schema/tables/fruit_api_tag.yaml",
+      "bytes": 2503,
+      "sha256": "7b4612473672cee2e6e16f77a753b0b601f58d7750a50f5eba56c17663d4a0c4"
+    },
+    {
+      "path": "schema/tables/fruit_business_rule.yaml",
+      "bytes": 2275,
+      "sha256": "1a938b1dfc7671a11fd95049d670e8f2c75cc74f968975ac4ff214c0bc417de8"
+    },
+    {
+      "path": "schema/tables/fruit_dashboard_card.yaml",
+      "bytes": 6402,
+      "sha256": "20d1380677fffaf55876b0778674d3bbfb102eb4de7cb8b0ed12ff119ca2cc63"
+    },
+    {
+      "path": "schema/tables/fruit_db_connection.yaml",
+      "bytes": 3576,
+      "sha256": "344ef551197fb62675e1a0cff3318dcd93e40beac7b3791d4bdfac0b3444747a"
+    },
+    {
+      "path": "schema/tables/fruit_dim_anchor.yaml",
+      "bytes": 2863,
+      "sha256": "60835bfd4575a9fc73459cc753ee0fdfce7cec91bf1ef4bd37d275cfa16ae261"
+    },
+    {
+      "path": "schema/tables/fruit_dim_combo_rule.yaml",
+      "bytes": 2683,
+      "sha256": "a4709475d09ea969278f4c06f83bc84c08dc453dfdfd2289681ece600008be8d"
+    },
+    {
+      "path": "schema/tables/fruit_dim_definition.yaml",
+      "bytes": 4507,
+      "sha256": "2bcbb75603786086cdf1325bc987f7ac464700ccaf0815331e2d83276594bb2e"
+    },
+    {
+      "path": "schema/tables/fruit_dim_field.yaml",
+      "bytes": 3589,
+      "sha256": "df02d6ae3726b5a90a3cf26d55b08c8531790a19afd4dcef28466d7f1377d0f8"
+    },
+    {
+      "path": "schema/tables/fruit_dim_member.yaml",
+      "bytes": 3800,
+      "sha256": "afdca20c45fe19c6968acb091ae1be0634da002038996f40cb661ca700746774"
+    },
+    {
+      "path": "schema/tables/fruit_import_staging_temp.yaml",
+      "bytes": 12910,
+      "sha256": "24b04269b87e6fe1f25aa1b559cf9d8dafc1438a07363446127ec4a867e2dbbf"
+    },
+    {
+      "path": "schema/tables/fruit_market_api.yaml",
+      "bytes": 4442,
+      "sha256": "00ff4ba6f4f4b61b0550159eae17f9fc7d9c8bd897bce5fafaad927849e50446"
+    },
+    {
+      "path": "schema/tables/fruit_measure_def.yaml",
+      "bytes": 4751,
+      "sha256": "a7b41ad41ed420f1b569c8655b830c9f3ed708aba7007b5847e1274338209113"
+    },
+    {
+      "path": "schema/tables/fruit_metric_anchor.yaml",
+      "bytes": 2708,
+      "sha256": "1080c4e0022ba2ee2a5cb9865aed0d04dc5f072bafedd7e210bca1f48ede1b85"
+    },
+    {
+      "path": "schema/tables/fruit_metric_attr.yaml",
+      "bytes": 3117,
+      "sha256": "36706bf3ada94ac72dccfa1cdbdce41e97dcc8c9954f7b709b60671dcbf121bd"
+    },
+    {
+      "path": "schema/tables/fruit_metric_detail.yaml",
+      "bytes": 3179,
+      "sha256": "45baaf3c713e8d64c0a70b3684daedd64b630c221a63fc9c798f32848dcc2a5b"
+    },
+    {
+      "path": "schema/tables/fruit_op_log.yaml",
+      "bytes": 3231,
+      "sha256": "58cea002e124af9468bad706a64e1d7bcdd4c4d8ed14510480d834f2e0f25c1f"
+    },
+    {
+      "path": "schema/tables/fruit_org_dim_data.yaml",
+      "bytes": 2910,
+      "sha256": "300d0b24ec1bc8c5135ea406249be8dbf073bf531910786c81ffd94fb17f6b55"
+    },
+    {
+      "path": "schema/tables/fruit_param_ref_rule.yaml",
+      "bytes": 2701,
+      "sha256": "2ac1bba5fb1dadbcd7ee01f40bfda8642720ba662b2b3e89fad0f2293df6ca06"
+    },
+    {
+      "path": "schema/tables/fruit_synonym_dict.yaml",
+      "bytes": 1126,
+      "sha256": "b48866aa671ab6b7ef690c7ae56d385ff7d9e6741aedf0aba932d8b89dc46f93"
+    },
+    {
+      "path": "schema/tables/fruit_wide_table_column.yaml",
+      "bytes": 2694,
+      "sha256": "eb71ed95facf5142027f981ac67ea66157c6ad312c7f024a35f05f350d6f11a9"
+    },
+    {
+      "path": "schema/tables/fruit_wide_table_def.yaml",
+      "bytes": 3237,
+      "sha256": "5625b4c32fdbd18b37f7df8c23775406cbd85789c712db6c42d01780b596168c"
+    },
+    {
+      "path": "synthetic_manifest.yaml",
+      "bytes": 1296,
+      "sha256": "ba9fd4c29498e55c87e8a3aa4ffa238db92428fc180a06b990bacbf06f092289"
+    }
+  ],
+  "result_files": [
+    {
+      "path": "alias_candidates.yaml",
+      "bytes": 711249,
+      "sha256": "086c743e8292ad2eef0572fd3a9b64327e084835e07435b6949f7cbe3a00c4a9"
+    },
+    {
+      "path": "alignments.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "assertions/part-00000.yaml",
+      "bytes": 3464667,
+      "sha256": "3f2cd061533e2c0b732ded51b8b931e0bcd7e83bfaefaf014c2e84a5d93723a1"
+    },
+    {
+      "path": "assertions/part-00001.yaml",
+      "bytes": 4048287,
+      "sha256": "4125fb54d4d55ee10b9486c1689f79c083b68da0a479d414a4e5ae283fa866b6"
+    },
+    {
+      "path": "assertions/part-00002.yaml",
+      "bytes": 4056403,
+      "sha256": "88fe6ec02922ae12aba429e8d5a232881614c493ac8c3f5043f9fdb78858eb54"
+    },
+    {
+      "path": "assertions/part-00003.yaml",
+      "bytes": 4052987,
+      "sha256": "c3225858ddbeda00bec763641b958a2f2e9dec6382fb0e7d7ea96677d9e1666b"
+    },
+    {
+      "path": "assertions/part-00004.yaml",
+      "bytes": 4047198,
+      "sha256": "07492e75d3fbe96dce590019fb8f763739fef7956904348c4b8605210243e619"
+    },
+    {
+      "path": "assertions/part-00005.yaml",
+      "bytes": 4056558,
+      "sha256": "daf0cc35a08b8aa1c5d60fbebc7a6953789ab2cb5175b4f879dc89a87d838d11"
+    },
+    {
+      "path": "assertions/part-00006.yaml",
+      "bytes": 4050436,
+      "sha256": "ead42028810e5bfbb0fbcff9befe8be97009e567ad272aba2f3c04cd234b3730"
+    },
+    {
+      "path": "assertions/part-00007.yaml",
+      "bytes": 4048788,
+      "sha256": "6c2e7763b02c72f6e833cc5589237f6081d9fbf59ccba99839dadbdaffcf5850"
+    },
+    {
+      "path": "assertions/part-00008.yaml",
+      "bytes": 4049269,
+      "sha256": "a94b1307ff2ad9a3ede99fa4377bf23a1b52c3f091caca0b2b2416368c94d15d"
+    },
+    {
+      "path": "assertions/part-00009.yaml",
+      "bytes": 4050552,
+      "sha256": "9064adbbe6bc064ed0510191b4241b383fb5a72e63e115f2a9f477c5665b561d"
+    },
+    {
+      "path": "assertions/part-00010.yaml",
+      "bytes": 4049681,
+      "sha256": "65e78567e81d88e6cde06b20d578e69291e3ddf7da329535d194c6f6d9c6976d"
+    },
+    {
+      "path": "assertions/part-00011.yaml",
+      "bytes": 2060306,
+      "sha256": "7d2f12e1d57a952ab9bac8eece4174117ba85a414fc47ede3e32caf7194ee718"
+    },
+    {
+      "path": "association_checks.yaml",
+      "bytes": 9813949,
+      "sha256": "929ca5bc522e269407271d1745e8dfd8a5ba4c6abad192c37fa040b2621b3c8a"
+    },
+    {
+      "path": "association_rules.yaml",
+      "bytes": 12267986,
+      "sha256": "28178535eff5d1ae1e7731073198d60de6f63a5b2882f20609ec99ea157b206a"
+    },
+    {
+      "path": "business_concepts.yaml",
+      "bytes": 156919,
+      "sha256": "85432fdc51f8490b5b5332b0ab1e3b7a9c84b5b07c7a7edabe51baa7e35e4b28"
+    },
+    {
+      "path": "business_fact_binding_coverage.yaml",
+      "bytes": 404,
+      "sha256": "5ff45638268f0401b943fe2b2a1c25bad27010f4d6654af546bc59c5774cc55f"
+    },
+    {
+      "path": "business_fact_field_bindings.yaml",
+      "bytes": 1569,
+      "sha256": "0ae4dbb60933936d41cde1762da4b206a8467fc8a028f66f7cf662cf3c76f718"
+    },
+    {
+      "path": "business_fact_instances.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "calculation_contracts.yaml",
+      "bytes": 69421,
+      "sha256": "e86bcd980fde11f406a6a9cb881965f9a1069a374c3870cd8c48275db0535670"
+    },
+    {
+      "path": "column_role_candidates.yaml",
+      "bytes": 143388,
+      "sha256": "6630bfa2d2b5588f6eabf77f7a2abf2099a692ac6e2d3a057f95213165e362e1"
+    },
+    {
+      "path": "column_roles.yaml",
+      "bytes": 221877,
+      "sha256": "2f7daae57af84e7e4114ef7a6edd03c9ffd1ef3fc80c9755076c945cec427090"
+    },
+    {
+      "path": "concept_candidates.yaml",
+      "bytes": 44,
+      "sha256": "7c6ece36a957d2441ea66197e6187d11ae00e748b9086c72374e1cdc3bd5343c"
+    },
+    {
+      "path": "concept_relation_derivations.yaml",
+      "bytes": 15180,
+      "sha256": "95939809c8662240d1e4750925256e7647e8efce11ed7e2ca6a33830769e2e00"
+    },
+    {
+      "path": "concept_relations.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "configuration_bindings.yaml",
+      "bytes": 471058,
+      "sha256": "9b7ea7f690204c4279af64ed0c306ccd6d10f0f011c435f4417db5c8b5a40ab5"
+    },
+    {
+      "path": "configuration_relation_candidates.yaml",
+      "bytes": 2783277,
+      "sha256": "2060c686a41feae77a4336cb1ca35929b171a7696d58a3a5f0475deb5112dad6"
+    },
+    {
+      "path": "configuration_relation_coverage.yaml",
+      "bytes": 193,
+      "sha256": "c0fa6e18ccffa149352638bb7c875d932e21005bc8f5052b24fa4a015a7b93db"
+    },
+    {
+      "path": "configuration_relation_specs.yaml",
+      "bytes": 3033,
+      "sha256": "fca77db6ca00c5cdd64d9285afa27d8db24d37dc80ed23a53508bbaea2bdce40"
+    },
+    {
+      "path": "configuration_relation_steps.yaml",
+      "bytes": 24640,
+      "sha256": "1292b8bd8f666f2c84eee9392e1bd97292773c482031f33251288ab080d62362"
+    },
+    {
+      "path": "construction.yaml",
+      "bytes": 982693,
+      "sha256": "ab8bdbadcd96dd273aa05d5ec10ec0504490b97fd10a2faa01b2b0988238633a"
+    },
+    {
+      "path": "coverage.yaml",
+      "bytes": 10854,
+      "sha256": "ea4e83598eb294b2b15be9f9741e7910aa350f9d5865e5022d69da1d37879d77"
+    },
+    {
+      "path": "datahub-metadata.json",
+      "bytes": 233092,
+      "sha256": "780f7b1cb65b840c5465609f8460bf74e7dc7db43baab0fa08b6e97fa59d3589"
+    },
+    {
+      "path": "definition_membership_coverage.yaml",
+      "bytes": 717,
+      "sha256": "5837aca96a25f203df4df7d244dd96bafd6908b838f850505c06387d332f4315"
+    },
+    {
+      "path": "definition_memberships/part-00000.yaml",
+      "bytes": 7564726,
+      "sha256": "cd896f07258f0fcde4275043669cc3eea506479d6c690b6e40ee6b49181a5819"
+    },
+    {
+      "path": "definition_memberships/part-00001.yaml",
+      "bytes": 969202,
+      "sha256": "43c6e6581b9841ace5f77743307fcc64ada6d150d6e4cd830be0c184e042fde9"
+    },
+    {
+      "path": "definition_reference_variants_pending.yaml",
+      "bytes": 1955190,
+      "sha256": "b921707ace6632cc66e37889ed7c0fe4f643b97d86330063f691aa4f8b755d4d"
+    },
+    {
+      "path": "definition_rejections.yaml",
+      "bytes": 28017,
+      "sha256": "b062714fe7c250db59beaf1142d427889912d0ee0f699d655a57a48db6b9187f"
+    },
+    {
+      "path": "definition_template_errors.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "definition_templates.yaml",
+      "bytes": 69809,
+      "sha256": "6686467634bf02bb84a29d71900be631d2b5f0fec6973237df5c493f9ed98b25"
+    },
+    {
+      "path": "direct_mapping.yaml",
+      "bytes": 125504,
+      "sha256": "882d1d4a7a0f4c441e4c427bcdf607a44b48aa49cbf84b8f2d2e1b5bef525a19"
+    },
+    {
+      "path": "discovery_coverage.yaml",
+      "bytes": 10114,
+      "sha256": "ff8e34ebf76c3a95a01b9d61c76d71b0a39438a764303e38d72df2849e4b07eb"
+    },
+    {
+      "path": "evidence/part-00000.yaml",
+      "bytes": 2252027,
+      "sha256": "efc16adab917b912162f0e8dab72fb47b416262af2c77047635ba92c7928f3c5"
+    },
+    {
+      "path": "evidence/part-00001.yaml",
+      "bytes": 2237736,
+      "sha256": "be49ac5ae92691f42ea2b6a92ec824d9f0653c018b6309ff62f79b67bdc0f9eb"
+    },
+    {
+      "path": "evidence/part-00002.yaml",
+      "bytes": 2250205,
+      "sha256": "9ff22ba7280934aff59e9f4b8f06d844e5d0257780afba47e4972d89f3718dcf"
+    },
+    {
+      "path": "evidence/part-00003.yaml",
+      "bytes": 2254816,
+      "sha256": "39c906aca3020e6bac3400657e69eb49285d28092456877d5d636eebd58901e6"
+    },
+    {
+      "path": "evidence/part-00004.yaml",
+      "bytes": 2257219,
+      "sha256": "eb4302ef89a4fd3fdd85264c75ee0acfcafe69f595cb90de7dad71d26dc9623a"
+    },
+    {
+      "path": "evidence/part-00005.yaml",
+      "bytes": 2262102,
+      "sha256": "363aa2ac59ff555ab610d1fb735e9fafa00003abad55127d9c9d9b1aa3bc8eb9"
+    },
+    {
+      "path": "evidence/part-00006.yaml",
+      "bytes": 2254571,
+      "sha256": "64d309791efe59b6a144fc717c601de9504b1d53f713418718ae42ddc3a881b4"
+    },
+    {
+      "path": "evidence/part-00007.yaml",
+      "bytes": 2257519,
+      "sha256": "c826a6ae9fe184f7c8b31af68b04caa902a9e34a06a2d84dcb73059ec5fe075a"
+    },
+    {
+      "path": "evidence/part-00008.yaml",
+      "bytes": 2237057,
+      "sha256": "721181924df15b6ba28dd1c2cdb36236ade08e11ecf106f0d2c445b9ea57725e"
+    },
+    {
+      "path": "evidence/part-00009.yaml",
+      "bytes": 2251341,
+      "sha256": "a63119573ce447804250af2ff4588c050f8d2f78f0489bf252231d6f6f75dcdd"
+    },
+    {
+      "path": "evidence/part-00010.yaml",
+      "bytes": 2260395,
+      "sha256": "eaaed5c7980c678e29ab6c3d08bd889a4725eddb96ca1bcda546e23526226fae"
+    },
+    {
+      "path": "evidence/part-00011.yaml",
+      "bytes": 2259540,
+      "sha256": "39790c59ee43b09637d87e6cf7608004e97da6edd8bd6cf306427210d5299f7d"
+    },
+    {
+      "path": "evidence/part-00012.yaml",
+      "bytes": 2260760,
+      "sha256": "73a3056ac11e3c29aa7f2a65473252d65c06f7e9100f5765b752f434b15dc87b"
+    },
+    {
+      "path": "evidence/part-00013.yaml",
+      "bytes": 2249056,
+      "sha256": "b3b28df33ee2451751f9686c1c0dfe3df451efe8bdadc30fd9830417904fc15a"
+    },
+    {
+      "path": "evidence/part-00014.yaml",
+      "bytes": 2270045,
+      "sha256": "76109a3c70d225efa6c9727b90c548e8d96adcfcfd440c47fda098b7b9c33a3b"
+    },
+    {
+      "path": "evidence/part-00015.yaml",
+      "bytes": 2246805,
+      "sha256": "0896f3be7d8854aa03dac3b1b03a96d2a3e0f6d7320f883623fb8121127e51ce"
+    },
+    {
+      "path": "evidence/part-00016.yaml",
+      "bytes": 2243759,
+      "sha256": "9cb3b079bd0f66f3e372e693bd899317912f87a5530f7b839025998b107aa318"
+    },
+    {
+      "path": "evidence/part-00017.yaml",
+      "bytes": 2235952,
+      "sha256": "b7585b1c53082e5f80ac2651dd982ab209945199596f817b8a36fc24846c556f"
+    },
+    {
+      "path": "evidence/part-00018.yaml",
+      "bytes": 2250552,
+      "sha256": "f5cb3ec8f4fa4ad1526cd7813ac1e7d2e15c6659c59b1fa8617249dabd91d2b4"
+    },
+    {
+      "path": "evidence/part-00019.yaml",
+      "bytes": 1933632,
+      "sha256": "75ee267a20bd0b27709ef6ba3e8b28077f038957d6d60001c05aaf5858fbcc03"
+    },
+    {
+      "path": "evidence_bundles.yaml",
+      "bytes": 27374309,
+      "sha256": "2bfa87feb177ecccf58212bcb9d351c54c0a14d0b986e4dcd94a051551500aed"
+    },
+    {
+      "path": "experiment_snapshot.json",
+      "bytes": 429,
+      "sha256": "bd980f481aba3f5f487dab913ab4cfa53d332013139316c8ee7699218eaa68e7"
+    },
+    {
+      "path": "extraction_plan.yaml",
+      "bytes": 238671,
+      "sha256": "9deb8de45644fad3b589c56ddc4cddfbab731cc08a05cf51fd86960c454ce83b"
+    },
+    {
+      "path": "fact_field_templates.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "fact_observation_candidates.yaml",
+      "bytes": 2306180,
+      "sha256": "998f4b30dcf03af561edec3ffb9b7228d12a8dc318697e7b6ab86d0c554e2d0c"
+    },
+    {
+      "path": "fact_observation_coverage.yaml",
+      "bytes": 496,
+      "sha256": "92a7fda9f54b0db3cb81888d34f466c1b2f6d2b22cbce8754313cdab2daaf51b"
+    },
+    {
+      "path": "fact_schema_coverage.yaml",
+      "bytes": 134,
+      "sha256": "be98bc125947dff5a241948d69926331603c9d80ddcec687ed444faea7343d34"
+    },
+    {
+      "path": "fact_schema_steps.yaml",
+      "bytes": 1491,
+      "sha256": "5dc662c8c5d1ff7e0362827924f1ffa75d5a8ba8ed388ed0bc8495348f07f769"
+    },
+    {
+      "path": "field_candidates.yaml",
+      "bytes": 4002020,
+      "sha256": "705b64c2caf89f247e91245abab41271042e5542f2c5ccb60ffc9c30662d0b50"
+    },
+    {
+      "path": "group_steps.yaml",
+      "bytes": 948879,
+      "sha256": "aa18aabea32a392acb05a3e7f12727d8db274c47980e858fc44a69f35edaeace"
+    },
+    {
+      "path": "instance_bundle_coverage.yaml",
+      "bytes": 294142,
+      "sha256": "f1b6e8b801abca0d107687a1d215349350ca0057e8b85af504c240333c114a4a"
+    },
+    {
+      "path": "knowledge.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "manifest.yaml",
+      "bytes": 385329,
+      "sha256": "d23e0180636838ca9900980f8572f86d9bb0211ac947522b2d6986cad4619c58"
+    },
+    {
+      "path": "meta_graph.yaml",
+      "bytes": 4786055,
+      "sha256": "497a0da6a899401e2b1154421af187b02ca6633af332628a78ca03862bd2b978"
+    },
+    {
+      "path": "metrics.yaml",
+      "bytes": 9621,
+      "sha256": "fcd7e1b26e2d7222ca028bc5324f92b8adfb910164fff1bbfd390993704d9529"
+    },
+    {
+      "path": "objects/part-00000.yaml",
+      "bytes": 9759412,
+      "sha256": "b7f80bec85042529177fa697fc78240c32f63ac6265b8e037522432f1773c0eb"
+    },
+    {
+      "path": "objects/part-00001.yaml",
+      "bytes": 9737028,
+      "sha256": "6b9571b5eba29baad636c9bfb508006389868835fe4f5b1bfbcf80d507b54eaa"
+    },
+    {
+      "path": "objects/part-00002.yaml",
+      "bytes": 9744238,
+      "sha256": "d5be74cefa0406548b7131208830505bba54a8dace254660d6186e90d71bc09a"
+    },
+    {
+      "path": "objects/part-00003.yaml",
+      "bytes": 6899886,
+      "sha256": "9b67a9ae3cc624e5aaa9c628a86257bed4b7ff6cfca5461131483ce708f4138f"
+    },
+    {
+      "path": "objects/part-00004.yaml",
+      "bytes": 3723718,
+      "sha256": "5b84f9dfa60794cf513a5056516dc6a85f1f122f18998013e98dfcda28dd46d3"
+    },
+    {
+      "path": "objects/part-00005.yaml",
+      "bytes": 3723638,
+      "sha256": "7d58627e20ad4477e75718b6bee6785f91f4202e5c0e34243d873666da935ce6"
+    },
+    {
+      "path": "objects/part-00006.yaml",
+      "bytes": 3723706,
+      "sha256": "b215b093fd142365a166e8c33d71c8119b69b61dceb4eeb6c732ed1ed7ea4404"
+    },
+    {
+      "path": "objects/part-00007.yaml",
+      "bytes": 3448940,
+      "sha256": "bca058f34097735f70be8bfc0fa598a56eee6ee4aa0e42390e8214391071e906"
+    },
+    {
+      "path": "observed_value_lookup_coverage.yaml",
+      "bytes": 3,
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+    },
+    {
+      "path": "observed_value_tasks.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "ontology.yaml",
+      "bytes": 635124,
+      "sha256": "7c9657aec7e99c3d0b476d288eb69e55e60c50aedc952335c11930b9541aac14"
+    },
+    {
+      "path": "ontology_bindings.yaml",
+      "bytes": 492209,
+      "sha256": "d30db4ce033b40faae71d2545633c44bc4c241f84c9b174e213be5af95501aa3"
+    },
+    {
+      "path": "ontology_instance_coverage.yaml",
+      "bytes": 721,
+      "sha256": "7f1aea22bbec32b8b4bb55dfe0f54ca360bde06ea277aee168c7077f8ef2092e"
+    },
+    {
+      "path": "ontology_instance_mappings.yaml",
+      "bytes": 4458678,
+      "sha256": "9def36eb47139ed9a3ad382bc7cd52584d5df0b8990ac935893404b04e39e101"
+    },
+    {
+      "path": "ontology_instance_pending.yaml",
+      "bytes": 1041869,
+      "sha256": "d90face90848937af46ad1a79aadf27dda0d3e8f53cec34fcd77251d7a7cb4ea"
+    },
+    {
+      "path": "process_exit.json",
+      "bytes": 127,
+      "sha256": "17df4a1e4ac2a11bd9aa11604f5b22ffe2de169ba69b2ebfdc519ecfa8f51c70"
+    },
+    {
+      "path": "profiles.yaml",
+      "bytes": 1687506,
+      "sha256": "c4bf2caecbee2b2765d697c7f8a61215fc6abdbdab45d0a9b3b8858b82334b26"
+    },
+    {
+      "path": "record_alignments/part-00000.yaml",
+      "bytes": 11643,
+      "sha256": "7b235033fd57a57d6a20f3a5227ac58aed431c849b5c87012304be19e8e2969b"
+    },
+    {
+      "path": "record_alignments.yaml",
+      "bytes": 11643,
+      "sha256": "9432c6c462f5896150ed018499462152fb9fed368f259c37641fb7acf6e8718e"
+    },
+    {
+      "path": "semantic_card_coverage.yaml",
+      "bytes": 86841,
+      "sha256": "e3a5c1333ad4d08f746b1a4e382794629cdeb2c5dbd3663ed44aa1b02018c176"
+    },
+    {
+      "path": "semantic_state.json",
+      "bytes": 74467850,
+      "sha256": "21b250b0bc102ed426b135a15ee450e2c20bf5fa447a129b74d924711db17794"
+    },
+    {
+      "path": "targeted_repair_rounds.yaml",
+      "bytes": 1548,
+      "sha256": "a744af42c122a84c936d2d5d01b4b4b38bd4ce8d8ee92bfd7105a7836905680d"
+    },
+    {
+      "path": "targeted_repair_tasks.yaml",
+      "bytes": 347554,
+      "sha256": "22c03e76d2e971ba5c7e724f17302534c1f2dc54541ca8f781b1c1ff42a85e57"
+    },
+    {
+      "path": "template_binding_coverage.yaml",
+      "bytes": 400,
+      "sha256": "e68aa38f403f8eb39af7fee39d8c19890a5cfc198df1fa9c236f257266dd89c3"
+    },
+    {
+      "path": "template_bindings.yaml",
+      "bytes": 18797631,
+      "sha256": "7b39602af72aaad1142a668e18ccf0ae02737a23c8dc9b8bde2580439b8637c1"
+    },
+    {
+      "path": "template_pre_repair_coverage.yaml",
+      "bytes": 400,
+      "sha256": "e68aa38f403f8eb39af7fee39d8c19890a5cfc198df1fa9c236f257266dd89c3"
+    },
+    {
+      "path": "template_projections.yaml",
+      "bytes": 83631,
+      "sha256": "d348c76871a4a3753dff9446711272e80c489abedef00826cc75ef0fea556aad"
+    },
+    {
+      "path": "template_uncovered_examples.yaml",
+      "bytes": 64653,
+      "sha256": "6cffeb0f95b6631d6d3720044f27b225c7ebeb6c78e9950b3ef452b170241872"
+    },
+    {
+      "path": "trace.jsonl",
+      "bytes": 26768044,
+      "sha256": "5aac1383217106d25b6a5043101697019cb8800e2ef320dc2169eaa21fdebdde"
+    },
+    {
+      "path": "type_equivalence_assertions.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "type_equivalence_coverage.yaml",
+      "bytes": 637,
+      "sha256": "d7e50b636a75661e114e0de7c12c73b4ad8c493c27e59463527ece834cbb5dea"
+    },
+    {
+      "path": "type_equivalence_steps.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "type_generalization_coverage.yaml",
+      "bytes": 1217,
+      "sha256": "f0b17064646308b19e12a181ba06153e88a1201b8bf1336796221ae031494cbf"
+    },
+    {
+      "path": "type_generalization_steps.yaml",
+      "bytes": 8058,
+      "sha256": "978b21ace998ff79bf4e5b3731c4304b1af866c46fc881567b8d047ee4acbd6a"
+    },
+    {
+      "path": "validation.yaml",
+      "bytes": 220,
+      "sha256": "62eca1c1a10e38f22a622fd43509c2d688dccd28c91fd2b48388e15001ea6e31"
+    },
+    {
+      "path": "viewer.html",
+      "bytes": 19162343,
+      "sha256": "be9a6520bbb29e4af7cf78a9f3ad6e36d2c2eaf003c0bbbb8dff38f8b0f36f7f"
+    },
+    {
+      "path": "work/results.sqlite",
+      "bytes": 198782976,
+      "sha256": "a171989087fe78015c58b7fd96138bd4218683ec2fbe37d30f3f5c29a8947f47"
+    }
+  ],
+  "excluded": [
+    "work/semantic_cards.sqlite",
+    "work/sources.duckdb",
+    "environment files",
+    "model weights",
+    "Python environments",
+    "LLM caches"
+  ],
+  "files": {
+    "README.md": {
+      "bytes": 4600,
+      "sha256": "fa8d2e829a2dc114bcd9b1b24cb9186b893d346de48c2024c64e11c92435d4af"
+    },
+    "api_call_audit.json": {
+      "bytes": 3620,
+      "sha256": "e8d4d153eb55ebcffec5b2be6e15cc70c8d518908d4d671050542d75fef41411"
+    },
+    "experiment_snapshot.json": {
+      "bytes": 429,
+      "sha256": "bd980f481aba3f5f487dab913ab4cfa53d332013139316c8ee7699218eaa68e7"
+    },
+    "extraction-results.tar.gz": {
+      "bytes": 61208331,
+      "sha256": "330e8975d4b18e5cce8e88b2b766236fe682a0335b43314708b1657307f95815"
+    },
+    "metrics.yaml": {
+      "bytes": 9621,
+      "sha256": "fcd7e1b26e2d7222ca028bc5324f92b8adfb910164fff1bbfd390993704d9529"
+    },
+    "ontology_instance_coverage.yaml": {
+      "bytes": 721,
+      "sha256": "7f1aea22bbec32b8b4bb55dfe0f54ca360bde06ea277aee168c7077f8ef2092e"
+    },
+    "process_exit.json": {
+      "bytes": 127,
+      "sha256": "17df4a1e4ac2a11bd9aa11604f5b22ffe2de169ba69b2ebfdc519ecfa8f51c70"
+    },
+    "run_manifest.yaml": {
+      "bytes": 385329,
+      "sha256": "d23e0180636838ca9900980f8572f86d9bb0211ac947522b2d6986cad4619c58"
+    },
+    "runtime.fruit-templates.yaml": {
+      "bytes": 4719,
+      "sha256": "31cd9a738aad5461452608be417476dbe576cbd5a8a02aac6aaea0d6ea0ea66c"
+    },
+    "synthetic-data.tar.gz": {
+      "bytes": 13840506,
+      "sha256": "a604bd417b2cb0a71108cf80149147fba186e7cff0a4d3af0de7cd751b49de8f"
+    },
+    "synthetic_manifest.yaml": {
+      "bytes": 1296,
+      "sha256": "ba9fd4c29498e55c87e8a3aa4ffa238db92428fc180a06b990bacbf06f092289"
+    },
+    "targeted_repair_rounds.yaml": {
+      "bytes": 1548,
+      "sha256": "a744af42c122a84c936d2d5d01b4b4b38bd4ce8d8ee92bfd7105a7836905680d"
+    },
+    "viewer.html": {
+      "bytes": 19162343,
+      "sha256": "be9a6520bbb29e4af7cf78a9f3ad6e36d2c2eaf003c0bbbb8dff38f8b0f36f7f"
+    }
+  }
+}

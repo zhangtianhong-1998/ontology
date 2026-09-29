@@ -4,7 +4,7 @@
 
 路线2本轮改动与限制见[需求核对](docs/route2/ASSOCIATION_REBUILD_ACCEPTANCE.md)，模型调用、完整输入范围和失败记录见[实验报告](docs/route2/FRUIT_FULL_EXPERIMENT.md)。实验状态与代码回归分别报告，不能将工程测试通过视为本体抽取质量达标。
 
-本实验分支另提供[全量输入实验 v8 的 HTML、完整导出结果和模拟数据](experiments/fruit-full-v8-20260928/README.md)。该实验已结束，状态为 `partial`；统一语义分析尚未进行。
+本实验分支提供 [v10 的 HTML、完整导出结果和模拟数据](experiments/fruit-full-v10-20260929/README.md)，并保留 [v8 归档](experiments/fruit-full-v8-20260928/README.md)。v10 已结束，状态为 `partial`；全量运行共 491 次 API 请求尝试，另有 3 次启动前预检。详细调用口径、未决项和恢复方法见归档说明。
 
 上游代码用 9 个 Git 子模块固定版本。内部 YAML 模型作为代码契约保留；gist、Valueflows 和精选 Microsoft CDM 模型连同许可一并提供。KPIOnto 可从上游取得，但未发现明确再分发许可，因此只保留来源与校验信息。真实数据和论文不打包；运行产物仅包含本次明确授权的合成实验归档。路线2另提供合成夹具，用于无数据电脑上的离线自检。获取方法见 [Git 管理](docs/GIT_GUIDE.md)。
 
@@ -75,4 +75,4 @@ route3/      # RIGOR、AgentScope、SAND、GRAMS、steiner-tree、内部模型�
 
 设计文件、资源下载与算法运行分别验证；源码齐全不表示已适配内部模型。具体运行结果见路线2说明。
 
-路线2的安装、模拟运行和代码包测试见 [运行说明](docs/route2/IMPLEMENTED.md)、[Windows 无 Docker 离线说明](docs/route2/DATAHUB_OFFLINE.md)与[测试说明](docs/route2/TESTING.md)。本轮整改、合成数据和在线小样本的验证边界见[优化与验证记录](docs/route2/OPTIMIZATION_AND_VALIDATION_20260925.md)；日常运行产物保存在本机忽略目录 `route2/runs/`；本次授权归档另见 `experiments/fruit-full-v8-20260928/`。
+路线2的安装、模拟运行和代码包测试见 [运行说明](docs/route2/IMPLEMENTED.md)、[Windows 无 Docker 离线说明](docs/route2/DATAHUB_OFFLINE.md)与[测试说明](docs/route2/TESTING.md)。本轮迭代复用与实例化的验证边界见[整改记录](docs/route2/ITERATIVE_REUSE_REPAIR.md)；日常运行产物保存在本机忽略目录 `route2/runs/`，本次授权归档位于 `experiments/fruit-full-v10-20260929/`。

@@ -1,0 +1,352 @@
+counts:
+  assertions: 57536
+  definition_memberships: 5641
+  evidence: 98514
+  objects: 39631
+  record_alignments: 30
+extraction:
+  records_examined: 22
+  not_applicable: 0
+  empty_reference: 0
+  accepted: 22
+  unresolved: 0
+  text_groups: 0
+  unprocessed_records: 0
+  semantic_budget_exhausted: false
+  plans:
+  - plan_id: plan:47adc68ab7b621eeec0de649
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:c31eaeb46dea771a38e5e1e6
+    total_source_records: 500
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 499
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:7d90554ecf0dd9610dec955a
+    total_source_records: 500
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 499
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:52c2169dd28ec072a967bbe4
+    total_source_records: 2500
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 2499
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:241dc319fb0b68eae07234b2
+    total_source_records: 500
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 499
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:8ab6fc6a09b2db5d0a283f73
+    total_source_records: 500
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 499
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:ca7e0db6598f859ecf293c26
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:b4e400ec4d9058f6b4b396bc
+    total_source_records: 1000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:4ab09f1d26a521c8ffd94bfd
+    total_source_records: 1000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:804bf59860acec9fe9e159af
+    total_source_records: 20000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 19999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:41ed00d0cf36ba997e819116
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:0fe7ff9924cd5874c313ed22
+    total_source_records: 20000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 19999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:8c23cc182e6929eac2117351
+    total_source_records: 20000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 19999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:8c3f45ab56ca45e1094710c4
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:bce66e12a5673b7d46511f1e
+    total_source_records: 20000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 19999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:705dc1916003b4638a009ccf
+    total_source_records: 20000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 19999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:f7d0d705f9a65e0e78f8d75d
+    total_source_records: 20000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 19999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:8faefb728f3a1afd6d8d2463
+    total_source_records: 1000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:10dab3243196d1b87b17a75b
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:2d83ab47077bb652b67842c5
+    total_source_records: 1000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:e6c8544e6df9097fec43cc9a
+    total_source_records: 433645
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 433644
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  - plan_id: plan:9d59b79f6156fdbe92c22abf
+    total_source_records: 20000
+    examined: 1
+    selector_true: 1
+    selector_unknown: 0
+    nonempty_applicable_records: 1
+    matched_records: 1
+    references: 1
+    matched_references: 1
+    witnessed_source_records: 1
+    outside_witness: 19999
+    missing_witness_source_records: 0
+    matched_record_ratio: 1.0
+  witness_lookup:
+    evidence_rows_fetched: 16
+    evidence_records_verified: 16
+    fallback_tables: 0
+    fallback_rows_scanned: 0
+    witness_rows_fetched: 22
+    witness_rows_delivered: 22
+    locator_issues: {}
+materialized_records: 69
+preview_materialized_records: 69
+llm:
+  mode: agentscope
+  model: deepseek-v4-flash
+  framework: agentscope-2.0.8
+  prompt_hash: 5aa0274a3f3530d05fb8f10278559a93289f2085ccb1053d98a2ada328cc0664
+  transport:
+    stream: false
+    thinking:
+      mode: disabled
+      parameter: thinking
+      effort: medium
+  request_pacing:
+    interval_seconds: 0.2
+    max_concurrent_requests: 1
+    wait_seconds: 60.399
+  calls: 491
+  reserved_token_upper_bound: 35143001
+  provider_reported_tokens: 9368402
+  provider_wire_responses: 490
+  provider_usage_reported_responses: 490
+  provider_incomplete_responses: 10
+  provider_finish_reasons:
+    tool_calls: 479
+    length: 10
+    stop: 1
+  cache_hits: 0
+  call_reservations:
+  - stage: group_incremental
+    reserved_calls: 600
+    shared_call_ceiling: 2400
+    calls_before: 26
+    blocked_admissions: 0
+    calls_after: 477
+  - stage: targeted_repair_round_2
+    reserved_calls: 2123
+    shared_call_ceiling: 877
+    calls_before: 477
+    blocked_admissions: 0
+    calls_after: 477
+semantic_quality: synthetic_only

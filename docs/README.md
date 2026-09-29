@@ -15,6 +15,7 @@
 - [完成状态与待实现范围](route2/STATUS.md)
 - [本轮关联重构与需求核对](route2/ASSOCIATION_REBUILD_ACCEPTANCE.md)
 - [完整输入实验及失败记录](route2/FRUIT_FULL_EXPERIMENT.md)
+- [v10 代码版本、模拟输入、结果与 API 调用统计](../experiments/fruit-full-v10-20260929/README.md)
 - [语义样本核查方法](route2/SEMANTIC_SAMPLE_AUDIT.md)
 - [记录关系执行性能核查](route2/WITNESS_EXECUTION_AUDIT.md)
 - [安装、运行与实现边界](route2/IMPLEMENTED.md)

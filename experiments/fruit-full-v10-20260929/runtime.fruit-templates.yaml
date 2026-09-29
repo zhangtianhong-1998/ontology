@@ -1,0 +1,183 @@
+# 23表全量合成输入；语义一致性修复后的v3数据，旧v2及其结果保持不变。
+# 模板覆盖检查先于LLM；总调用上限3000，首轮为定向修复和后续阶段保留600。
+synthetic: true
+dataset: ../local_data/fruit_data_v3
+data_scope: complete_export
+model_profile: ../ontologies/internal_model.yaml
+env_file: ../.env
+memory_limit: 2GB
+privacy:
+  exclude_columns: []
+shard_size: 5000
+progress:
+  enabled: true
+  min_interval_seconds: 2.0
+profiling:
+  sql_columns_per_group: 32
+incremental:
+  mode: source_mapping_only
+column_role_inference:
+  enabled: true
+  max_tables: 32
+  max_columns_per_table: 64
+  max_sample_rows: 8
+  max_value_chars: 512
+discovery:
+  enabled: true
+  value_index_mode: full_distinct
+  max_indexed_fields: 0
+  max_candidates_total: 10000
+  max_per_source_per_channel: 1000
+  max_candidate_validations: 10000
+  max_validations_per_source_table: 10000
+  max_value_length: 96
+  max_fields_per_common_value: 32
+  max_condition_values_per_field: 64
+  max_conditional_pair_checks: 2000
+  max_conditional_candidates: 4000
+  max_condition_fields_per_table: 16
+  max_counterexamples: 5
+  max_evidence_per_unit: 3
+  max_joint_pairs_per_candidate: 2
+  max_joint_example_bytes: 24000
+alias_recall:
+  enabled: true
+  max_fields: 512
+  max_rows_per_table: 10000
+  max_values_per_field: 256
+  max_value_chars: 256
+  max_pairs: 1000
+  max_examples_per_pair: 5
+  max_common_key_fanout: 8
+association_rules:
+  enabled: true
+  agent_enabled: true
+  max_rules: 14000
+  max_explicit_validations: 10000
+  max_alias_validations: 32
+  max_counterexamples: 5
+  max_agent_candidates: 12
+  max_agent_model_calls: 3
+  max_agent_tool_calls: 12
+  max_agent_full_scans: 4
+  max_agent_tool_response_bytes: 16000
+  agent_timeout_seconds: 900
+concept_recall:
+  enabled: false
+instance_bundles:
+  enabled: true
+  max_cards: 1200000
+  max_field_chars: 1024
+  max_unknown_fields_per_table: 16
+  max_concept_bundles: 2000
+  max_pattern_seed_pool: 2000
+  seed_window_index: 0
+  max_relation_bundles: 1000
+  max_exploration_rules: 150
+  lexical_top_k: 8
+  max_candidates_per_bundle: 3
+  max_bundle_bytes: 24000
+  vector_enabled: true
+  max_vector_cards: 20000
+  vector_top_k: 8
+  max_joint_pairs_per_rule: 2
+  max_joined_context_records: 3
+  max_joined_context_rules: 256
+  max_joined_context_value_chars: 2048
+  max_llm_bundles: 3000
+  concept_batch_size: 1
+  relation_batch_size: 4
+  max_repairs_per_bundle: 1
+  max_definition_memberships: 1200000
+  review: true
+  template_projection_enabled: true
+  reserve_calls_for_followup: 600
+targeted_repair:
+  enabled: true
+  # 总轮数包含首轮；第二轮只处理未覆盖模式和缺失端点。
+  max_rounds: 2
+  max_tasks_per_round: 80
+  max_examples_per_task: 3
+  max_calls_per_round: 400
+  reserve_calls_for_followup: 300
+ontology_instantiation:
+  enabled: true
+  max_records: 1200000
+  max_assertions: 2400000
+fact_observations:
+  enabled: true
+  max_candidates_per_table: 50000
+  max_dimension_columns: 64
+  max_time_columns: 16
+  max_value_columns: 64
+  max_exact_group_tuples: 1200000
+fact_schema_induction:
+  enabled: true
+  max_calls: 32
+  max_samples_per_field: 5
+  max_packet_bytes: 24000
+fact_type_binding:
+  enabled: true
+  max_type_candidates_per_field: 16
+  max_source_rows_per_instance: 10000
+  max_binding_calls: 48
+  max_definition_chars: 4096
+type_generalization:
+  enabled: true
+  max_pairs: 100
+  max_decisions: 20
+  max_packet_bytes: 24000
+type_equivalence:
+  enabled: true
+  max_pairs: 200
+  max_decisions: 40
+  max_packet_bytes: 24000
+configuration_relations:
+  enabled: true
+  max_specs: 64
+  max_pairs_per_spec: 1000
+  max_semantic_decisions: 80
+llm:
+  mode: agentscope
+  cache_dir: ../.cache/template_experiment_llm
+  stream: false
+  thinking:
+    mode: disabled
+    parameter: thinking
+    effort: medium
+  max_calls: 3000
+  max_reserved_tokens: 350000000
+  # 同一任务内串行调用；每次请求完成（含失败）后再等此秒数，0表示不等待。
+  request_interval_seconds: 0.2
+  max_input_bytes: 100000
+  max_output_tokens: 12288
+  max_repairs: 1
+  max_response_repairs: 1
+  max_retries: 3
+  timeout_seconds: 300
+  temperature: 0
+embedding:
+  enabled: true
+  model_path: ~/Desktop/code/bi-semantic-context-design/.cache/models/Qwen3-Embedding-0.6B
+  batch_size: 16
+  dtype: float32
+  show_progress: true
+  max_cards: 20000
+  core_top_k: 5
+  min_cosine_similarity: 0.35
+  query_prompt: null
+mcp:
+  enabled: false
+external:
+  enabled: false
+processing:
+  materialize_all_objects: false
+  preview_objects_per_table: 3
+  max_object_records: 1200000
+  max_relation_records: 1200000
+  max_text_groups: 100
+  candidate_top_k: 10
+  max_references_per_record: 100
+visualization:
+  enabled: true
+  max_nodes: 1000
