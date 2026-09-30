@@ -1,0 +1,210 @@
+{
+  "scope": "Fixed complete-line trace prefix of an in-progress v11 synthetic experiment; excludes launch preflights and all other runs. Not final totals.",
+  "status": "in_progress",
+  "final_result": false,
+  "source_commit": "ff8ded2487307a430d6faed50f8f44f688a6c29e",
+  "run": "generalized-full-v11-20260930",
+  "capture_window_utc": {
+    "from": "2026-09-30T00:18:17.039599+00:00",
+    "to": "2026-09-30T00:19:12.270906+00:00"
+  },
+  "capture_consistency": "Per-file stable copies; semantic_state.json is one atomic checkpoint; other phase exports and the complete-line trace prefix have independent cutoffs. Not an atomic whole-run snapshot.",
+  "evidence": {
+    "path": "trace.jsonl",
+    "bytes": 40094639,
+    "sha256": "68f01aeb537b6688198f1c9336e5316ef95de2f83ad58d9fd91f930a43f9fcf0",
+    "source_mtime_utc": "2026-09-30T00:19:09.949399+00:00",
+    "lines": 4832,
+    "last_events": [
+      {
+        "line": 4825,
+        "stage": "llm_response",
+        "task": "concept_bundle"
+      },
+      {
+        "line": 4826,
+        "stage": "llm_input_budget",
+        "task": "relation_batch"
+      },
+      {
+        "line": 4827,
+        "stage": "llm_request",
+        "task": "relation_batch"
+      },
+      {
+        "line": 4828,
+        "stage": "llm_wire_response",
+        "task": "relation_batch"
+      },
+      {
+        "line": 4829,
+        "stage": "llm_usage",
+        "task": "relation_batch"
+      },
+      {
+        "line": 4830,
+        "stage": "llm_response",
+        "task": "relation_batch"
+      },
+      {
+        "line": 4831,
+        "stage": "llm_input_budget",
+        "task": "concept_bundle"
+      },
+      {
+        "line": 4832,
+        "stage": "llm_request",
+        "task": "concept_bundle"
+      }
+    ]
+  },
+  "request_attempts": 992,
+  "initial_logical_requests": 939,
+  "structured_initial_requests": 936,
+  "association_react_initial_requests": 3,
+  "format_repair_attempts": 52,
+  "transient_retry_attempts": 1,
+  "provider_responses": 990,
+  "observed_attempt_response_gap": 2,
+  "gap_interpretation": "The prefix includes one APIConnectionError without an observed response and ends with a request whose response is not yet present. This does not establish server receipt or billing of the failed attempt.",
+  "provider_usage_reported_responses": 990,
+  "provider_reported_input_tokens": 13394706,
+  "provider_reported_output_tokens": 1837405,
+  "provider_reported_tokens": 15232111,
+  "provider_finish_reasons": {
+    "tool_calls": 943,
+    "length": 43,
+    "stop": 4
+  },
+  "provider_incomplete_responses": 43,
+  "provider_incomplete_response_lines": [
+    304,
+    367,
+    460,
+    593,
+    606,
+    659,
+    672,
+    730,
+    797,
+    855,
+    873,
+    1026,
+    1104,
+    1261,
+    1514,
+    1527,
+    1589,
+    1602,
+    1640,
+    1771,
+    1789,
+    1944,
+    1982,
+    2005,
+    2146,
+    2276,
+    2289,
+    2412,
+    2504,
+    2630,
+    2879,
+    2967,
+    3206,
+    3582,
+    3620,
+    3638,
+    3879,
+    4005,
+    4232,
+    4313,
+    4331,
+    4443,
+    4781
+  ],
+  "invalid_structured_response_events": 67,
+  "invalid_structured_responses_by_task": {
+    "concept_bundle": 55,
+    "group_review_batch": 6,
+    "relation_batch": 4,
+    "group_review": 2
+  },
+  "cache_hit_events": 0,
+  "successful_structured_result_events": 877,
+  "association_react_response_events": 3,
+  "transient_errors": [
+    {
+      "line": 1478,
+      "task": "group_review",
+      "error_type": "APIConnectionError",
+      "attempt": 1
+    }
+  ],
+  "tasks": {
+    "association_react": {
+      "initial_logical_requests": 3,
+      "request_attempts": 3,
+      "provider_responses": 3
+    },
+    "column_role_inference": {
+      "initial_logical_requests": 23,
+      "request_attempts": 23,
+      "provider_responses": 23
+    },
+    "concept_bundle": {
+      "initial_logical_requests": 609,
+      "request_attempts": 649,
+      "provider_responses": 648,
+      "format_repair_attempts": 40
+    },
+    "group_review": {
+      "initial_logical_requests": 147,
+      "request_attempts": 150,
+      "provider_responses": 149,
+      "transient_retry_attempts": 1,
+      "format_repair_attempts": 2
+    },
+    "group_review_batch": {
+      "initial_logical_requests": 31,
+      "request_attempts": 37,
+      "provider_responses": 37,
+      "format_repair_attempts": 6
+    },
+    "relation_batch": {
+      "initial_logical_requests": 126,
+      "request_attempts": 130,
+      "provider_responses": 130,
+      "format_repair_attempts": 4
+    }
+  },
+  "stage_counts": {
+    "llm_input_budget": 936,
+    "llm_request": 936,
+    "llm_wire_response": 990,
+    "llm_usage": 947,
+    "llm_response": 877,
+    "association_context_budget": 10,
+    "association_request_budget": 3,
+    "association_react_request": 3,
+    "association_react_response": 3,
+    "association_tool_result": 6,
+    "llm_invalid_structured_response": 67,
+    "llm_response_repair": 52,
+    "llm_transient_error": 1,
+    "llm_retry": 1
+  },
+  "counting_method": {
+    "attempts": "llm_request + association_react_request + llm_response_repair + llm_retry",
+    "responses": "llm_wire_response only; incomplete/rejected responses are included",
+    "tokens": "Sum input_tokens and output_tokens from llm_wire_response. Do not sum llm_usage again.",
+    "successful_results": "llm_response indicates a parsed structured result, not semantic acceptance.",
+    "cache_hits": "llm_cache_hit trace events only."
+  },
+  "code_evidence": [
+    "route2/code/ontology_r2/llm.py:349",
+    "route2/code/ontology_r2/llm.py:360",
+    "route2/code/ontology_r2/llm.py:407",
+    "route2/code/ontology_r2/llm.py:454",
+    "route2/code/ontology_r2/association_rules.py:441"
+  ]
+}

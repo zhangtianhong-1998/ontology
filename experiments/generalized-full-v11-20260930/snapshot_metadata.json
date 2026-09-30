@@ -1,0 +1,178 @@
+{
+  "status": "in_progress",
+  "final_result": false,
+  "source_commit": "ff8ded2487307a430d6faed50f8f44f688a6c29e",
+  "branch": "codex/generalized-extraction-v11",
+  "run": "generalized-full-v11-20260930",
+  "synthetic": true,
+  "snapshot_id": "dcd72a982a9d2607ebf910db5c640ba6d59f32ff331b0126cab0a1c4877916eb",
+  "captured_from": "2026-09-30T00:18:17.039599+00:00",
+  "captured_to": "2026-09-30T00:19:12.270906+00:00",
+  "capture_consistency": "Per-file stable copies; semantic_state.json is one atomic checkpoint; other phase exports and the complete-line trace prefix have independent cutoffs. Not an atomic whole-run snapshot.",
+  "missing_final_artifacts": [
+    "manifest.yaml",
+    "metrics.yaml",
+    "process_exit.json",
+    "experiment_snapshot.json",
+    "viewer.html"
+  ],
+  "excluded": [
+    "work/ directory including open databases",
+    "temporary checkpoint file",
+    "environment files",
+    "LLM caches",
+    "embedding weights",
+    "process stdout log"
+  ],
+  "files": [
+    {
+      "path": "alias_candidates.yaml",
+      "bytes": 711249,
+      "sha256": "086c743e8292ad2eef0572fd3a9b64327e084835e07435b6949f7cbe3a00c4a9",
+      "source_mtime_ns": 1790701795188068081
+    },
+    {
+      "path": "alignments.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "source_mtime_ns": 1790701897371074124
+    },
+    {
+      "path": "association_checks.yaml",
+      "bytes": 9763551,
+      "sha256": "f4a062cd1a055d174dd47e59aaa05c0958518cc667355200955093eda285e6bf",
+      "source_mtime_ns": 1790701794437261399
+    },
+    {
+      "path": "association_rules.yaml",
+      "bytes": 12209808,
+      "sha256": "1a73bc309e6ac7d941154198ad98ab2d2e73535778f9a40d4327fc8903f1fc66",
+      "source_mtime_ns": 1790701893965765050
+    },
+    {
+      "path": "column_role_candidates.yaml",
+      "bytes": 180294,
+      "sha256": "813714cc5badab3d24021eb20c0bf9775979326373d68c0ce824511480b182e2",
+      "source_mtime_ns": 1790701631781971386
+    },
+    {
+      "path": "column_roles.yaml",
+      "bytes": 221877,
+      "sha256": "2f7daae57af84e7e4114ef7a6edd03c9ffd1ef3fc80c9755076c945cec427090",
+      "source_mtime_ns": 1790701394902902887
+    },
+    {
+      "path": "concept_candidates.yaml",
+      "bytes": 44,
+      "sha256": "7c6ece36a957d2441ea66197e6187d11ae00e748b9086c72374e1cdc3bd5343c",
+      "source_mtime_ns": 1790701897156016252
+    },
+    {
+      "path": "construction.yaml",
+      "bytes": 1046,
+      "sha256": "36ba8710f27b4df52c6a06319a71aed122ad8650a6c246447540e7833219979c",
+      "source_mtime_ns": 1790701897371846081
+    },
+    {
+      "path": "datahub-metadata.json",
+      "bytes": 233092,
+      "sha256": "780f7b1cb65b840c5465609f8460bf74e7dc7db43baab0fa08b6e97fa59d3589",
+      "source_mtime_ns": 1790701896180709718
+    },
+    {
+      "path": "direct_mapping.yaml",
+      "bytes": 125504,
+      "sha256": "882d1d4a7a0f4c441e4c427bcdf607a44b48aa49cbf84b8f2d2e1b5bef525a19",
+      "source_mtime_ns": 1790701897237339786
+    },
+    {
+      "path": "discovery_coverage.yaml",
+      "bytes": 14824,
+      "sha256": "bd69e98bde4e54a6d95b8b40d1fe9e4ca9245c5e7507e60186f3924bc05f84b1",
+      "source_mtime_ns": 1790701794442333097
+    },
+    {
+      "path": "evidence_bundles.yaml",
+      "bytes": 40859278,
+      "sha256": "a82cb0d9c2a92f94e4d801f3c8997be37a4d8cb85decb0365e3216e99a8c3e9b",
+      "source_mtime_ns": 1790704285311515399
+    },
+    {
+      "path": "extraction_plan.yaml",
+      "bytes": 52265,
+      "sha256": "5f0458e63d4e5622da4a07d8baa878ff2b0c3f1c566f7d5697755ec099376516",
+      "source_mtime_ns": 1790701897254837373
+    },
+    {
+      "path": "fact_observation_candidates.yaml",
+      "bytes": 2226136,
+      "sha256": "6766478e050169fee6702fd4c27af2d76cb336dae0b79b64e1cfeb30c2bd8395",
+      "source_mtime_ns": 1790701897155159504
+    },
+    {
+      "path": "fact_observation_coverage.yaml",
+      "bytes": 530,
+      "sha256": "d9290f549a3df2919d8750a81254b56a30a52261b375de4b7d0bdcce47f1a375",
+      "source_mtime_ns": 1790701897155861877
+    },
+    {
+      "path": "field_candidates.yaml",
+      "bytes": 4039131,
+      "sha256": "49b65a7234f8a0856d77028d1413a5ae0353d6bad5c41710c5a70930c677e7be",
+      "source_mtime_ns": 1790701789917337840
+    },
+    {
+      "path": "instance_bundle_coverage.yaml",
+      "bytes": 647201,
+      "sha256": "1271564e77384f24cd7206738b1643e39b160253ba6d1eadaf8c129e3872e103",
+      "source_mtime_ns": 1790704285579178864
+    },
+    {
+      "path": "knowledge.yaml",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "source_mtime_ns": 1790701897370974916
+    },
+    {
+      "path": "meta_graph.yaml",
+      "bytes": 5187534,
+      "sha256": "abd92e766864658ed2cd4c21b0e4831c7ccb8cbcbae5e6976c25b5f2379dee24",
+      "source_mtime_ns": 1790701896175216230
+    },
+    {
+      "path": "ontology.yaml",
+      "bytes": 314496,
+      "sha256": "42c00e80349bf770749ad44edcde470dbd78cf43f2072e5f3960b30c8ea2a7c8",
+      "source_mtime_ns": 1790701897369742752
+    },
+    {
+      "path": "profiles.yaml",
+      "bytes": 1687506,
+      "sha256": "c4bf2caecbee2b2765d697c7f8a61215fc6abdbdab45d0a9b3b8858b82334b26",
+      "source_mtime_ns": 1790701394773991205
+    },
+    {
+      "path": "semantic_card_coverage.yaml",
+      "bytes": 88214,
+      "sha256": "6a9c278c735df0b64272fd0e6a4c418d0ff8f50e9994a07be966ad394ee14285",
+      "source_mtime_ns": 1790702300124380665
+    },
+    {
+      "path": "semantic_state.json",
+      "bytes": 4775964,
+      "sha256": "8aaf5f4c15b50e6e3fc7b10b56bc2d8705a4ce14959b80df34b75c496d4fb3c5",
+      "source_mtime_ns": 1790727549936587353
+    },
+    {
+      "path": "trace.jsonl",
+      "bytes": 40094639,
+      "sha256": "68f01aeb537b6688198f1c9336e5316ef95de2f83ad58d9fd91f930a43f9fcf0",
+      "source_mtime_ns": 1790727549949399111
+    }
+  ],
+  "source_files_matching_snapshot": 92,
+  "credential_scan_findings": 0,
+  "credential_scan_files": 26,
+  "synthetic_data_archive": "../fruit-full-v10-20260929/synthetic-data.tar.gz",
+  "synthetic_data_sha256": "a604bd417b2cb0a71108cf80149147fba186e7cff0a4d3af0de7cd751b49de8f"
+}

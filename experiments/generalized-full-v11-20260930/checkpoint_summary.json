@@ -1,0 +1,302 @@
+{
+  "scope": "Atomic semantic_state.json checkpoint and earlier phase exports captured during a running experiment; not a final business ontology or quality evaluation.",
+  "status": "in_progress",
+  "final_result": false,
+  "source_commit": "ff8ded2487307a430d6faed50f8f44f688a6c29e",
+  "run": "generalized-full-v11-20260930",
+  "capture_window_utc": {
+    "from": "2026-09-30T00:18:17.039599+00:00",
+    "to": "2026-09-30T00:19:12.270906+00:00"
+  },
+  "capture_consistency": "Per-file stable copies; semantic_state.json is one atomic checkpoint; other phase exports and the complete-line trace prefix have independent cutoffs. Not an atomic whole-run snapshot.",
+  "semantic_checkpoint_evidence": {
+    "path": "semantic_state.json",
+    "bytes": 4775964,
+    "sha256": "8aaf5f4c15b50e6e3fc7b10b56bc2d8705a4ce14959b80df34b75c496d4fb3c5",
+    "source_mtime_utc": "2026-09-30T00:19:09.936587+00:00"
+  },
+  "snapshot_id": "dcd72a982a9d2607ebf910db5c640ba6d59f32ff331b0126cab0a1c4877916eb",
+  "model": "deepseek-v4-flash",
+  "implementation_code_hash": "829279b7d4b69e1338dae959e4b7c62e706d2137705b8ce96afba341b2ed8949",
+  "implementation_code_hash_matches_current_source": true,
+  "missing_final_artifacts": [
+    "manifest.yaml",
+    "metrics.yaml",
+    "process_exit.json",
+    "experiment_snapshot.json",
+    "viewer.html"
+  ],
+  "checkpoint_counts": {
+    "source_bundle_ids": 2984,
+    "concepts": 137,
+    "record_alignments": 140,
+    "template_projections": 10,
+    "template_bindings": 46,
+    "concept_relations": 0,
+    "concept_relation_derivations": 0,
+    "steps": 942,
+    "pending_concept_decisions": 0,
+    "pending_concept_reviews": 0,
+    "pending_relation_decisions": 3,
+    "pending_relation_reviews": 0,
+    "pending_record_relations": 27,
+    "evidence": 3510
+  },
+  "plan_counts": {
+    "object_types": 171,
+    "relation_types": 18,
+    "tables": 23,
+    "relations": 27,
+    "knowledge_questions": 0
+  },
+  "plan_object_type_categories": {
+    "source_record_type": 23,
+    "business_type": 148
+  },
+  "plan_object_roots": {
+    "GeneralObject": 26,
+    "Measure": 137,
+    "Metric": 8
+  },
+  "exact_concept_roots": {
+    "Measure": 137
+  },
+  "step_statuses": {
+    "unresolved": 698,
+    "accepted": 174,
+    "no_change": 70
+  },
+  "step_task_statuses": [
+    {
+      "task_kind": "concept_induction",
+      "status": "accepted",
+      "count": 147
+    },
+    {
+      "task_kind": "concept_induction",
+      "status": "no_change",
+      "count": 68
+    },
+    {
+      "task_kind": "concept_induction",
+      "status": "unresolved",
+      "count": 256
+    },
+    {
+      "task_kind": "relation_meaning",
+      "status": "accepted",
+      "count": 27
+    },
+    {
+      "task_kind": "relation_meaning",
+      "status": "no_change",
+      "count": 2
+    },
+    {
+      "task_kind": "relation_meaning",
+      "status": "unresolved",
+      "count": 442
+    }
+  ],
+  "pending_relation_decision_statuses": {
+    "unresolved": 2,
+    "proposed": 1
+  },
+  "pending_record_relation_decision_statuses": {
+    "proposed": 27
+  },
+  "queue_boundary": "Pending decisions and proposed record relations are continuation state, not final rejected relations. Accepted step counts are workflow events, not distinct business types or semantic accuracy.",
+  "phase_exports": {
+    "ontology.yaml": {
+      "evidence": {
+        "path": "ontology.yaml",
+        "bytes": 314496,
+        "sha256": "42c00e80349bf770749ad44edcde470dbd78cf43f2072e5f3960b30c8ea2a7c8",
+        "source_mtime_utc": "2026-09-29T17:11:37.369743+00:00"
+      },
+      "object_types": 23,
+      "relation_types": 0,
+      "object_type_categories": {
+        "source_record_type": 23
+      },
+      "interpretation": "Earlier source-record-only export; do not treat as the current checkpoint ontology or final output."
+    },
+    "semantic_card_coverage.yaml": {
+      "evidence": {
+        "path": "semantic_card_coverage.yaml",
+        "bytes": 88214,
+        "sha256": "6a9c278c735df0b64272fd0e6a4c418d0ff8f50e9994a07be966ad394ee14285",
+        "source_mtime_utc": "2026-09-29T17:18:20.124381+00:00"
+      },
+      "rows_scanned": 1102238,
+      "rows_indexed": 1082338,
+      "cards_indexed": 939168,
+      "patterns_indexed": 492185,
+      "definition_patterns_indexed": 9188,
+      "rows_omitted_cap": 0,
+      "rows_without_card": 19900,
+      "rows_skipped_business_fact": 14900,
+      "business_fact_instances_created": 0,
+      "partial": false,
+      "semantic_status": "unjudged; retrieval is not concept identity"
+    },
+    "instance_bundle_coverage.yaml": {
+      "evidence": {
+        "path": "instance_bundle_coverage.yaml",
+        "bytes": 647201,
+        "sha256": "1271564e77384f24cd7206738b1643e39b160253ba6d1eadaf8c129e3872e103",
+        "source_mtime_utc": "2026-09-29T17:51:25.579179+00:00"
+      },
+      "definition_cards_indexed": 24780,
+      "definition_patterns_indexed": 9188,
+      "definition_patterns_inspected": 2000,
+      "definition_patterns_unprocessed": 7188,
+      "definition_cards_not_submitted_as_exact_candidates": 22780,
+      "checked_rules": 2263,
+      "rules_selected": 1066,
+      "checked_rules_not_selected": 1197,
+      "bundles_built": 2984,
+      "bundles_by_task": {
+        "concept_induction": 2000,
+        "relation_meaning": 984
+      },
+      "partial": true
+    },
+    "discovery_coverage.yaml": {
+      "evidence": {
+        "path": "discovery_coverage.yaml",
+        "bytes": 14824,
+        "sha256": "bd69e98bde4e54a6d95b8b40d1fe9e4ca9245c5e7507e60186f3924bc05f84b1",
+        "source_mtime_utc": "2026-09-29T17:09:54.442333+00:00"
+      },
+      "fields_considered": 445,
+      "candidate_fields_considered": 333,
+      "value_index_fields": 331,
+      "conditional_candidates_queued": 8311,
+      "conditional_candidates_recalled": 4000,
+      "conditional_scope_checks_not_probed": 327,
+      "candidates_checked": 6030,
+      "candidate_check_errors": 0,
+      "candidates_not_checked": 0,
+      "partial": true
+    },
+    "fact_observation_coverage.yaml": {
+      "evidence": {
+        "path": "fact_observation_coverage.yaml",
+        "bytes": 530,
+        "sha256": "d9290f549a3df2919d8750a81254b56a30a52261b375de4b7d0bdcce47f1a375",
+        "source_mtime_utc": "2026-09-29T17:11:37.155862+00:00"
+      },
+      "tables_total": 23,
+      "business_fact_tables": 1,
+      "unresolved_tables": 3,
+      "emitted_candidates": 1600,
+      "partial": true,
+      "semantic_status": "candidate_only_not_business_instance_or_type"
+    }
+  },
+  "synthetic_input": {
+    "synthetic": true,
+    "version": 3,
+    "tables": 23,
+    "rows": 1102238,
+    "source": "Hand-coded deterministic fixture from user-supplied fruit-domain prompt; no real data",
+    "semantic_status": "Test fixture only; not ground truth for ontology quality",
+    "source_files_verified_against_meta_graph": 92,
+    "source_files_matching_published_v10_checksums": 92,
+    "reusable_archive": "experiments/fruit-full-v10-20260929/synthetic-data.tar.gz",
+    "boundary": "Same 92 CSV/schema input files as v10; synthetic fixture is not ground truth for ontology quality."
+  },
+  "credential_scan": {
+    "files": 119,
+    "scope": "24 captured output files, 92 source CSV/schema files, synthetic manifest, runtime config and launch metadata",
+    "pattern_classes": [
+      "private_key",
+      "provider_token",
+      "authorization_bearer",
+      "credential_assignment"
+    ],
+    "findings": [],
+    "limitation": "Pattern scan plus synthetic provenance review; not proof that every possible secret or personal datum is absent."
+  },
+  "publication_boundary": {
+    "excluded": [
+      "work/ directory including open databases",
+      "temporary checkpoint file",
+      "environment files",
+      "LLM caches",
+      "embedding weights",
+      "process stdout log"
+    ],
+    "preserve_original_phase_exports": true,
+    "final_instances_available": false,
+    "business_semantic_quality": "unjudged"
+  },
+  "unresolved_step_reason_summary": {
+    "distinct_reasons": 430,
+    "listed": 15,
+    "most_frequent": [
+      {
+        "reason": "Type induction requires every scope field to be classified",
+        "count": 55
+      },
+      {
+        "reason": "Incomplete provider response: missing or unsuccessful finish_reason",
+        "count": 43
+      },
+      {
+        "reason": "Definition reference unresolved: source_reference_intent_not_established",
+        "count": 34
+      },
+      {
+        "reason": "Template target must match an existing type definition, unit, formula, parameters and applicability scope",
+        "count": 23
+      },
+      {
+        "reason": "No validated positive pair supports both cited quotes",
+        "count": 21
+      },
+      {
+        "reason": "Class definition must quote the source statement including its class label",
+        "count": 18
+      },
+      {
+        "reason": "Identity qualifier requires a complete source identity field",
+        "count": 16
+      },
+      {
+        "reason": "Numeric identifier overlap lacks evidence for the executed join path; shared dimensions or other references cannot justify this field pair",
+        "count": 15
+      },
+      {
+        "reason": "Measure calculation operator lacks exact source evidence",
+        "count": 13
+      },
+      {
+        "reason": "Definition reference unresolved: target_definition_ownership_not_established",
+        "count": 11
+      },
+      {
+        "reason": "Definition parameter requires a complete source value and a checked grain/calculation declaration; field 'dim_type' lacks a checked declaration",
+        "count": 9
+      },
+      {
+        "reason": "Formula, unit and calculation operators cannot be wildcarded",
+        "count": 9
+      },
+      {
+        "reason": "Projected Measure component requires an independent generic source definition",
+        "count": 5
+      },
+      {
+        "reason": "Component label and definition must be quoted source fragments",
+        "count": 5
+      },
+      {
+        "reason": "Definition reference unresolved: both_endpoints_reference_third_party",
+        "count": 3
+      }
+    ],
+    "complete_source": "semantic_state.json steps in extraction-checkpoint.tar.gz; this list is only a frequency summary"
+  }
+}
