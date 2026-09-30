@@ -179,7 +179,8 @@ def test_exact_request_budget_keeps_proposals_together_and_splits_complete_revie
     assert llm.calls == len(requests) == 3
     assert [(task, len(packet['packets'])) for task, packet in calls] == [
         ('concept_batch', 3), ('group_review_batch', 2), ('group_review_batch', 1)]
-    assert [packet['bundle']['bundle_id'] for _, payload in calls[1:] for packet in payload['packets']] == ['b0', 'b1', 'b2']
+    assert [packet['bundle']['bundle_id'] for _, payload in calls[1:] for packet in payload['packets']] == ['@b1', '@b2', '@b1']
+    # IDs are request-local on the wire and original in compiled results.
     assert all(packet['candidate']['reason'] == '核验说明' * 500
                for _, payload in calls[1:] for packet in payload['packets'])
     assert any(len(state['pending_concept_decisions']) == 3 and not state['pending_concept_reviews']
@@ -230,6 +231,6 @@ def test_split_review_budget_and_resume_preserve_paid_decisions_and_independent_
         result = asyncio.run(run())
     assert llm.calls == len(requests) == 3
     assert [task for task, _ in calls] == ['concept_batch', 'group_review_batch', 'group_review']
-    assert calls[-1][1]['bundle']['bundle_id'] == 'b2'
+    assert calls[-1][1]['bundle']['bundle_id'] == '@b1'
     assert checkpoints and any(set(state['pending_concept_reviews']) == {'b0', 'b1'} for state in checkpoints)
     _assert_all_bundles_accepted(result)

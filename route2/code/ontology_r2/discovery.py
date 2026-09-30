@@ -635,9 +635,10 @@ def propose_candidates(data, *, max_candidates_total=2000,
             entry["numeric_overlap_only"] = numeric_only
         omitted_value_pairs += max(0, len(targets) - max_per_source_per_channel)
 
-    ranked = sorted(proposals, key=lambda pair: (
+    ranked = _fair_source_order(proposals, lambda pair: pair[0], lambda pair: (
         pair not in declared,
         "metadata" not in proposals[pair]["channels"],
+        proposals[pair].get("numeric_overlap_only", False),
         -proposals[pair].get("shared_value_count", 0),
         pair))
     conditional, truncated_conditions = (
@@ -676,6 +677,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
             "shared_value_count_scope": value_index_mode,
             "numeric_overlap_only": shared.get((source, target), (0, False))[1],
             "risk_flags": (["numeric_value_coincidence"] if shared.get((source, target), (0, False))[1] else []),
+            "source_declared_pk": source[1] in data.tables[source[0]].get("pk", []),
             "target_declared_pk": target[1] in data.tables[target[0]].get("pk", []),
             "target_role_priority": item["target_role_priority"],
             "condition_discovery": item.get("condition_discovery", "name_hint_and_observed_literal"),
@@ -694,6 +696,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
             "shared_value_count_scope": value_index_mode,
             "numeric_overlap_only": entry.get("numeric_overlap_only", False),
             "risk_flags": (["numeric_value_coincidence"] if entry.get("numeric_overlap_only") else []),
+            "source_declared_pk": source[1] in data.tables[source[0]].get("pk", []),
             "target_declared_pk": target[1] in data.tables[target[0]].get("pk", []),
             "decision": {"status": "proposed", "semantic_relation": "unresolved"},
         })

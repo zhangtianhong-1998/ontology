@@ -92,11 +92,27 @@ def joint_examples(data, candidate, check, *, limit=2, source_fields=(), target_
     transform = check.get("normalization", "identity")
     sql, params = association_match_sql(data, candidate, selector=selector,
                                          scope_bindings=scopes, transform=transform)
-    pairs = data.db.execute(
-        sql + " ORDER BY source_row_number, target_row_number LIMIT ?",
+    # The matching SQL emits at most one target for each eligible source row.
+    # Sample different observed targets before repeating one popular target;
+    # this groups validated pairs in DuckDB, never expands a row/target product.
+    pairs = data.db.execute(f"""WITH matches AS ({sql}), ranked AS (
+        SELECT source_row_number, target_row_number,
+               row_number() OVER (PARTITION BY target_row_number
+                                  ORDER BY source_row_number) AS target_occurrence,
+               count(DISTINCT target_row_number) OVER () AS target_witness_count
+        FROM matches
+    ) SELECT source_row_number, target_row_number, target_witness_count FROM ranked
+      ORDER BY target_occurrence, source_row_number, target_row_number LIMIT ?""",
         [*params, min(limit, 2)]).fetchall()
     result["match_basis"] = transform
-    for source_row, target_row in pairs:
+    target_count = pairs[0][2] if pairs else 0
+    sampled_targets = len({pair[1] for pair in pairs})
+    result["sampling"] = {"method": "distinct_observed_target_round_robin",
+                          "unique_target_witnesses": target_count,
+                          "sampled_unique_target_witnesses": sampled_targets,
+                          "unique_target_witnesses_not_sampled": target_count - sampled_targets,
+                          "ambiguous_targets_sampled_as_positive": False}
+    for source_row, target_row, _ in pairs:
         result["matched_pairs"].append({
             "source_record": _row(data, source_table, source_row, source["field"], source_fields),
             "target_record": _row(data, target_table, target_row, target["field"], target_fields),

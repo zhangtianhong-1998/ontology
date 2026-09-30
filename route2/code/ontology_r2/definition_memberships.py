@@ -138,7 +138,7 @@ def _semantic_columns(data, card):
     conflicts = {(item.get("proposed_role"), item.get("column"))
                  for item in card.get("role_conflicts", [])
                  if item.get("binding_only") and item.get("effective_role") == "reference"
-                 and item.get("proposed_role") in ("name", "alias", "formula")}
+                 and item.get("proposed_role") in ("name", "alias", "formula", "description", "identity", "scope")}
     conflicts.update(("formula", item.get("column")) for item in card.get("role_conflicts", [])
                      if item.get("proposed_role") == "formula" and item.get("effective_role") == "scope"
                      and item.get("formula_status") == "fragment")

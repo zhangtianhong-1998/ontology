@@ -1,0 +1,1227 @@
+{
+  "origin": "Saved column_role_inference responses from generalized-full-v11-20260930; synthetic fruit_data_v3. Responses unchanged; source CSV restricted to cited row numbers. Tests do not call an LLM.",
+  "cases": [
+    {
+      "source_response_sha256": "baae1967a8d208c9bd70a9103b033375625ccc6224824aa8b4069f4b10dc0915",
+      "source_cache_file": "ca9726c82e78b33889c727ca5b2c8d25c1d22a3d181ddd04a620693c79ded28d.json",
+      "table": "fruit_measure_def",
+      "schema": {
+        "schema": "fruit_market",
+        "table_name": "fruit_measure_def",
+        "table_comment": "水果经营度量定义与期间标记",
+        "relkind": "r",
+        "estimated_rows": 5000,
+        "total_size": null,
+        "data_size": null,
+        "columns": [
+          {
+            "column_name": "fruit_measure_id",
+            "ordinal_position": 1,
+            "data_type": "bigint",
+            "is_not_null": true,
+            "default_value": null,
+            "column_comment": "fruit measure id，合成业务字段"
+          },
+          {
+            "column_name": "measure_code",
+            "ordinal_position": 2,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "度量编码，对应度量定义"
+          },
+          {
+            "column_name": "measure_name",
+            "ordinal_position": 3,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "度量中文业务名称"
+          },
+          {
+            "column_name": "standard_name",
+            "ordinal_position": 4,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "不绑定具体经营对象的可复用度量标准名称"
+          },
+          {
+            "column_name": "parameter_name",
+            "ordinal_position": 5,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "度量英文别名，也是计算公式中的变量名；不同版本可重复使用"
+          },
+          {
+            "column_name": "measure_description",
+            "ordinal_position": 6,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "度量的业务含义、聚合口径和适用范围"
+          },
+          {
+            "column_name": "unit",
+            "ordinal_position": 7,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "计量单位；不同单位不可直接合并"
+          },
+          {
+            "column_name": "budget_flag",
+            "ordinal_position": 8,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "budget flag，合成业务字段"
+          },
+          {
+            "column_name": "forecast_flag",
+            "ordinal_position": 9,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "forecast flag，合成业务字段"
+          },
+          {
+            "column_name": "actual_flag",
+            "ordinal_position": 10,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "actual flag，合成业务字段"
+          },
+          {
+            "column_name": "target_flag",
+            "ordinal_position": 11,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "target flag，合成业务字段"
+          },
+          {
+            "column_name": "remain_flag",
+            "ordinal_position": 12,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "remain flag，合成业务字段"
+          },
+          {
+            "column_name": "estimate_flag",
+            "ordinal_position": 13,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "estimate flag，合成业务字段"
+          },
+          {
+            "column_name": "rank_flag",
+            "ordinal_position": 14,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "rank flag，合成业务字段"
+          },
+          {
+            "column_name": "period",
+            "ordinal_position": 15,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "口径明确限定的期间粒度；空值表示由指标的期间绑定决定"
+          },
+          {
+            "column_name": "inference_type",
+            "ordinal_position": 16,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "计算方法，例如 SUM、AVG、RATIO；是计算属性，不是单独本体类型"
+          },
+          {
+            "column_name": "domain_code",
+            "ordinal_position": 17,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "domain code，合成业务字段"
+          },
+          {
+            "column_name": "source_field",
+            "ordinal_position": 18,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "量的计算来源；表达式表示该度量的计算公式，空值表示基础聚合量"
+          },
+          {
+            "column_name": "metric_code",
+            "ordinal_position": 19,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "指标编码，对应指标详情和公共属性"
+          },
+          {
+            "column_name": "delete_flag",
+            "ordinal_position": 20,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "逻辑删除标记，0 为有效"
+          },
+          {
+            "column_name": "created_by",
+            "ordinal_position": 21,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "创建人账号，审计属性"
+          },
+          {
+            "column_name": "creation_date",
+            "ordinal_position": 22,
+            "data_type": "timestamp",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "创建时间，审计属性"
+          },
+          {
+            "column_name": "last_updated_by",
+            "ordinal_position": 23,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "最后修改人账号，审计属性"
+          },
+          {
+            "column_name": "last_update_date",
+            "ordinal_position": 24,
+            "data_type": "timestamp",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "最后修改时间，审计属性"
+          }
+        ]
+      },
+      "constraints": {
+        "schema": "fruit_market",
+        "table_name": "fruit_measure_def",
+        "constraints": [
+          {
+            "constraint_name": "fruit_measure_def_pkey",
+            "constraint_type": "p",
+            "constraint_type_name": "PRIMARY KEY",
+            "definition": "PRIMARY KEY (fruit_measure_id)"
+          }
+        ]
+      },
+      "response": {
+        "proposals": [
+          {
+            "column": "source_field",
+            "role": "formula",
+            "observations": [
+              {
+                "row_number": 2857,
+                "value": "销售额=sales_volume * avg_price * 1000"
+              },
+              {
+                "row_number": 4285,
+                "value": "损耗率=damaged_volume / inbound_volume * 100"
+              }
+            ],
+            "rationale": "Column comment states it holds calculation expressions for the measure; sample rows show complete formulas like 销售额=sales_volume * avg_price * 1000 and 损耗率=damaged_volume / inbound_volume * 100. Empty values indicate base aggregation quantities."
+          },
+          {
+            "column": "measure_code",
+            "role": "identity",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "MES000001"
+              },
+              {
+                "row_number": 715,
+                "value": "MES000715"
+              },
+              {
+                "row_number": 1429,
+                "value": "MES001429"
+              },
+              {
+                "row_number": 2143,
+                "value": "MES002143"
+              },
+              {
+                "row_number": 2857,
+                "value": "MES002857"
+              },
+              {
+                "row_number": 3571,
+                "value": "MES003571"
+              },
+              {
+                "row_number": 4285,
+                "value": "MES004285"
+              },
+              {
+                "row_number": 5000,
+                "value": "MES005000"
+              }
+            ],
+            "rationale": "Column comment states it is the measure code corresponding to the measure definition; values are unique identifiers (MESxxxxxx) that identify each measure definition, serving as definition identity."
+          },
+          {
+            "column": "budget_flag",
+            "role": "metadata",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "0"
+              },
+              {
+                "row_number": 1429,
+                "value": "1"
+              }
+            ],
+            "rationale": "Column comment labels it as a synthetic business field; values are binary flags (0/1) indicating whether the measure applies to budget. It is a classification/flag attribute of the measure definition."
+          },
+          {
+            "column": "actual_flag",
+            "role": "metadata",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "1"
+              },
+              {
+                "row_number": 1429,
+                "value": "0"
+              }
+            ],
+            "rationale": "Column comment labels it as a synthetic business field; values are binary flags (0/1) indicating whether the measure applies to actuals. It is a classification/flag attribute of the measure definition."
+          },
+          {
+            "column": "rank_flag",
+            "role": "metadata",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "0"
+              },
+              {
+                "row_number": 1429,
+                "value": "0"
+              }
+            ],
+            "rationale": "Column comment labels it as a synthetic business field; values are binary flags (0/1) indicating whether the measure applies to ranking. It is a classification/flag attribute of the measure definition."
+          }
+        ],
+        "unresolved_columns": [
+          "fruit_measure_id",
+          "forecast_flag",
+          "target_flag",
+          "remain_flag",
+          "estimate_flag"
+        ]
+      },
+      "source_rows": [
+        {
+          "source_row_number": 1,
+          "values": {
+            "fruit_measure_id": "1",
+            "measure_code": "MES000001",
+            "measure_name": "销量",
+            "standard_name": "销量",
+            "parameter_name": "sales_volume",
+            "measure_description": "销量是成交数量的求和，计量单位为吨。 这是可复用度量定义，不限定具体经营对象、产品、地区或实际期间。",
+            "unit": "吨",
+            "budget_flag": "0",
+            "forecast_flag": "0",
+            "actual_flag": "1",
+            "target_flag": "0",
+            "remain_flag": "0",
+            "estimate_flag": "0",
+            "rank_flag": "0",
+            "period": "",
+            "inference_type": "SUM",
+            "domain_code": "FRUIT",
+            "source_field": "",
+            "metric_code": "",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-01T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-01T08:00:00"
+          }
+        },
+        {
+          "source_row_number": 715,
+          "values": {
+            "fruit_measure_id": "715",
+            "measure_code": "MES000715",
+            "measure_name": "受检数量",
+            "standard_name": "受检数量",
+            "parameter_name": "tested_quantity",
+            "measure_description": "受检数量是按同一检验标准接受检验的全部件数之和。 这是可复用度量定义，不限定具体经营对象、产品、地区或实际期间。",
+            "unit": "件",
+            "budget_flag": "0",
+            "forecast_flag": "0",
+            "actual_flag": "1",
+            "target_flag": "0",
+            "remain_flag": "0",
+            "estimate_flag": "0",
+            "rank_flag": "0",
+            "period": "",
+            "inference_type": "SUM",
+            "domain_code": "FRUIT",
+            "source_field": "",
+            "metric_code": "",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-15T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-15T08:00:00"
+          }
+        },
+        {
+          "source_row_number": 1429,
+          "values": {
+            "fruit_measure_id": "1429",
+            "measure_code": "MES001429",
+            "measure_name": "10月年预算",
+            "standard_name": "10月年预算",
+            "parameter_name": "october_budget",
+            "measure_description": "10月年预算是当前年度预算版本中会计月为10月的预算金额之和。 这是可复用度量定义，不限定具体经营对象、产品、地区或实际期间。",
+            "unit": "元",
+            "budget_flag": "1",
+            "forecast_flag": "0",
+            "actual_flag": "0",
+            "target_flag": "0",
+            "remain_flag": "0",
+            "estimate_flag": "0",
+            "rank_flag": "0",
+            "period": "M",
+            "inference_type": "FILTER",
+            "domain_code": "FRUIT",
+            "source_field": "",
+            "metric_code": "",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-01T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-01T08:00:00"
+          }
+        },
+        {
+          "source_row_number": 2143,
+          "values": {
+            "fruit_measure_id": "2143",
+            "measure_code": "MES002143",
+            "measure_name": "最低均价",
+            "standard_name": "最低均价",
+            "parameter_name": "min_price",
+            "measure_description": "最低均价是同一期间同一对象各地区均价的最小值。 这是可复用度量定义，不限定具体经营对象、产品、地区或实际期间。",
+            "unit": "元/kg",
+            "budget_flag": "0",
+            "forecast_flag": "0",
+            "actual_flag": "1",
+            "target_flag": "0",
+            "remain_flag": "0",
+            "estimate_flag": "0",
+            "rank_flag": "0",
+            "period": "",
+            "inference_type": "MIN",
+            "domain_code": "FRUIT",
+            "source_field": "",
+            "metric_code": "",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-15T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-15T08:00:00"
+          }
+        },
+        {
+          "source_row_number": 2857,
+          "values": {
+            "fruit_measure_id": "2857",
+            "measure_code": "MES002857",
+            "measure_name": "销售额",
+            "standard_name": "销售额",
+            "parameter_name": "sales_amount",
+            "measure_description": "销售额=sales_volume * avg_price * 1000；吨先换算为千克。 这是可复用度量定义，不限定具体经营对象、产品、地区或实际期间。",
+            "unit": "元",
+            "budget_flag": "0",
+            "forecast_flag": "0",
+            "actual_flag": "1",
+            "target_flag": "0",
+            "remain_flag": "0",
+            "estimate_flag": "0",
+            "rank_flag": "0",
+            "period": "",
+            "inference_type": "MULTIPLY",
+            "domain_code": "FRUIT",
+            "source_field": "销售额=sales_volume * avg_price * 1000",
+            "metric_code": "",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-01T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-01T08:00:00"
+          }
+        },
+        {
+          "source_row_number": 3571,
+          "values": {
+            "fruit_measure_id": "3571",
+            "measure_code": "MES003571",
+            "measure_name": "入库量",
+            "standard_name": "入库量",
+            "parameter_name": "inbound_volume",
+            "measure_description": "入库量是本期入库数量的求和，计量单位为吨。 这是可复用度量定义，不限定具体经营对象、产品、地区或实际期间。",
+            "unit": "吨",
+            "budget_flag": "0",
+            "forecast_flag": "0",
+            "actual_flag": "1",
+            "target_flag": "0",
+            "remain_flag": "0",
+            "estimate_flag": "0",
+            "rank_flag": "0",
+            "period": "",
+            "inference_type": "SUM",
+            "domain_code": "FRUIT",
+            "source_field": "",
+            "metric_code": "",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-15T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-15T08:00:00"
+          }
+        },
+        {
+          "source_row_number": 4285,
+          "values": {
+            "fruit_measure_id": "4285",
+            "measure_code": "MES004285",
+            "measure_name": "损耗率",
+            "standard_name": "损耗率",
+            "parameter_name": "loss_rate",
+            "measure_description": "损耗率=damaged_volume / inbound_volume * 100；入库量为零时结果缺失。 这是可复用度量定义，不限定具体经营对象、产品、地区或实际期间。",
+            "unit": "%",
+            "budget_flag": "0",
+            "forecast_flag": "0",
+            "actual_flag": "1",
+            "target_flag": "0",
+            "remain_flag": "0",
+            "estimate_flag": "0",
+            "rank_flag": "0",
+            "period": "",
+            "inference_type": "RATIO",
+            "domain_code": "FRUIT",
+            "source_field": "损耗率=damaged_volume / inbound_volume * 100",
+            "metric_code": "",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-01T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-01T08:00:00"
+          }
+        },
+        {
+          "source_row_number": 5000,
+          "values": {
+            "fruit_measure_id": "5000",
+            "measure_code": "MES005000",
+            "measure_name": "损耗量",
+            "standard_name": "损耗量",
+            "parameter_name": "damaged_volume",
+            "measure_description": "损耗量是本期损坏数量的求和，计量单位为吨。 这是可复用度量定义，不限定具体经营对象、产品、地区或实际期间。",
+            "unit": "吨",
+            "budget_flag": "0",
+            "forecast_flag": "0",
+            "actual_flag": "1",
+            "target_flag": "0",
+            "remain_flag": "0",
+            "estimate_flag": "0",
+            "rank_flag": "0",
+            "period": "",
+            "inference_type": "SUM",
+            "domain_code": "FRUIT",
+            "source_field": "",
+            "metric_code": "",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-16T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-16T08:00:00"
+          }
+        }
+      ]
+    },
+    {
+      "source_response_sha256": "ab83fbc661b5fe6199fa3d31a1adefcf2e8b683dae2deea1ae34d5deeda203bd",
+      "source_cache_file": "27b9be65693ed96ab6f10c15d538444a00ed159f80c032428ef8cb1958781432.json",
+      "table": "fruit_market_api",
+      "schema": {
+        "schema": "fruit_market",
+        "table_name": "fruit_market_api",
+        "table_comment": "水果经营数据服务 API 定义",
+        "relkind": "r",
+        "estimated_rows": 2500,
+        "total_size": null,
+        "data_size": null,
+        "columns": [
+          {
+            "column_name": "fruit_api_id",
+            "ordinal_position": 1,
+            "data_type": "bigint",
+            "is_not_null": true,
+            "default_value": null,
+            "column_comment": "fruit api id，合成业务字段"
+          },
+          {
+            "column_name": "api_code",
+            "ordinal_position": 2,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "api code，合成业务字段"
+          },
+          {
+            "column_name": "api_name",
+            "ordinal_position": 3,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "对外数据服务接口名称"
+          },
+          {
+            "column_name": "api_description",
+            "ordinal_position": 4,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "接口提供的水果经营数据说明"
+          },
+          {
+            "column_name": "api_url",
+            "ordinal_position": 5,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "接口访问路径，仅合成示例"
+          },
+          {
+            "column_name": "http_method",
+            "ordinal_position": 6,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "http method，合成业务字段"
+          },
+          {
+            "column_name": "protocol",
+            "ordinal_position": 7,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "protocol，合成业务字段"
+          },
+          {
+            "column_name": "auth_method",
+            "ordinal_position": 8,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "auth method，合成业务字段"
+          },
+          {
+            "column_name": "request_example",
+            "ordinal_position": 9,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "请求参数 JSON 示例"
+          },
+          {
+            "column_name": "response_example",
+            "ordinal_position": 10,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "响应结果 JSON 示例"
+          },
+          {
+            "column_name": "business_domain",
+            "ordinal_position": 11,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "business domain，合成业务字段"
+          },
+          {
+            "column_name": "version",
+            "ordinal_position": 12,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "version，合成业务字段"
+          },
+          {
+            "column_name": "status",
+            "ordinal_position": 13,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "status，合成业务字段"
+          },
+          {
+            "column_name": "fruit_category_code",
+            "ordinal_position": 14,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "fruit category code，合成业务字段"
+          },
+          {
+            "column_name": "region_code",
+            "ordinal_position": 15,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "region code，合成业务字段"
+          },
+          {
+            "column_name": "market_name",
+            "ordinal_position": 16,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "market name，合成业务字段"
+          },
+          {
+            "column_name": "data_source_code",
+            "ordinal_position": 17,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "data source code，合成业务字段"
+          },
+          {
+            "column_name": "wide_table_id",
+            "ordinal_position": 18,
+            "data_type": "bigint",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "wide table id，合成业务字段"
+          },
+          {
+            "column_name": "owner_team",
+            "ordinal_position": 19,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "owner team，合成业务字段"
+          },
+          {
+            "column_name": "delete_flag",
+            "ordinal_position": 20,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "逻辑删除标记，0 为有效"
+          },
+          {
+            "column_name": "created_by",
+            "ordinal_position": 21,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "创建人账号，审计属性"
+          },
+          {
+            "column_name": "creation_date",
+            "ordinal_position": 22,
+            "data_type": "timestamp",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "创建时间，审计属性"
+          },
+          {
+            "column_name": "last_updated_by",
+            "ordinal_position": 23,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "最后修改人账号，审计属性"
+          },
+          {
+            "column_name": "last_update_date",
+            "ordinal_position": 24,
+            "data_type": "timestamp",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "最后修改时间，审计属性"
+          }
+        ]
+      },
+      "constraints": {
+        "schema": "fruit_market",
+        "table_name": "fruit_market_api",
+        "constraints": [
+          {
+            "constraint_name": "fruit_market_api_pkey",
+            "constraint_type": "p",
+            "constraint_type_name": "PRIMARY KEY",
+            "definition": "PRIMARY KEY (fruit_api_id)"
+          }
+        ]
+      },
+      "response": {
+        "proposals": [
+          {
+            "column": "api_url",
+            "role": "description",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "/synthetic/fruit/v1/apple/0"
+              },
+              {
+                "row_number": 358,
+                "value": "/synthetic/fruit/v1/durian/2"
+              }
+            ],
+            "rationale": "接口访问路径，注释明确为接口访问路径，描述该 API 的访问端点。"
+          },
+          {
+            "column": "http_method",
+            "role": "metadata",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "GET"
+              },
+              {
+                "row_number": 358,
+                "value": "GET"
+              }
+            ],
+            "rationale": "HTTP 方法，全部样本为 GET，属于接口调用方式的管理属性。"
+          },
+          {
+            "column": "protocol",
+            "role": "metadata",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "HTTPS"
+              },
+              {
+                "row_number": 358,
+                "value": "HTTPS"
+              }
+            ],
+            "rationale": "协议类型，全部样本为 HTTPS，属于接口传输协议的管理属性。"
+          },
+          {
+            "column": "auth_method",
+            "role": "metadata",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "API_KEY_DEMO"
+              },
+              {
+                "row_number": 358,
+                "value": "API_KEY_DEMO"
+              }
+            ],
+            "rationale": "认证方式，全部样本为 API_KEY_DEMO，属于接口访问认证的管理属性。"
+          },
+          {
+            "column": "request_example",
+            "role": "description",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "{\"fruit_code\":\"APPLE\",\"region_code\":\"EAST\"}"
+              },
+              {
+                "row_number": 358,
+                "value": "{\"fruit_code\":\"DURIAN\",\"region_code\":\"SEA\"}"
+              }
+            ],
+            "rationale": "请求参数 JSON 示例，注释明确为请求参数示例，描述接口请求格式。"
+          },
+          {
+            "column": "response_example",
+            "role": "description",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "{\"avg_price_cny_per_kg\":8.2,\"unit\":\"元/kg\",\"synthetic\":true}"
+              },
+              {
+                "row_number": 358,
+                "value": "{\"avg_price_cny_per_kg\":15.0,\"unit\":\"元/kg\",\"synthetic\":true}"
+              }
+            ],
+            "rationale": "响应结果 JSON 示例，注释明确为响应结果示例，描述接口响应格式。"
+          },
+          {
+            "column": "status",
+            "role": "metadata",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "ACTIVE"
+              },
+              {
+                "row_number": 358,
+                "value": "ACTIVE"
+              }
+            ],
+            "rationale": "状态字段，全部样本为 ACTIVE，approx_distinct 为 1，属于接口启用状态的管理属性。"
+          },
+          {
+            "column": "fruit_category_code",
+            "role": "dimension_coordinate",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "APPLE"
+              },
+              {
+                "row_number": 358,
+                "value": "DURIAN"
+              },
+              {
+                "row_number": 715,
+                "value": "MANGO"
+              }
+            ],
+            "rationale": "水果类别编码，与 api_url 中的水果路径段一致（apple/durian/mango），作为接口对应的水果类别坐标。"
+          },
+          {
+            "column": "fruit_api_id",
+            "role": "identity",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "1"
+              },
+              {
+                "row_number": 358,
+                "value": "358"
+              }
+            ],
+            "rationale": "fruit api id，注释为合成业务字段，作为 API 定义的唯一标识。"
+          },
+          {
+            "column": "api_code",
+            "role": "identity",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "API000001"
+              },
+              {
+                "row_number": 358,
+                "value": "API000358"
+              }
+            ],
+            "rationale": "api code，注释为合成业务字段，作为 API 的编码标识。"
+          },
+          {
+            "column": "wide_table_id",
+            "role": "operand_reference",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "1"
+              },
+              {
+                "row_number": 358,
+                "value": "158"
+              }
+            ],
+            "rationale": "wide table id，注释为合成业务字段，approx_distinct 为 179，指向宽表记录的标识，作为操作数或来源字段标识。"
+          }
+        ],
+        "unresolved_columns": []
+      },
+      "source_rows": [
+        {
+          "source_row_number": 1,
+          "values": {
+            "fruit_api_id": "1",
+            "api_code": "API000001",
+            "api_name": "苹果市场价格查询",
+            "api_description": "查询苹果在华东的市场价格查询结果。 API是一类对外提供数据查询的服务资源；本记录是已配置的接口实例。",
+            "api_url": "/synthetic/fruit/v1/apple/0",
+            "http_method": "GET",
+            "protocol": "HTTPS",
+            "auth_method": "API_KEY_DEMO",
+            "request_example": "{\"fruit_code\":\"APPLE\",\"region_code\":\"EAST\"}",
+            "response_example": "{\"avg_price_cny_per_kg\":8.2,\"unit\":\"元/kg\",\"synthetic\":true}",
+            "business_domain": "水果经营",
+            "version": "v1",
+            "status": "ACTIVE",
+            "fruit_category_code": "APPLE",
+            "region_code": "EAST",
+            "market_name": "全球水果市场",
+            "data_source_code": "FRUIT_DEMO",
+            "wide_table_id": "1",
+            "owner_team": "fruit_analytics",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-01T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-01T08:00:00"
+          }
+        },
+        {
+          "source_row_number": 358,
+          "values": {
+            "fruit_api_id": "358",
+            "api_code": "API000358",
+            "api_name": "榴莲产量统计",
+            "api_description": "查询榴莲在东南亚的产量统计结果。 API是一类对外提供数据查询的服务资源；本记录是已配置的接口实例。",
+            "api_url": "/synthetic/fruit/v1/durian/2",
+            "http_method": "GET",
+            "protocol": "HTTPS",
+            "auth_method": "API_KEY_DEMO",
+            "request_example": "{\"fruit_code\":\"DURIAN\",\"region_code\":\"SEA\"}",
+            "response_example": "{\"avg_price_cny_per_kg\":15.0,\"unit\":\"元/kg\",\"synthetic\":true}",
+            "business_domain": "水果经营",
+            "version": "v1",
+            "status": "ACTIVE",
+            "fruit_category_code": "DURIAN",
+            "region_code": "SEA",
+            "market_name": "全球水果市场",
+            "data_source_code": "FRUIT_DEMO",
+            "wide_table_id": "158",
+            "owner_team": "fruit_analytics",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-22T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-22T08:00:00"
+          }
+        },
+        {
+          "source_row_number": 715,
+          "values": {
+            "fruit_api_id": "715",
+            "api_code": "API000715",
+            "api_name": "芒果质量检测",
+            "api_description": "查询芒果在非洲的质量检测结果。 API是一类对外提供数据查询的服务资源；本记录是已配置的接口实例。",
+            "api_url": "/synthetic/fruit/v1/mango/4",
+            "http_method": "GET",
+            "protocol": "HTTPS",
+            "auth_method": "API_KEY_DEMO",
+            "request_example": "{\"fruit_code\":\"MANGO\",\"region_code\":\"AFR\"}",
+            "response_example": "{\"avg_price_cny_per_kg\":11.2,\"unit\":\"元/kg\",\"synthetic\":true}",
+            "business_domain": "水果经营",
+            "version": "v1",
+            "status": "ACTIVE",
+            "fruit_category_code": "MANGO",
+            "region_code": "AFR",
+            "market_name": "全球水果市场",
+            "data_source_code": "FRUIT_DEMO",
+            "wide_table_id": "115",
+            "owner_team": "fruit_analytics",
+            "delete_flag": "0",
+            "created_by": "fixture_generator",
+            "creation_date": "2025-01-15T08:00:00",
+            "last_updated_by": "fixture_generator",
+            "last_update_date": "2025-02-15T08:00:00"
+          }
+        }
+      ]
+    },
+    {
+      "source_response_sha256": "89d8086e8afc6eba8168d9575e90948bad83d7069d834f494e50e4ebba8282d8",
+      "source_cache_file": "0943496f35971e7c66db12cb45b3d9d01a5529d4c31864f5da3bb62e29faef12.json",
+      "table": "fruit_synonym_dict",
+      "schema": {
+        "schema": "fruit_market",
+        "table_name": "fruit_synonym_dict",
+        "table_comment": "中英文及业务别名词典",
+        "relkind": "r",
+        "estimated_rows": 5000,
+        "total_size": null,
+        "data_size": null,
+        "columns": [
+          {
+            "column_name": "sn",
+            "ordinal_position": 1,
+            "data_type": "bigint",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "sn，合成业务字段"
+          },
+          {
+            "column_name": "word",
+            "ordinal_position": 2,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "word，合成业务字段"
+          },
+          {
+            "column_name": "type",
+            "ordinal_position": 3,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "type，合成业务字段"
+          },
+          {
+            "column_name": "attr",
+            "ordinal_position": 4,
+            "data_type": "text",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "attr，合成业务字段"
+          },
+          {
+            "column_name": "lang",
+            "ordinal_position": 5,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "lang，合成业务字段"
+          },
+          {
+            "column_name": "scope",
+            "ordinal_position": 6,
+            "data_type": "character varying(255)",
+            "is_not_null": false,
+            "default_value": null,
+            "column_comment": "scope，合成业务字段"
+          }
+        ]
+      },
+      "constraints": {
+        "schema": "fruit_market",
+        "table_name": "fruit_synonym_dict",
+        "constraints": []
+      },
+      "response": {
+        "proposals": [
+          {
+            "column": "sn",
+            "role": "identity",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "1"
+              },
+              {
+                "row_number": 715,
+                "value": "715"
+              }
+            ],
+            "rationale": "sn is a synthetic business field with high cardinality (5648 distinct out of 5000 usable), values are sequential integers (1, 715, 1429...). It appears to be a record identifier within this synonym dictionary table. However, the contract states identity is for definition tenant/namespace/version, not row IDs. Given the column comment says '合成业务字段' (synthetic business field) and it's a sequential integer, this is more likely a row/record identifier. Since identity role explicitly excludes row IDs, this should be left unresolved."
+          },
+          {
+            "column": "word",
+            "role": "name",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "苹果"
+              },
+              {
+                "row_number": 715,
+                "value": "芒果"
+              },
+              {
+                "row_number": 5000,
+                "value": "kiwi"
+              }
+            ],
+            "rationale": "The word column contains fruit names in Chinese (苹果, 芒果, 荔枝, 橙子, 蓝莓) and English (kiwi). The table is a '中英文及业务别名词典' (Chinese-English and business alias dictionary), and word holds the actual term/name being defined. Low cardinality (31 distinct) indicates a controlled vocabulary of fruit names/aliases."
+          },
+          {
+            "column": "type",
+            "role": "metadata",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "FRUIT_NAME"
+              },
+              {
+                "row_number": 5000,
+                "value": "FRUIT_ALIAS"
+              }
+            ],
+            "rationale": "The type column has only 2 distinct values (FRUIT_NAME, FRUIT_ALIAS) and classifies whether the word is a canonical name or an alias. This is a lexical/classification attribute of the dictionary entry, distinguishing name vs alias. It is a display/administrative classification of the term, not a business value or definition."
+          },
+          {
+            "column": "attr",
+            "role": "metadata",
+            "observations": [
+              {
+                "row_number": 1,
+                "value": "{\"fruit_code\":\"APPLE\",\"synthetic\":true}"
+              },
+              {
+                "row_number": 5000,
+                "value": "{\"fruit_code\":\"KIWI\",\"synthetic\":true}"
+              }
+            ],
+            "rationale": "The attr column contains JSON metadata (e.g., {\"fruit_code\":\"APPLE\",\"synthetic\":true}) that holds administrative/attribute information about the synonym entry, including a fruit_code reference and a synthetic flag. This is structured metadata attached to the dictionary record, not a business value, definition, or formula."
+          }
+        ],
+        "unresolved_columns": [
+          "sn"
+        ]
+      },
+      "source_rows": [
+        {
+          "source_row_number": 1,
+          "values": {
+            "sn": "1",
+            "word": "苹果",
+            "type": "FRUIT_NAME",
+            "attr": "{\"fruit_code\":\"APPLE\",\"synthetic\":true}",
+            "lang": "zh",
+            "scope": "global_fruit_market"
+          }
+        },
+        {
+          "source_row_number": 715,
+          "values": {
+            "sn": "715",
+            "word": "芒果",
+            "type": "FRUIT_NAME",
+            "attr": "{\"fruit_code\":\"MANGO\",\"synthetic\":true}",
+            "lang": "zh",
+            "scope": "global_fruit_market"
+          }
+        },
+        {
+          "source_row_number": 5000,
+          "values": {
+            "sn": "5000",
+            "word": "kiwi",
+            "type": "FRUIT_ALIAS",
+            "attr": "{\"fruit_code\":\"KIWI\",\"synthetic\":true}",
+            "lang": "en",
+            "scope": "global_fruit_market"
+          }
+        }
+      ]
+    }
+  ]
+}

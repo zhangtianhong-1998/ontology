@@ -28,6 +28,9 @@ _CONTENT_REFERENCE = re.compile(r"(?:^|_)(?:code|field|value)(?:_|$)", re.I)
 _PURE_TECHNICAL = re.compile(r"(?:\d+(?:\.\d+)?|[0-9a-f]{16,}|\d{4}-\d\d-\d\d)", re.I)
 _CARD_ROLES = ("name", "alias", "description", "formula", "unit", "scope",
                "provenance", "metadata", "identity")
+# Context stays in complete cards and provenance. It does not create additional
+# scheduling groups; definition qualifiers and unresolved content still do.
+_PATTERN_ROLES = ("name", "alias", "description", "formula", "unit", "scope", "identity", "unknown")
 _PHYSICAL_NAME_DECLARATION = re.compile(
     r"^(?:物理(?:数据表|表|数据库|文件)(?:名称|名)|"
     r"physical\s+(?:table|database|file)\s+name)(?:\b|[\s,，;；:：。(.（]|$)", re.I)
@@ -105,7 +108,11 @@ def _columns(table, max_unknown_fields_per_table):
     # Metadata heuristics and model proposals share the same key/content
     # boundary. Forced references include PKs.
     conflicts = field_role_conflicts(table)
-    bindings = list(dict.fromkeys(item["column"] for item in conflicts if item["binding_only"]))
+    bindings = list(dict.fromkeys([*roles.pop("reference", []),
+        *(item["column"] for item in conflicts if item["binding_only"])]))
+    # Explicit unresolved role evidence must survive the generic unknown-field
+    # cap. Dropping a reviewed structured field would hide its meaning entirely.
+    unresolved = roles.get("unknown", [])
     selected = {column for columns in roles.values() for column in columns}
     reference = [item["column"] for item in classified
                  if item["role"] in ("semantic", "unknown") and item["column"] not in selected
@@ -116,8 +123,9 @@ def _columns(table, max_unknown_fields_per_table):
     # Packet admission bounds bytes later; it must not silently drop columns.
     reference = list(dict.fromkeys([*bindings, *reference]))
     selected.update(reference)
+    selected.update(unresolved)
     unknown_available = [name for name in unknown if name not in selected]
-    fallback = unknown_available[:max_unknown_fields_per_table]
+    fallback = list(dict.fromkeys([*unresolved, *unknown_available[:max_unknown_fields_per_table]]))
     return roles, reference, fallback, {
         "unknown_columns_considered": fallback,
         "unknown_columns_not_examined": unknown_available[max_unknown_fields_per_table:],
@@ -127,12 +135,37 @@ def _columns(table, max_unknown_fields_per_table):
         "definition_pattern_exclusions": _definition_pattern_exclusions(table, roles),
         "role_conflicts": conflicts,
         "binding_columns_excluded_from_semantic_pattern": bindings,
+        "context_columns_excluded_from_semantic_pattern": {
+            role: list(roles.get(role, ())) for role in ("metadata", "provenance")},
         "calculation_fragments": list(fragments.values()),
         "source_verified_role_candidates": [
             {"column": item["column"], "role": item["role"]}
             for item in table.get("inferred_semantic_roles", ())
             if item.get("status") == "source_verified_role_candidate"],
     }
+
+
+def _structured_semantic_candidate(value):
+    """Recall named structured lexical/reference content for semantic review.
+
+    This is a scheduling signal only. Configuration rows are routed separately,
+    and a plain administrative JSON object does not satisfy this condition.
+    Preserve the entire original JSON rather than manufacturing a definition.
+    """
+    try:
+        content = json.loads(value)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(content, dict):
+        return False
+    semantic_key = re.compile(
+        r"(?:^|_)(?:meaning|definition|description|alias|aliases|synonym|synonyms|"
+        r"term|concept|formula|expression|reference|ref|code)(?:_|$)|词义|释义|同义|别名|定义|引用")
+    administrative_key = re.compile(
+        r"^(?:language|locale|status|record|source|system|owner|created|updated|schema)(?:_|$)")
+    return any(semantic_key.search(str(key).casefold())
+               and not administrative_key.search(str(key).casefold())
+               and raw not in (None, "", [], {}) for key, raw in content.items())
 
 
 def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_index_chars,
@@ -164,7 +197,8 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
             if raw is None or not str(raw).strip():
                 continue
             raw = str(raw)
-            if role == "unknown" and (len(raw.strip()) < 3 or _PURE_TECHNICAL.fullmatch(raw.strip())):
+            if (role == "unknown" and column not in roles.get("unknown", ())
+                    and (len(raw.strip()) < 3 or _PURE_TECHNICAL.fullmatch(raw.strip()))):
                 continue
             originals.append([column, raw])
             values.append({"column": column, "value": raw[:max_field_chars],
@@ -175,9 +209,14 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
             signature_fields[role] = originals
     informative_reference = any(_CONTENT_REFERENCE.search(entry["column"])
                                 for entry in fields.get("reference", ()))
+    structured_definition_candidate = bool(fields.get("name") and any(
+        _structured_semantic_candidate(str(row.get(entry["column"]) or ""))
+        for entry in fields.get("unknown", ())))
     if row_purpose == "configuration_data":
         kind = "reference"
     elif row_purpose == "definition_data" and fields.get("name"):
+        kind = "definition"
+    elif structured_definition_candidate:
         kind = "definition"
     elif informative_reference:
         kind = "reference"
@@ -212,8 +251,8 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
     excluded_names = set(pattern_name_exclusions) if kind == "definition" else set()
     semantic_fields = {role: [[column, _norm(raw)] for column, raw in signature_fields[role]
                              if not (role == "name" and column in excluded_names)]
-                       for role in _CARD_ROLES if role in signature_fields}
-    semantic_preview_truncated = any(entry["truncated"] for role in _CARD_ROLES
+                       for role in _PATTERN_ROLES if role in signature_fields}
+    semantic_preview_truncated = any(entry["truncated"] for role in _PATTERN_ROLES
                                      for entry in fields.get(role, ()))
     # A pattern is a retrieval/scheduling group, never a business identity.
     # A truncated semantic preview cannot safely stand for another card, even
@@ -228,7 +267,8 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
             "index_text_truncated": index_text_truncated, "signature": signature,
             "pattern_signature": pattern_signature,
             "reference_signature": reference_signature,
-            "semantic_preview_truncated": semantic_preview_truncated}
+            "semantic_preview_truncated": semantic_preview_truncated,
+            "structured_definition_candidate": structured_definition_candidate and kind == "definition"}
 
 
 def _root_hint(table):
@@ -412,6 +452,8 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
                                        (card_id, record_id, row["__r2_row"]))
                             counts["rows_indexed"] += 1
                             counts["kind_" + card["kind"]] += 1
+                            counts["structured_definition_candidate_rows"] += int(
+                                card["structured_definition_candidate"])
                         if stage:
                             stage.advance(len(batch), detail=table_name)
                         db.commit()
@@ -433,6 +475,8 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
             "rows_scanned": total["rows_scanned"], "rows_indexed": total["rows_indexed"],
             "cards_indexed": indexed_cards, "patterns_indexed": patterns_indexed,
             "definition_patterns_indexed": definition_patterns,
+            "structured_definition_candidate_rows": total["structured_definition_candidate_rows"],
+            "structured_definition_candidate_status": "named structured semantic content admitted for review; meaning and target identity unjudged",
             "pattern_semantics": "candidate_only; same pattern never merges reference variants or record identities",
             "rows_omitted_cap": total["rows_omitted_cap"],
             "rows_without_card": total["rows_without_card"],

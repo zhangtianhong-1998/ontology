@@ -114,7 +114,7 @@ def test_packet_coverage_keeps_unexamined_variants_and_numeric_risk_visible(monk
 def test_structural_numeric_reference_does_not_spend_collision_exploration_budget():
     data = SimpleNamespace(tables={
         "s.source": {"pk": ["record"], "columns": [
-            {"column_name": "opaque", "column_comment": "引用目标对象，按类别解析目标表"},
+            {"column_name": "opaque", "column_comment": "引用 s.target.pk，按类别解析目标表"},
             {"column_name": "record", "column_comment": "主键"},
             {"column_name": "position", "column_comment": "显示排序序号"}]},
         "s.target": {"pk": ["pk"], "columns": [{"column_name": "pk"}]},

@@ -316,7 +316,7 @@ def compile_projection(data, profile, core, bundle, decision):
         if item["column"] not in values:
             raise ValueError("Projected field is absent from the source record")
         if item["column"] in protected and _SLOT.search(item["template"]):
-            raise ValueError("Formula, unit and calculation operators cannot be wildcarded")
+            raise ValueError("Formula, unit, definition identity and calculation operators cannot be wildcarded")
         if _SLOT.search(item["template"]) and re.sub(_SLOT, "", item["template"]).count("{"):
             raise ValueError("A projected field needs declared literal placeholders")
     # Explicit literal fields remain invariants, including formula/unit parameters.

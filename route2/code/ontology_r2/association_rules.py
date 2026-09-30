@@ -137,6 +137,8 @@ def _rule(candidate, proposal, check, *, origin, snapshot_id, error=None):
         "origin": origin, "rationale": proposal.rationale,
         "candidate_id": candidate["candidate_id"],
         "retrieval_channels": candidate.get("retrieval_channels", []),
+        "source_declared_pk": candidate.get("source_declared_pk", False),
+        "target_declared_pk": candidate.get("target_declared_pk", False),
         "numeric_overlap_only": candidate.get("numeric_overlap_only", False),
         "risk_flags": (["numeric_value_coincidence"] if candidate.get("numeric_overlap_only") else []),
         "verification": {"scan_scope": check.get("scan_scope", "not_checked") if check else "not_checked",
@@ -223,33 +225,44 @@ def _field_summary(data, candidate, side, offset=0):
                              "fields": sorted(names)}}
 
 
+def _ordered_base_candidates(candidates, checked):
+    """Visit source fields and join families before repeated selector values.
+
+    Preserve every lead. This order only allocates a finite validation/review
+    opportunity; it never changes a selector or calls a deferred lead false.
+    """
+    tiers = defaultdict(lambda: defaultdict(list))
+    for candidate in candidates.values():
+        source, target = candidate["source"], candidate["target"]
+        tier = (candidate["candidate_id"] not in checked,
+                bool(candidate.get("numeric_overlap_only", False)))
+        family = (source["table"], source["field"], target["table"], target["field"],
+                  digest(candidate.get("suggested_scope_bindings") or {}))
+        tiers[tier][family].append(candidate)
+    ordered = []
+    for tier in sorted(tiers):
+        families = tiers[tier]
+        for variants in families.values():
+            variants.sort(key=lambda candidate: (
+                -candidate.get("shared_sample_value_count", 0), candidate["candidate_id"]))
+        family_order = _fair_source_order(families, lambda family: family[:2],
+            lambda family: (family[0] == family[2],
+                            not families[family][0].get("target_declared_pk", False), family))
+        position = 0
+        while family_order:
+            remaining = []
+            for family in family_order:
+                ordered.append(families[family][position])
+                if len(families[family]) > position + 1:
+                    remaining.append(family)
+            family_order, position = remaining, position + 1
+    return ordered
+
+
 def _select_agent_candidates(candidates, checked, limit):
     """Spend the small ReAct budget on checked, nonnumeric, diverse field pairs."""
-    groups = defaultdict(list)
-    for candidate in candidates.values():
-        groups[candidate["source"]["table"]].append(candidate)
-
-    def quality(candidate):
-        return (candidate["candidate_id"] not in checked,
-                bool(candidate.get("numeric_overlap_only", False)),
-                candidate["source"]["table"] == candidate["target"]["table"],
-                not bool(candidate.get("target_declared_pk", False)),
-                -candidate.get("shared_sample_value_count", 0),
-                candidate["candidate_id"])
-
-    for group in groups.values():
-        group.sort(key=quality)
-    selected, source_uses = {}, defaultdict(int)
-    while groups and len(selected) < limit:
-        table, group = min(groups.items(), key=lambda item: (
-            quality(item[1][0])[:2], source_uses[item[0]],
-            quality(item[1][0])[2:], item[0]))
-        candidate = group.pop(0)
-        selected[candidate["candidate_id"]] = candidate
-        source_uses[table] += 1
-        if not group:
-            del groups[table]
-    return selected
+    return {candidate["candidate_id"]: candidate
+            for candidate in _ordered_base_candidates(candidates, checked)[:limit]}
 
 
 async def _react_proposals(data, candidates, checked, options, limits, llm):
@@ -663,9 +676,7 @@ async def build_association_rules(data, discovery, options=None, llm=None, *, al
 
     # Checked candidates first, then still-unverified candidate leads. An
     # unverified lead is persisted as unresolved; it is not scanned by default.
-    base = sorted(candidates.values(), key=lambda c: (
-        c["candidate_id"] not in checked,
-        c.get("numeric_overlap_only", False), c["candidate_id"]))
+    base = _ordered_base_candidates(candidates, checked)
     base_proposals = [(RuleProposal(candidate_id=c["candidate_id"],
                                    selector=c.get("suggested_selector", {}),
                                    scope_bindings=c.get("suggested_scope_bindings", {})), "discovery")
@@ -676,6 +687,7 @@ async def build_association_rules(data, discovery, options=None, llm=None, *, al
                  *alias_proposals[alias_priority:],
                  *[p for p in base_proposals if p[0].candidate_id not in checked]]
     seen = set()
+    rule_sources = defaultdict(list)
     rules = []
     new_validations = 0
     alias_validations = 0
@@ -687,6 +699,10 @@ async def build_association_rules(data, discovery, options=None, llm=None, *, al
                            "error_type": "UnknownCandidate"})
             continue
         rule_id = _rule_id(candidate, proposal)
+        source_evidence = {"candidate_id": candidate["candidate_id"], "origin": origin,
+                           "retrieval_channels": candidate.get("retrieval_channels", [])}
+        if source_evidence not in rule_sources[rule_id]:
+            rule_sources[rule_id].append(source_evidence)
         if rule_id in seen:
             continue
         seen.add(rule_id)
@@ -733,6 +749,7 @@ async def build_association_rules(data, discovery, options=None, llm=None, *, al
         rules.append(rule)
     statuses = defaultdict(int)
     for rule in rules:
+        rule["evidence_sources"] = rule_sources[rule["rule_id"]]
         statuses[rule["status"]] += 1
     return {"contract_version": 1, "snapshot_id": data.snapshot_id,
             "scope_bindings_direction": "source_to_target",
@@ -744,6 +761,7 @@ async def build_association_rules(data, discovery, options=None, llm=None, *, al
             "coverage": {"candidate_count": len(candidates),
                          "candidate_checks_reused": len(checked),
                          "requested_rule_variants": len(requested),
+                         "base_selection_policy": "checked_numeric_tiers_then_source_field_join_family_round_robin",
                          "rules_emitted": len(rules),
                          "rule_variants_not_emitted": max(0, len(seen) - len(rules)),
                          "new_full_input_validations": new_validations + alias_validations,

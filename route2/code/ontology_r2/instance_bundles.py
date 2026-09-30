@@ -81,18 +81,27 @@ def _exact_evidence_signature(card):
 
 
 def _sufficient_single_definition(card):
+    from .semantic_cards import _structured_semantic_candidate
+
     fields = card.get("fields", {})
     names = fields.get("name", ())
     details = [entry for role in ("description", "formula")
                for entry in fields.get(role, ())]
+    structured = any(not entry.get("truncated") and _structured_semantic_candidate(entry["value"])
+                     for entry in fields.get("unknown", ()))
+    # Admission only: the compiler/reviewer may abstain. A structured reference
+    # must not be rewritten into a natural-language definition or accepted edge.
     return bool(names and all(not entry.get("truncated") for entry in names)
-                and any(not entry.get("truncated") and len(str(entry["value"]).strip()) >= 4
-                        for entry in details))
+                and (structured or any(not entry.get("truncated") and len(str(entry["value"]).strip()) >= 4
+                                       for entry in details)))
 
 
 def _exact_relation_signature(rule):
+    # Retrieval IDs and origins can differ for the very same checked rule.
+    # Retain the complete selector, scope, snapshot and verification: equal
+    # counts alone never make different joins or branches interchangeable.
     basis = {key: rule.get(key) for key in
-             ("candidate_id", "source", "target", "transform", "selector",
+             ("snapshot_id", "source", "target", "transform", "selector",
               "scope_bindings", "verification")}
     return "relation_evidence:" + digest(basis)[:32]
 
@@ -391,10 +400,19 @@ def _relation_bundle(data, rule, limits):
              "selector": rule.get("selector") or {}, "scope_bindings": inverse_scope,
              "checks": rule["verification"]["checks"]}
     candidate = {"candidate_id": rule["candidate_id"], "source": source, "target": target}
+    # Every executed condition must be inspectable on its original row. Opaque
+    # selector/scope columns may have no semantic role and thus be absent from
+    # the usual descriptive projection. Byte overflow rejects the whole packet
+    # below instead of silently dropping these required join inputs.
+    source_fields = list(dict.fromkeys([
+        *_example_fields(data.tables[source["table"]], source["field"]),
+        *rule.get("selector", {}), *rule.get("scope_bindings", {})]))
+    target_fields = list(dict.fromkeys([
+        *_example_fields(data.tables[target["table"]], target["field"]),
+        *rule.get("scope_bindings", {}).values()]))
     examples = joint_examples(
         data, candidate, check, limit=limits["max_joint_pairs_per_rule"],
-        source_fields=_example_fields(data.tables[source["table"]], source["field"]),
-        target_fields=_example_fields(data.tables[target["table"]], target["field"]),
+        source_fields=source_fields, target_fields=target_fields,
     )
     records, positives = {}, []
     for pair in examples["matched_pairs"]:
@@ -422,6 +440,7 @@ def _relation_bundle(data, rule, limits):
               "examples": {"positive": positives, "counterexamples": negatives},
               "retrieval": [{"candidate_id": rule["candidate_id"],
                              "channels": rule.get("retrieval_channels", []),
+                             "equivalent_rule_evidence": rule.get("equivalent_rule_evidence", []),
                              "candidate_status": rule["status"]}],
               "limits": {"technical_match_is_business_relation": False,
                          "semantic_scope": "quoted_witness_pairs_only"},
@@ -432,6 +451,7 @@ def _relation_bundle(data, rule, limits):
                   "ambiguous_matches": check["checks"].get("ambiguous_matches", 0),
                   "missing_in_input": check["checks"].get("missing_in_input", 0),
                   "missing_scope": check["checks"].get("missing_scope", 0),
+                  "witness_sampling": examples.get("sampling", {}),
                   "all_unique_matches_semantically_accepted": False}}
     bundle["metadata_context"] = _metadata_context(data, bundle["records"],
                                                     active_rule_id=rule["rule_id"])
@@ -445,6 +465,13 @@ def _relation_bundle(data, rule, limits):
     bundle["technical_coverage"]["unique_witness_pairs_in_bundle"] = len(positives)
     bundle["technical_coverage"]["unique_matches_not_in_bundle"] = max(
         0, check["checks"]["unique_matches"] - len(positives))
+    sampling = bundle["technical_coverage"]["witness_sampling"]
+    if sampling:
+        # Byte-bound trimming can remove one sampled pair; report what was
+        # actually delivered to semantic review, not the pre-trimming sample.
+        sampled_targets = len({pair["target_record_id"] for pair in positives})
+        sampling["sampled_unique_target_witnesses"] = sampled_targets
+        sampling["unique_target_witnesses_not_sampled"] = sampling["unique_target_witnesses"] - sampled_targets
     if _size(bundle) > limits["max_bundle_bytes"]:
         return None, "relation_over_budget"
     bundle["bundle_id"] = "bundle:" + digest([data.snapshot_id, bundle["task_kind"],
@@ -521,7 +548,6 @@ def _rule_quality_tier(rule, data=None):
     tables = getattr(data, "tables", {})
     source, target = rule.get("source", {}), rule.get("target", {})
     source_info = tables.get(source.get("table"), {})
-    target_info = tables.get(target.get("table"), {})
     field = source.get("field", "")
     column = next((item for item in source_info.get("columns", ())
                    if item["column_name"] == field), {})
@@ -529,21 +555,32 @@ def _rule_quality_tier(rule, data=None):
     ordinal = bool(re.search(
         r"排序|序号|\b(?:display|sort)[ _]+(?:order|index)\b|"
         r"\b(?:row|sequence)[ _]+(?:number|index|no)\b", field + " " + comment, re.I))
-    reference = bool(re.search(
-        r"引用|关联|指向|目标表|外键|\b(?:foreign key|references?|refers to)\b", comment, re.I))
+    # A generic "reference ID" comment does not identify *this* target. In
+    # dense numeric domains that hint otherwise promotes every coincident ID
+    # join to the high-priority queue, bypassing the bounded risk allowance.
+    target_table = target.get("table", "")
+    target_field = target.get("field", "")
+    qualified_targets = [f"{name}.{target_field}" for name in
+                         (target_table, target_table.rsplit(".", 1)[-1])
+                         if name and target_field]
+    reference = ("declared_fk" in rule.get("retrieval_channels", ()) or any(
+        re.search(r"(?<![A-Za-z0-9_.])" + re.escape(name) + r"(?![A-Za-z0-9_.])", comment, re.I)
+        for name in qualified_targets))
     source_pk = field in source_info.get("pk", ()) or bool(rule.get("source_declared_pk"))
-    target_pk = (target.get("field") in target_info.get("pk", ())
-                 or bool(rule.get("target_declared_pk")))
     numeric = bool(rule.get("numeric_overlap_only"))
     if ordinal or (numeric and source_pk and not reference):
         return "risk_exploration"
     checks = (rule.get("verification") or {}).get("checks") or {}
-    conditional = bool(rule.get("selector") and checks.get("selector_true", 0) > 0
-                       and checks.get("selector_false", 0) > 0
-                       and checks.get("selector_unknown", 0) == 0)
-    identifier_shape = bool(re.search(r"(?:^|_)(?:id|code|key|uuid|guid|ref)$", field, re.I))
-    if (checks.get("unique_matches", 0) > 0 and checks.get("target_max_multiplicity") == 1
-            and (reference or (not source_pk and target_pk and identifier_shape and conditional))):
+    eligible, outside = (checks.get("eligible_references", 0),
+                         checks.get("outside_eligible_references", 0))
+    # Contrast is measured on complete checked rows, not on column spelling,
+    # a guessed discriminator label, or the mere existence of a selector.
+    conditional = bool(rule.get("selector") and eligible and outside
+                       and checks.get("selector_unknown", 0) == 0
+                       and checks.get("unique_matches", 0) / eligible
+                       > checks.get("outside_matched_references", 0) / outside)
+    if (checks.get("unique_matches", 0) > 0
+            and (reference or (not source_pk and conditional))):
         return "structural_reference"
     return "risk_exploration" if numeric else "value_match"
 
@@ -603,6 +640,7 @@ def _rule_selection_coverage(available, inspected, packaged, limit, exploration_
             "source_artifact": "association_rules.yaml", "max_relation_bundles": limit,
             "max_exploration_rules": exploration_limit,
             "tier_weights": {"structural_reference": 4, "value_match": 2, "risk_exploration": 1},
+            "structural_priority_basis": "specific_target_metadata_or_checked_selector_contrast",
             "by_stratum": {
                 tier: {**{name: sum(_rule_quality_tier(rule, data) == tier for rule in population)
                           for name, population in (("eligible", available), ("explored", inspected),
@@ -720,15 +758,36 @@ def build_instance_bundles(data, index, association, options=None, *, embedding=
     eligible_rules = [item for item in association.get("rules", [])
                       if item["status"] in ("checked_technical", "observed_subset")]
     checked_rules = len(eligible_rules)
+    # Deduplicate before applying the risk allowance, so the same evidence
+    # recalled through different channels cannot spend several review slots.
+    unique_rules, representatives = [], {}
+    exact_duplicate_rules = 0
+    for rule in sorted(eligible_rules, key=lambda item: item["rule_id"]):
+        signature = _exact_relation_signature(rule)
+        if signature in representatives:
+            exact_duplicate_rules += 1
+            representative = representatives[signature]
+            evidence = {"rule_id": rule["rule_id"], "candidate_id": rule.get("candidate_id"),
+                        "origin": rule.get("origin"),
+                        "retrieval_channels": rule.get("retrieval_channels", []),
+                        "evidence_sources": rule.get("evidence_sources", [])}
+            representative.setdefault("equivalent_rule_evidence", []).append(evidence)
+            skipped.append({"seed_id": rule["rule_id"], "reason": "exact_relation_duplicate_evidence",
+                            "equivalent_rule_id": representative["rule_id"],
+                            "candidate_id": rule.get("candidate_id"),
+                            "source_artifact": "association_rules.yaml"})
+            continue
+        representative = {**rule, "equivalent_rule_evidence": list(rule.get("equivalent_rule_evidence", []))}
+        representatives[signature] = representative
+        unique_rules.append(representative)
     # Inspect additional checked rules when an earlier one is only a concept
     # alignment lead. A skipped lead must not consume a relation-bundle slot.
-    ordered_rules = _round_robin_rules(eligible_rules, checked_rules, data=data,
+    ordered_rules = _round_robin_rules(unique_rules, len(unique_rules), data=data,
                                      max_exploration_rules=limits["max_exploration_rules"])
     rules = []
     packaged_rules = []
     relation_bundles = 0
     relation_signatures = set()
-    exact_duplicate_rules = 0
     relation_progress = progress.task("组装关系证据包", len(ordered_rules)) if progress else None
     for rule in ordered_rules:
         if relation_bundles >= limits["max_relation_bundles"]:

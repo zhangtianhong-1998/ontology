@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .column_roles import CONTEXT_ROLES, classify_columns, declared_context_role
+from .column_roles import CONTEXT_ROLES, classify_columns, resolve_context_role
 from .concept_candidates import _field_roles, field_role_conflicts
 from .storage import qi
 
@@ -298,12 +298,11 @@ def _validate_response(data, table_name, response, eligible, observed):
                      "schema_evidence_id": f"schema:{table_name}:{column}",
                      "evidence_kind": "source_values_supported_role_candidate",
                      "observations": evidence}
-        context_role = declared_context_role(next(
-            item for item in data.tables[table_name]["columns"]
-            if item["column_name"] == column))
-        if role == "scope" and context_role:
-            candidate.update(role=context_role, proposed_role=role,
-                             role_resolution="explicit_context_declaration_not_business_scope")
+        resolution = resolve_context_role(data.tables[table_name], candidate)
+        if resolution:
+            candidate.update(role=resolution["effective_role"], proposed_role=role,
+                             effective_role=resolution["effective_role"],
+                             role_resolution=resolution["reason"], role_evidence=resolution)
         fragment = classify_formula_fragment(data.tables[table_name], candidate)
         if role in _FRAGMENT_ROLES and fragment is None:
             rejected.append({"column": column, "role": role,
@@ -399,6 +398,8 @@ async def infer_column_role_candidates(data, llm, config=None):
                 "provenance": "source system, import or lineage context; not business applicability",
                 "metadata": "lexical language, display or administrative context; not definition identity",
                 "identity": "definition tenant, namespace or version; never row IDs or business observation keys",
+                "identity_evidence": "requires a tenant/namespace/version source declaration or explicit qualifier text in source values; uniqueness and rationale alone are insufficient",
+                "metadata_evidence": "do not label structured lexical meanings, reference mappings, formulas or business constraints as administrative metadata; leave them unresolved",
                 "scope": "business applicability or declared calculation grain; not a catch-all for constant fields",
                 "reference_discriminator": "A value selecting a reference namespace is neither a description nor a formula. Leave it unresolved when its target is not visible.",
             },

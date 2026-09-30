@@ -139,7 +139,9 @@ configuration_relations:
   max_semantic_decisions: 80
 llm:
   mode: agentscope
-  cache_dir: ../.cache/generalized_v11_llm
+  cache_dir: ../.cache/generalized_v11_corrected_llm
+  # 请求内短编号可逆还原；原始证据和映射保留在本地审计文件。
+  prompt_reference_aliases: true
   stream: false
   thinking:
     mode: disabled

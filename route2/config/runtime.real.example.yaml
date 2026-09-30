@@ -172,6 +172,8 @@ configuration_relations:
   max_semantic_decisions: 10
 llm:
   mode: agentscope
+  # 原始编号由请求内短编号替代；回包还原后仍按完整来源校验。
+  prompt_reference_aliases: true
   stream: false
   thinking:
     mode: disabled

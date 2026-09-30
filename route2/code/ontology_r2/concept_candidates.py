@@ -9,7 +9,8 @@ from itertools import combinations
 import re
 import unicodedata
 
-from .column_roles import CONTEXT_ROLES, declared_context_role, is_sensitive_column
+from .column_roles import (CONTEXT_ROLES, declared_context_role, is_sensitive_column,
+                           resolve_context_role)
 from .storage import digest, qi
 
 
@@ -65,7 +66,7 @@ def _raw_field_roles(table):
     for item in table.get("inferred_semantic_roles", ()):
         name, role = item.get("column"), item.get("role")
         if (item.get("status") != "source_verified_role_candidate"
-                or role not in {*ROLE_CUES, *CONTEXT_ROLES} or name not in profiles
+                or role not in {*ROLE_CUES, *CONTEXT_ROLES, "reference", "unknown"} or name not in profiles
                 or name in excluded or name in selected.get(role, ())):
             continue
         column = next((c for c in table["columns"] if c["column_name"] == name), None)
@@ -73,8 +74,8 @@ def _raw_field_roles(table):
                 or profiles[name].get("scan_scope") != "full_input"
                 or profiles[name].get("usable_count", 0) == 0):
             continue
-        context_role = declared_context_role(column)
-        effective_role = context_role if role == "scope" and context_role else role
+        resolution = resolve_context_role(table, item)
+        effective_role = resolution["effective_role"] if resolution else role
         if effective_role in CONTEXT_ROLES and name in selected.get("scope", ()):
             selected["scope"].remove(name)
         if name not in selected[effective_role]:
@@ -94,6 +95,12 @@ def field_role_conflicts(table, roles=None):
     table_name = table.get("name") or ".".join(filter(None, (
         table.get("schema"), table.get("table_name"))))
     conflicts = []
+    for candidate in table.get("inferred_semantic_roles", ()):
+        if candidate.get("status") != "source_verified_role_candidate":
+            continue
+        resolution = resolve_context_role(table, candidate)
+        if resolution and resolution["effective_role"] != resolution["proposed_role"]:
+            conflicts.append(resolution)
     for role in ("name", "alias", "formula", "description"):
         for field in roles.get(role, ()):
             column = columns[field]
@@ -128,7 +135,8 @@ def _field_roles(table):
     selected = _raw_field_roles(table)
     for conflict in field_role_conflicts(table, selected):
         field, role = conflict["column"], conflict["proposed_role"]
-        selected[role].remove(field)
+        if field in selected.get(role, ()):
+            selected[role].remove(field)
         if conflict["effective_role"] == "scope" and field not in selected.setdefault("scope", []):
             selected["scope"].append(field)
     return {role: fields for role, fields in selected.items() if fields}
