@@ -29,6 +29,12 @@ DERIVED_PREDICATES = {
     "scope_constraint": "related_to",
     "definition_reference": "points_to",
     "has_member": "contains",
+    "denotes": "points_to",
+    "member_of": "related_to",
+    "term_dimension_context": "related_to",
+    "resource_measure_binding": "related_to",
+    "resource_object_binding": "related_to",
+    "resource_scope_binding": "related_to",
 }
 _DERIVED_CUES = {
     "calculation_dependency": ("calculation_dependency", "计算依赖"),
@@ -37,6 +43,12 @@ _DERIVED_CUES = {
     "scope_constraint": ("scope_constraint", "维度约束", "范围约束"),
     "definition_reference": ("definition_reference", "定义引用", "引用定义"),
     "has_member": ("has_member", "包含成员"),
+    "denotes": ("denotes", "指称"),
+    "member_of": ("member_of", "属于成员集合"),
+    "term_dimension_context": ("term_dimension_context", "指称成员所属维度"),
+    "resource_measure_binding": ("resource_measure_binding", "配置度量"),
+    "resource_object_binding": ("resource_object_binding", "配置经营对象"),
+    "resource_scope_binding": ("resource_scope_binding", "配置维度"),
 }
 _OPERAND_ROLES = frozenset(("minuend", "subtrahend", "numerator", "denominator",
                            "addend", "factor"))
@@ -51,7 +63,95 @@ _PREDICATE_DEFINITIONS = {
     "scope_constraint": "源对象与目标对象之间存在范围约束。",
     "definition_reference": "源对象引用目标对象的定义。",
     "has_member": "目标对象是源对象的成员。",
+    "denotes": "源术语在声明的语境中指称目标对象；不声明两端身份相同。",
+    "member_of": "源对象是目标维度或集合中的一个成员；不声明类继承。",
+    "term_dimension_context": "源术语通过其指称的成员关联到该成员所属的目标维度；不声明术语等于维度或属于维度类型。",
+    "resource_measure_binding": "源资源的定义或配置引用目标度量；不声明源资源是度量或具有该计算公式。",
+    "resource_object_binding": "源资源的定义或配置明确绑定目标经营对象；不声明类继承或身份相同。",
+    "resource_scope_binding": "源资源的定义或配置采用目标维度限制所引用内容的观察范围。",
 }
+
+# These restrictions apply even when a derived predicate is proposed through
+# the generic record-relation path rather than its usual dedicated compiler.
+_PREDICATE_ENDPOINTS = {
+    "denotes": ({"Term"}, {"GeneralObject", "Measure", "Metric", "Dimension"}),
+    "member_of": ({"GeneralObject", "Term", "Dimension"}, {"GeneralObject", "Dimension"}),
+    "term_dimension_context": ({"Term"}, {"Dimension"}),
+    "resource_measure_binding": ({"GeneralObject"}, {"Measure"}),
+    "resource_object_binding": ({"GeneralObject"}, {"GeneralObject"}),
+    "resource_scope_binding": ({"GeneralObject"}, {"Dimension"}),
+}
+
+
+def predicate_endpoint_errors(relation, object_types):
+    """Validate the endpoint meaning of registered cross-root predicates."""
+    contract = _PREDICATE_ENDPOINTS.get(relation.predicate_name)
+    if contract is None:
+        return []
+    types = {item.id: item for item in object_types}
+
+    def root(key):
+        seen = set()
+        while key in types and key not in seen:
+            seen.add(key)
+            key = types[key].parent
+        return key
+
+    if (len(relation.domain) != 1 or len(relation.range) != 1
+            or root(relation.domain[0]) not in contract[0]
+            or root(relation.range[0]) not in contract[1]):
+        return ["Predicate endpoint roots disagree with the registered relation contract"]
+    return []
+
+
+def _classification_scope_property(item, key, data):
+    """Only original field metadata can identify a classification attribute.
+
+    A matching field name or a model-written type label is insufficient. The
+    value must have a complete source proof and its schema must explicitly say
+    category/classification. Tenant, version and unknown scopes stay strict.
+    """
+    if data is None:
+        return False
+    for prop in item.source_properties:
+        if prop.role != "scope" or prop.source_column != key:
+            continue
+        table = data.tables.get(prop.source_table, {})
+        column = next((value for value in table.get("columns", [])
+                       if value.get("column_name") == key), {})
+        description = str(column.get("column_comment") or "")
+        if not re.search(r"分类|类别|\b(?:category|classification)\b", description, re.I):
+            continue
+        if re.search(r"租户|命名空间|版本|tenant|namespace|version", description, re.I):
+            continue
+        for eid in prop.evidence_ids:
+            proof = data.evidence.get(eid, {})
+            ref = proof.get("source_ref", {})
+            if (proof.get("origin") == "observed_record" and not proof.get("raw_fragment_truncated")
+                    and ref.get("snapshot_id") == data.snapshot_id
+                    and ref.get("table") == prop.source_table and ref.get("column") == key
+                    and str(proof.get("raw_fragment")) == str(item.applicability_scope[key])):
+                return True
+    return False
+
+
+def relation_scope_conflicts(source, target, data=None):
+    """Return incompatible scope keys without treating categories as namespaces.
+
+    This permits relations between differently classified objects. It never
+    merges their definitions, relaxes identity qualifiers, or proves a relation.
+    """
+    conflicts = []
+    for key in source.applicability_scope.keys() & target.applicability_scope.keys():
+        if source.applicability_scope[key] == target.applicability_scope[key]:
+            continue
+        if all(_classification_scope_property(item, key, data) for item in (source, target)):
+            continue
+        conflicts.append(key)
+    for key in source.identity_qualifiers.keys() & target.identity_qualifiers.keys():
+        if source.identity_qualifiers[key] != target.identity_qualifiers[key]:
+            conflicts.append("identity:" + key)
+    return sorted(conflicts)
 
 _CUES = {
     "contains": ("包含", "含有", "contains"),

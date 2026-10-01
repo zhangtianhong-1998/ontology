@@ -34,6 +34,8 @@ class FactFieldBindingDecision(Strict):
     source_definition_evidence_id: str = ""
     type_source_quote: str = ""
     scope_bindings: dict[str, str] = Field(default_factory=dict)
+    # Logical scope key -> a verified constant source COLUMN, never a literal.
+    constant_scope_bindings: dict[str, str] = Field(default_factory=dict)
     unit_column: str | None = None
     reason: str = ""
 
@@ -193,8 +195,11 @@ def _recall_types(data, core, table, column, *, max_candidates, max_definition_c
     return found[:max_candidates], max(0, len(found) - max_candidates), dict(excluded)
 
 
-def _scope_consistent(item, table, column_comment, coordinates, scope_bindings=None):
+def _scope_consistent(item, table, column_comment, coordinates, scope_bindings=None,
+                      constant_scope_bindings=None, scope_constants=()):
     scope_bindings = scope_bindings or {}
+    constants = {entry['column']: entry['value'] for entry in scope_constants}
+    fixed = constant_scope_bindings or {}
     # Tenant/version identity qualifiers must bind to the observed coordinates
     # just as applicability scope does; matching labels cannot cross them.
     identity = getattr(item, "identity_qualifiers", {})
@@ -202,6 +207,10 @@ def _scope_consistent(item, table, column_comment, coordinates, scope_bindings=N
            for key, value in identity.items()):
         return False
     for key, value in {**item.applicability_scope, **identity}.items():
+        if key in fixed:
+            if fixed[key] not in constants or _norm(constants[fixed[key]]) != _norm(value):
+                return False
+            continue
         field = scope_bindings.get(key, key)
         if field in coordinates:
             if _norm(coordinates[field]) != _norm(value):
@@ -211,6 +220,28 @@ def _scope_consistent(item, table, column_comment, coordinates, scope_bindings=N
             # Differently named coordinates require an explicit field mapping.
             return False
     return True
+
+
+def field_scope_constants(data, table, scope_keys):
+    """Full-column checks for explicit scope fields; samples cannot certify constants."""
+    inferred = {item['column'] for item in table.get('inferred_semantic_roles', [])
+                if item.get('role') in ('scope', 'identity')
+                and item.get('status') == 'source_verified_role_candidate'}
+    result = []
+    for column in table['columns']:
+        name = column['column_name']
+        if (name not in scope_keys and name not in inferred) or is_sensitive_column(column):
+            continue
+        if name in table.get('semantic_excluded_columns', ()):
+            continue
+        count, valid, distinct, value = data.db.execute(
+            f'SELECT count(*), count(nullif(trim(cast({qi(name)} AS VARCHAR)),\'\')), '
+            f'count(distinct {qi(name)}), min(cast({qi(name)} AS VARCHAR)) '
+            f'FROM {qi(table["sql_name"])}').fetchone()
+        if count and valid == count and distinct == 1 and len(str(value)) <= 256:
+            result.append({'column': name, 'value': value, 'scope': 'full_input',
+                           'rows': count, 'column_comment': column.get('column_comment', '')})
+    return result
 
 
 def _unit_consistent(item, column_comment):
@@ -273,7 +304,7 @@ def _business_name_in_comment(item, comment, data):
 
 def _validate_binding(decision, choices, data, table, column_comment,
                       canonical_type_map, verified_equivalence_pairs, *, column_name="",
-                      coordinate_columns=(), unit_sources=()):
+                      coordinate_columns=(), unit_sources=(), scope_constants=()):
     if decision.status != "bind":
         return None, "llm_unresolved"
     matches = [(item, evidence) for _, item, evidence in choices
@@ -293,6 +324,13 @@ def _validate_binding(decision, choices, data, table, column_comment,
             or any(not key.strip() for key in decision.scope_bindings)
             or len(set(decision.scope_bindings.values())) != len(decision.scope_bindings)):
         return None, "scope_binding_not_a_unique_coordinate_column"
+    constants = {value['column']: value['value'] for value in scope_constants}
+    scopes = {**item.applicability_scope, **item.identity_qualifiers}
+    if (set(decision.constant_scope_bindings) & set(decision.scope_bindings)
+            or any(key not in scopes or field not in constants
+                   or _norm(constants[field]) != _norm(scopes[key])
+                   for key, field in decision.constant_scope_bindings.items())):
+        return None, "scope_constant_missing_or_conflicting"
     if (not decision.type_definition_quote.strip()
             or decision.type_definition_quote != item.definition):
         return None, "type_definition_quote_invalid"
@@ -341,7 +379,7 @@ def _source_rows(data, table, candidate, coordinate_columns, *, limit):
 
 def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
                  max_source_rows, selected_type_id=None,
-                 equivalence_assertion_ids=(), unit_evidence_id=None):
+                 equivalence_assertion_ids=(), unit_evidence_id=None, scope_constants=()):
     if candidate.get("candidate_status") != "candidate_only":
         return None, "unexpected_candidate_state"
     if candidate.get("business_type_binding") != "unresolved":
@@ -371,6 +409,14 @@ def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
     if (len(rows) != count or min(actual_numbers) != candidate.get("source_row_min")
             or max(actual_numbers) != candidate.get("source_row_max")):
         return None, "source_rows_changed_or_incomplete"
+    if not _scope_consistent(item, table, '', candidate.get('coordinate_values') or {},
+                             decision.scope_bindings, decision.constant_scope_bindings,
+                             scope_constants):
+        return None, 'applicability_scope_unverified_or_conflicting'
+    fixed_values = {value['column']: value['value'] for value in scope_constants}
+    if any(_norm(row.get(field)) != _norm(fixed_values.get(field)) for row in rows
+           for field in decision.constant_scope_bindings.values()):
+        return None, 'source_scope_constant_changed'
     # Column-role heuristics can miss a business coordinate. If source rows
     # collapsed into this tuple disagree on any remaining nontechnical field,
     # the observed grain is unsafe and must remain unresolved.
@@ -433,6 +479,9 @@ def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
             "type_source_quote": decision.type_source_quote,
             "source_definition_evidence_id": decision.source_definition_evidence_id,
             "scope_bindings": decision.scope_bindings,
+            "constant_scope_bindings": decision.constant_scope_bindings,
+            "source_checked_scope_constants": [value for value in scope_constants
+                                               if value['column'] in decision.constant_scope_bindings.values()],
             "bound_scope_values": {key: coordinates[field] for key, field in decision.scope_bindings.items()},
             "identity_qualifiers": dict(getattr(item, "identity_qualifiers", {})),
             "unit_column": decision.unit_column,
@@ -443,13 +492,13 @@ def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
 async def bind_fact_observations(
     data, fact_observations, core: BuildPlan, llm, *,
     max_type_candidates_per_field=8, max_source_rows_per_instance=1000,
-    max_binding_calls=50, max_definition_chars=2048,
+    max_binding_calls=50, max_definition_chars=2048, max_repairs_per_field=0,
     canonical_type_map=None, equivalence_assertions=(),
     field_templates=(),
 ):
     """Return verified typed observations plus explicit unresolved coverage.
 
-    At most one structured LLM request is made for each selected value field.
+    Field-level requests may receive bounded contract corrections, never per-row calls.
     Every emitted tuple is checked against the original imported rows before
     constructing a source-snapshot-local instance. No per-row model call occurs.
     """
@@ -460,6 +509,8 @@ async def bind_fact_observations(
             raise ValueError(f"{name} must be a positive integer")
     if type(max_binding_calls) is not int or max_binding_calls < 0:
         raise ValueError("max_binding_calls must be a nonnegative integer")
+    if type(max_repairs_per_field) is not int or not 0 <= max_repairs_per_field <= 2:
+        raise ValueError("max_repairs_per_field must be 0..2")
     if fact_observations.get("scope") != "imported_csv_snapshot_only":
         raise ValueError("Unsupported fact observation scope")
     if canonical_type_map is None:
@@ -512,6 +563,9 @@ async def bind_fact_observations(
         columns = {entry["column_name"]: entry for entry in table["columns"]}
         unit_sources = [value for column in columns
                         if (value := field_unit_evidence(data, table, column)) is not None]
+        scope_constants = field_scope_constants(data, table,
+            {key for item in core.object_types for key in
+             (*item.applicability_scope, *item.identity_qualifiers)})
         by_field = {}
         for candidate in report.get("candidates", []):
             candidate_tuples += 1
@@ -578,7 +632,8 @@ async def bind_fact_observations(
                 "value_column": name, "column_comment": comment,
                 "source_declaration": comment or name,
                 "source_checked_unit_columns": unit_sources,
-                "scope_binding_contract": "Map each differently named type scope key to one coordinate column; no comment-text fallback.",
+                "scope_binding_contract": "scope_bindings maps scope keys to coordinate COLUMN NAMES. constant_scope_bindings may instead name a full-input verified constant scope column listed below. Never place a literal code, unit or scope value in either mapping or in unit_column; use null for unit_column when its unit is in the field declaration. Missing scope evidence requires unresolved.",
+                "source_checked_scope_constants": scope_constants,
                 "coordinate_columns": coordinate_columns,
                 "type_candidates_omitted_by_limit": omitted_types,
                 "type_candidates": [
@@ -603,9 +658,28 @@ async def bind_fact_observations(
                 item, reason = _validate_binding(
                     decision, choices, data, table, comment, canonical_type_map,
                     verified_equivalence_pairs, column_name=name,
-                    coordinate_columns=coordinate_columns, unit_sources=unit_sources)
+                    coordinate_columns=coordinate_columns, unit_sources=unit_sources,
+                    scope_constants=scope_constants)
             except Exception as exc:
                 item, reason = None, "binding_call_failed:" + type(exc).__name__
+            for repair in range(max_repairs_per_field if template is None else 0):
+                if item is not None or attempts >= max_binding_calls or reason not in {
+                        'scope_binding_not_a_unique_coordinate_column',
+                        'scope_constant_missing_or_conflicting', 'unit_missing_or_conflicting',
+                        'binding_call_failed:JSONDecodeError', 'binding_call_failed:ValidationError'}:
+                    break
+                attempts += 1
+                payload['binding_validation'] = {
+                    'error': reason, 'repair': repair + 1,
+                    'instruction': 'Correct only the invalid field mapping or JSON. All evidence checks still apply. Mapping values and unit_column are COLUMN NAMES, not codes or unit literals. A unit in the column declaration needs unit_column=null. Return unresolved if scope cannot be proved.'}
+                try:
+                    decision = await llm.ask('fact_type_binding', payload, FactFieldBindingDecision)
+                    item, reason = _validate_binding(decision, choices, data, table, comment,
+                        canonical_type_map, verified_equivalence_pairs, column_name=name,
+                        coordinate_columns=coordinate_columns, unit_sources=unit_sources,
+                        scope_constants=scope_constants)
+                except Exception as exc:
+                    item, reason = None, 'binding_call_failed:' + type(exc).__name__
             if item is None:
                 status["reason"] = reason
                 skipped[reason] += len(candidates)
@@ -633,18 +707,20 @@ async def bind_fact_observations(
                           type_source_quote=decision.type_source_quote,
                           column_comment_quote=decision.source_column_quote,
                           scope_bindings=decision.scope_bindings,
+                          constant_scope_bindings=decision.constant_scope_bindings,
                           unit_column=decision.unit_column,
                           field_template_id=template.get("id") if template else None)
             for candidate in candidates:
                 if not _scope_consistent(item, table, comment,
-                                         candidate.get("coordinate_values") or {}, decision.scope_bindings):
+                                         candidate.get("coordinate_values") or {}, decision.scope_bindings,
+                                         decision.constant_scope_bindings, scope_constants):
                     rejection = "applicability_scope_unverified_or_conflicting"
                     instance = None
                 else:
                     instance, rejection = _instantiate(
                         data, table, canonical_item, candidate, coordinate_columns,
                         decision, max_source_rows=max_source_rows_per_instance,
-                        selected_type_id=item.id,
+                        selected_type_id=item.id, scope_constants=scope_constants,
                         equivalence_assertion_ids=equivalence_ids,
                         unit_evidence_id=next((value.get("evidence_id") for value in unit_sources
                                               if value["column"] == decision.unit_column), None))

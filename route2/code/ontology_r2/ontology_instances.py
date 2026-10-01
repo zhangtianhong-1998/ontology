@@ -17,6 +17,7 @@ def materialize_ontology_instances(data, plan, *, template_projections=(), templ
                                   concepts=(), record_alignments=(), memberships=(),
                                   definition_templates=(),
                                   record_relations=(),
+                                  configuration_candidates=(),
                                   fact_instances=(), max_records=1200000,
                                   max_assertions=1200000):
     """Return Sink-compatible objects/assertions plus mapping coverage and pending.
@@ -335,11 +336,13 @@ def materialize_ontology_instances(data, plan, *, template_projections=(), templ
                 operand_role=dependency["operand_role"], symbol=dependency["symbol"],
                 raw_formula=calculation["raw_formula"])
     relation_plans = {item.id: item for item in plan.relations}
+    configurations = {item['id']: item for item in configuration_candidates}
     for assertion in record_relations:
         # Only a reviewed source pair may connect the newly materialized
         # records. A shared definition never authorizes table-wide promotion.
         pair = assertion.get("source_record_pair") or {}
-        if not assertion.get("source_relation_plan_id") or not pair:
+        is_configuration = bool(assertion.get('configuration_candidate_id'))
+        if not pair or not (is_configuration or assertion.get("source_relation_plan_id")):
             continue
         subject = by_record_type.get((pair.get("source"), assertion.get("subject_type")))
         target = by_record_type.get((pair.get("target"), assertion.get("object_type")))
@@ -348,14 +351,23 @@ def materialize_ontology_instances(data, plan, *, template_projections=(), templ
             continue
         from .record_relation_instances import verify_record_relation
         try:
-            verify_record_relation(data, relation_plans.get(assertion["source_relation_plan_id"]),
-                relations.get(assertion.get("predicate")), assertion, objects[subject], objects[target], rows, relations)
+            if is_configuration:
+                from .configuration_relation_stage import verify_configuration_assertion
+                candidate = configurations.get(assertion['configuration_candidate_id'])
+                if candidate is None:
+                    raise ValueError('Configuration source candidate is absent')
+                verify_configuration_assertion(data, assertion, relations.get(assertion.get('predicate')),
+                    candidate, concepts, record_alignments, [*memberships, *template_bindings], plan=plan)
+            else:
+                verify_record_relation(data, relation_plans.get(assertion["source_relation_plan_id"]),
+                    relations.get(assertion.get("predicate")), assertion, objects[subject], objects[target], rows, relations)
         except ValueError as exc:
             unresolved("record_relation_replay_failed", assertion_id=assertion.get("id"), detail=str(exc))
             continue
         add_edge(subject, target, assertion.get("predicate"), assertion.get("evidence_ids", []),
                  source_relation_assertion_id=assertion.get("id"),
-                 source_relation_plan_id=assertion["source_relation_plan_id"], source_record_pair=pair)
+                 source_relation_plan_id=assertion.get("source_relation_plan_id"), source_record_pair=pair,
+                 configuration_candidate_id=assertion.get('configuration_candidate_id'))
     materialized = {node["type"] for node in objects.values()} | {node.get("type") for node in fact_instances}
     missing_types = sorted(set(types) - materialized)
     missing_relations = sorted({item.id for item in relations.values() if item.category == "business_relation_type"}

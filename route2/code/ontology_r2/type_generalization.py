@@ -87,6 +87,17 @@ def _terms(value):
     return terms
 
 
+def generalization_eligible_types(plan, data):
+    """One eligibility contract shared by retrieval and its coverage report."""
+    return [item for item in plan.object_types
+            if item.category == "business_type" and item.parent in ROOTS
+            and item.parent != "Measure"
+            and (item.derivation_kind in (None, "exact_definition")
+                 or (item.derivation_kind == "template_projection"
+                     and item.evidence_scope == "projected_definition_template"))
+            and any(_semantic_fragments(data, item))]
+
+
 def propose_generalization_candidates(plan: BuildPlan, data, max_pairs: int):
     """Recall bounded same-root pairs; this never asserts a superclass.
 
@@ -97,10 +108,7 @@ def propose_generalization_candidates(plan: BuildPlan, data, max_pairs: int):
         raise ValueError("max_pairs must be a nonnegative integer")
     if not max_pairs:
         return []
-    eligible = [item for item in plan.object_types
-                if item.category == "business_type" and item.parent in ROOTS
-                and item.parent != "Measure"
-                and item.derivation_kind in (None, "exact_definition")]
+    eligible = generalization_eligible_types(plan, data)
     by_group = defaultdict(list)
     for item in eligible:
         fragments = list(_semantic_fragments(data, item))

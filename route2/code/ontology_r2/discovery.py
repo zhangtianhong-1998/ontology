@@ -7,6 +7,7 @@ All joins compare original CSV values; no normalization is applied implicitly.
 from collections import defaultdict
 from contextlib import nullcontext
 from itertools import combinations
+import json
 import re
 
 from .column_roles import classify_columns
@@ -19,6 +20,130 @@ _NUMERIC_LITERAL = re.compile(r"[+-]?[0-9]+(?:\.[0-9]+)?\Z")
 
 def _numeric_literal(value):
     return bool(_NUMERIC_LITERAL.fullmatch(value))
+
+
+def _reference_sql(column_sql, source_path):
+    """Read an object-key JSON path; never evaluate supplied SQL or array indices.
+
+    Match the existing RelationPlan.source_path execution contract. Invalid
+    JSON, missing keys, containers and booleans are absent references, not text
+    values produced by serializing the entire document.
+    """
+    if not source_path:
+        return column_sql
+    if (not isinstance(source_path, list) or len(source_path) > 16
+            or any(not isinstance(key, str) or not key for key in source_path)):
+        raise ValueError("source_path must contain 1..16 nonempty object keys")
+    path = "$" + "".join("." + json.dumps(key, ensure_ascii=False) for key in source_path)
+    literal = "'" + path.replace("'", "''") + "'"
+    document = f"CASE WHEN json_valid({column_sql}) THEN {column_sql} ELSE '{{}}' END"
+    return (f"CASE WHEN json_type({document}, {literal}) = 'VARCHAR' "
+            f"THEN json_extract_string({document}, {literal}) END")
+
+
+def json_scalar_paths(value, *, max_depth=16, omissions=None):
+    """Yield complete nonempty string leaves from JSON objects, without flattening lists."""
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+    except (ValueError, TypeError):
+        return
+    def visit(node, path):
+        if len(path) > max_depth:
+            if omissions is not None:
+                omissions["paths_beyond_depth_limit"] = omissions.get("paths_beyond_depth_limit", 0) + 1
+            return
+        if isinstance(node, dict):
+            for key, item in sorted(node.items()):
+                if isinstance(key, str) and key:
+                    yield from visit(item, [*path, key])
+        elif path and isinstance(node, str) and node.strip():
+            yield path, node
+    if isinstance(parsed, dict):
+        yield from visit(parsed, [])
+
+
+def discover_json_reference_candidates(data, *, source_tables=None, target_fields=None,
+                                        max_rows_per_table=128, max_paths=64,
+                                        max_target_fields=128, max_candidates=128,
+                                        max_document_chars=65536):
+    """Recall bounded JSON leaf→column links. Equality alone has no semantic status.
+
+    Samples discover paths only. validate_candidate/association_match_sql then
+    execute each path against the complete snapshot, including ambiguous keys.
+    Names need not match: observed exact scalar values perform the recall.
+    """
+    limits = (max_rows_per_table, max_paths, max_target_fields, max_candidates, max_document_chars)
+    if any(type(value) is not int or value <= 0 for value in limits):
+        raise ValueError("JSON reference discovery limits must be positive integers")
+    visible = {(table, item["column"]) for table, info in data.tables.items()
+               for item in classify_columns(info)
+               if item["role"] not in {"sensitive", "empty", "audit_time", "audit_metadata"}
+               and item["column"] not in info.get("semantic_excluded_columns", ())}
+    sources = sorted(set(source_tables) if source_tables is not None else data.tables)
+    if any(table not in data.tables for table in sources):
+        raise ValueError("Unknown JSON reference source table")
+    targets = sorted(set(map(tuple, target_fields)) if target_fields is not None else visible)
+    if any(field not in visible for field in targets):
+        raise ValueError("Unknown or invisible JSON reference target field")
+    omitted_targets = max(0, len(targets) - max_target_fields)
+    targets = targets[:max_target_fields]
+    paths, rows_unexamined, oversized, path_omissions = {}, 0, 0, {}
+    for table in sources:
+        columns = sorted(column for owner, column in visible if owner == table)
+        if not columns:
+            continue
+        info = data.tables[table]
+        total = data.db.execute(f"SELECT count(*) FROM {qi(info['sql_name'])}").fetchone()[0]
+        rows_unexamined += max(0, total - max_rows_per_table)
+        rows = data.db.execute(f"SELECT __r2_row, {', '.join(map(qi, columns))} "
+                              f"FROM {qi(info['sql_name'])} ORDER BY __r2_row LIMIT ?",
+                              [max_rows_per_table]).fetchall()
+        for values in rows:
+            for column, raw in zip(columns, values[1:]):
+                if not isinstance(raw, str) or not raw.lstrip().startswith("{"):
+                    continue
+                if len(raw) > max_document_chars:
+                    oversized += 1
+                    continue
+                for path, value in json_scalar_paths(raw, omissions=path_omissions):
+                    key = table, column, tuple(path)
+                    entry = paths.setdefault(key, {"values": set(), "examples": []})
+                    entry["values"].add(value)
+                    if len(entry["examples"]) < 3:
+                        entry["examples"].append({"row_number": values[0], "raw_document": raw,
+                                                  "source_path": path, "value": value})
+    selected_paths = sorted(paths.items())[:max_paths]
+    candidates = []
+    for (table, column, path), entry in selected_paths:
+        values = sorted(entry["values"])
+        for target_table, target_column in targets:
+            if target_table == table:
+                continue
+            info = data.tables[target_table]
+            placeholders = ",".join("?" for _ in values)
+            shared = data.db.execute(f"SELECT DISTINCT {qi(target_column)} "
+                f"FROM {qi(info['sql_name'])} WHERE {qi(target_column)} IN ({placeholders})",
+                values).fetchall()
+            if not shared:
+                continue
+            source = {"table": table, "field": column, "source_path": list(path)}
+            target = {"table": target_table, "field": target_column}
+            candidates.append({"candidate_id": "json_reference:" + digest([data.snapshot_id, source, target])[:24],
+                "source": source, "target": target, "retrieval_channels": ["json_scalar_value_overlap"],
+                "numeric_overlap_only": all(_numeric_literal(row[0]) for row in shared),
+                "shared_sample_value_count": len(shared), "source_declared_pk": False,
+                "target_declared_pk": target_column in info.get("pk", []),
+                "examples": entry["examples"], "semantic_relation": "unresolved"})
+    omitted = max(0, len(candidates) - max_candidates)
+    return {"candidates": candidates[:max_candidates], "coverage": {
+        "paths_discovered": len(paths), "paths_examined": len(selected_paths),
+        "paths_not_examined": max(0, len(paths) - max_paths),
+        "source_rows_not_examined": rows_unexamined, "oversized_documents": oversized,
+        "paths_beyond_depth_limit": path_omissions.get("paths_beyond_depth_limit", 0),
+        "target_fields_not_examined": omitted_targets, "candidates_not_selected": omitted,
+        "candidates_emitted": min(len(candidates), max_candidates), "llm_calls": 0,
+        "scope": "sampled_json_paths_with_full_target_value_lookup",
+        "partial": bool(rows_unexamined or oversized or omitted_targets or omitted or path_omissions or len(paths) > max_paths)}}
 
 
 def _fields(data):
@@ -778,6 +903,7 @@ def _matching_ctes(data, candidate, selector=None, scope_bindings=None, transfor
     source, target = candidate["source"], candidate["target"]
     st, sk = _checked_field(data, source["table"], source["field"])
     tt, tk = _checked_field(data, target["table"], target["field"])
+    source_value = _reference_sql(f"s.{sk}", source.get("source_path", []))
     for field, literal in selector.items():
         _checked_field(data, source["table"], field)
         if literal is not None and not isinstance(literal, str):
@@ -814,9 +940,9 @@ def _matching_ctes(data, candidate, selector=None, scope_bindings=None, transfor
     source_groups = ''.join(f', s.scope_{i}' for i in range(len(pairs)))
     join_match_scope = ''.join(f' AND s.scope_{i} = m.scope_{i}' for i in range(len(pairs)))
     sql = f"""WITH source_rows AS (
-        SELECT s.__r2_row AS row_number, s.{sk} AS ref,
+        SELECT s.__r2_row AS row_number, {source_value} AS ref,
                ({selected}) AS selected, ({source_usable}) AS scope_usable,
-               (s.{sk} IS NOT NULL AND trim(s.{sk}) <> '') AS usable {source_scope}
+               ({source_value} IS NOT NULL AND trim({source_value}) <> '') AS usable {source_scope}
         FROM {st} s
     ), target_rows AS (
         SELECT t.__r2_row AS row_number, t.{tk} AS ref,
@@ -928,7 +1054,7 @@ def validate_candidate(data, candidate, *, selector=None, scope_bindings=None,
     """
     if type(sample_limit) is not int or sample_limit < 0:
         raise ValueError("sample_limit must be nonnegative")
-    if transform != "identity":
+    if transform != "identity" or candidate["source"].get("source_path"):
         return _validate_transformed_candidate(data, candidate, selector=selector,
             scope_bindings=scope_bindings, sample_limit=sample_limit, transform=transform)
     source, target = candidate["source"], candidate["target"]

@@ -40,7 +40,7 @@ _OPERATOR_LABELS = {
     "filter": frozenset(("filter", "where", "过滤", "筛选")),
 }
 _OPERATOR_EVIDENCE = {
-    "sum": re.compile(r"\bsum\s*\(|求和|合计|总和|加总", re.I),
+    "sum": re.compile(r"\bsum\s*\(|求和|合计|总和|加总|之和", re.I),
     "avg": re.compile(r"\b(?:avg|average|mean)\s*\(|平均|均值", re.I),
     "count": re.compile(r"\bcount\s*\(|计数", re.I),
     "distinct_count": re.compile(r"\bcount\s*\(\s*distinct\b|去重计数|count_distinct", re.I),
@@ -654,8 +654,12 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
     property_sources = {}
     for record in exact_records:
         for role, entry in _entries(record):
+            if role == "unknown" and not entry.get("truncated"):
+                from .semantic_cards import _structured_semantic_candidate
+                if _structured_semantic_candidate(entry["value"]):
+                    role = "structured_reference"
             if role not in ("name", "alias", "description", "formula", "unit", "scope",
-                            "metadata", "provenance", "identity"):
+                            "metadata", "provenance", "identity", "structured_reference"):
                 continue
             column = entry["column"]
             evidence_id = "record:" + digest([data.snapshot_id, record["record_id"], column])[:24]
@@ -1111,7 +1115,8 @@ def compile_business_relation(data, profile, core, bundle, decision, plan,
                       "applicability_scope": object_types[target_type].applicability_scope}
     source_scope = source_concept["applicability_scope"]
     target_scope = target_concept["applicability_scope"]
-    if any(source_scope[key] != target_scope[key] for key in source_scope.keys() & target_scope.keys()):
+    from .relation_contract import relation_scope_conflicts
+    if relation_scope_conflicts(object_types[source_type], object_types[target_type], data):
         return None, None, "business_type_applicability_scopes_conflict"
     base_type = next((item for item in core.relation_types if item.id == plan.predicate), None)
     if (base_type is None or plan.evidence_scope != "sample_semantic_with_full_technical_check"
@@ -1162,7 +1167,9 @@ def compile_business_relation(data, profile, core, bundle, decision, plan,
         "source_record_pair": {"source": left["record_id"],
                                "target": right["record_id"]},
         "source_relation_plan_id": plan.id,
-        "scope": dict(sorted({**target_scope, **source_scope}.items())),
+        "scope": {key: value for key, value in sorted({**target_scope, **source_scope}.items())
+                  if key not in source_scope or key not in target_scope or source_scope[key] == target_scope[key]},
+        "endpoint_scopes": {"source": dict(source_scope), "target": dict(target_scope)},
         "identity_scope": "input_snapshot",
         "evidence_ids": evidence_ids,
         "endpoint_scope": "exact_definition_pair" if both_exact else "typed_record_witness",
@@ -1319,6 +1326,57 @@ def _compile_checked_projection(data, profile, core, bundle, projection):
     return result
 
 
+def replay_business_relations(data, profile, result):
+    """Retry already-reviewed paths when endpoint bindings changed; no model calls."""
+    core = BuildPlan.model_validate(result["plan"])
+    concept_relations = {item["id"]: item for item in result.get("concept_relations", [])}
+    relation_derivations = result.setdefault("concept_relation_derivations", [])
+    for pending in result.get("pending_record_relations", []):
+        bundle = pending["bundle"]
+        decision = RelationBundleDecision.model_validate(pending["decision"])
+        plan = RelationPlan.model_validate(pending["plan"])
+        record_ids = {item["record_id"] for item in bundle.get("records", [])}
+        bindings = [item for item in result.get("template_bindings", []) if item.get("record_id") in record_ids]
+        aligned = [item for item in result.get("record_alignments", []) if item.get("source_record_id") in record_ids]
+        concepts = [item for item in result.get("concepts", [])
+                    if item.get("id") in {entry.get("concept_id") for entry in aligned}]
+        type_ids = {item.get("object_type_id") for item in bindings} | {item.get("ontology_type_id") for item in concepts}
+        signature = digest({"bindings": bindings, "alignments": aligned, "concepts": concepts,
+                            "types": [item.model_dump() for item in core.object_types if item.id in type_ids],
+                            "templates": [item for item in result.get("template_projections", [])
+                                          if item.get("template_id") in {entry.get("template_id") for entry in bindings}],
+                            "relation": [item.model_dump() for item in core.relation_types if item.id == plan.predicate]})
+        if any(item.get("source_relation_plan_id") == plan.id and
+               item.get("binding_signature") == signature for item in relation_derivations):
+            continue
+        derivation = {"binding_signature": signature, "bundle_id": bundle["bundle_id"], "source_relation_plan_id": plan.id,
+                      "status": "not_promoted", "core_before": digest(core.model_dump())}
+        try:
+            candidate, assertion, reason = compile_business_relation(
+                data, profile, core, bundle, decision, plan,
+                result.get("concepts", []), result.get("record_alignments", []),
+                template_bindings=result.get("template_bindings", []),
+                template_projections=result.get("template_projections", []))
+            if candidate is None:
+                derivation["reason"] = reason
+            else:
+                core = candidate
+                existing = concept_relations.get(assertion["id"])
+                if existing:
+                    existing["evidence_ids"] = sorted(set(existing["evidence_ids"])
+                                                       | set(assertion["evidence_ids"]))
+                else:
+                    concept_relations[assertion["id"]] = assertion
+                derivation.update(status="accepted", assertion_id=assertion["id"],
+                                  business_relation_type_id=assertion["predicate"])
+        except ValueError as exc:
+            derivation["reason"] = str(exc)
+        derivation["core_after"] = digest(core.model_dump())
+        relation_derivations.append(derivation)
+    result.update(plan=core, concept_relations=list(concept_relations.values()))
+    return result
+
+
 async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *, review=True,
                                  max_bundles=20, max_repairs_per_bundle=0, progress=None,
                                  prior_result=None, on_checkpoint=None, concept_batch_size=1,
@@ -1365,6 +1423,7 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
     batch_reviews = prior.get("pending_concept_reviews", {})
     relation_batch_decisions = prior.get("pending_relation_decisions", {})
     relation_batch_reviews = prior.get("pending_relation_reviews", {})
+    failed_batch_ids = set()
     remaining = [item for item in bundles if item["bundle_id"] not in reused_ids]
     selected = _balanced_selection(remaining, max_bundles)
     skipped = max(0, len(remaining) - len(selected))
@@ -1443,7 +1502,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
             return len(json.dumps({"packets": items}, ensure_ascii=False,
                                   default=str).encode()) <= max(1024, int(max_bytes * .65))
         for possible in selected[position:]:
-            if (possible.get("task_kind") != kind or possible["bundle_id"] in cache):
+            if (possible.get("task_kind") != kind or possible["bundle_id"] in cache
+                    or possible["bundle_id"] in failed_batch_ids):
                 continue
             if (is_concept and enable_template_projection and not possible.get("template_repair_task") and
                     reuse_projection(data, template_projections.values(), possible) is not None):
@@ -1457,7 +1517,14 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 break
         if len(chosen) < 2:
             return
-        response = await llm.ask(task, {"packets": packets}, schema)
+        failed_batch_ids.update(item["bundle_id"] for item in chosen)
+        try:
+            response = await llm.ask(task, {"packets": packets}, schema)
+        except ValueError:
+            # Each failed batch falls back once per member, not overlapping
+            # batches that repeatedly pay to reconsider the same source packets.
+            failed_batch_ids.update(item["bundle_id"] for item in chosen)
+            raise
         expected = {item["bundle_id"] for item in chosen}
         returned = [item.bundle_id for item in response.decisions]
         if len(returned) != len(set(returned)) or set(returned) != expected:
@@ -1516,7 +1583,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                     "status": "unresolved", "core_before": digest(core.model_dump())}
             if bundle.get("template_repair_task"):
                 step.update(repair_scope=bundle["template_repair_task"]["scope"],
-                            source_bundle_id=bundle.get("source_bundle_id"))
+                            source_bundle_id=bundle.get("source_bundle_id"),
+                            source_bundle_ids=bundle.get("source_bundle_ids", []))
             try:
                 payload = packet_payload(bundle)
                 reusable = (reuse_projection(data, template_projections.values(), bundle)
@@ -1729,7 +1797,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                     else:
                         step.update(status=decision.status, reason=decision.reason)
                 elif bundle["task_kind"] == "relation_meaning":
-                    if relation_batch_size > 1 and bundle["bundle_id"] not in relation_batch_decisions:
+                    if (relation_batch_size > 1 and bundle["bundle_id"] not in relation_batch_decisions
+                            and bundle["bundle_id"] not in failed_batch_ids):
                         try:
                             await prepare_batch(position, "relation_meaning", relation_batch_size)
                         except ValueError as exc:
@@ -1793,31 +1862,9 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
     finally:
         if stage:
             stage.__exit__(None, None, None)
-    for bundle, decision, plan in accepted_record_relations:
-        derivation = {"bundle_id": bundle["bundle_id"], "source_relation_plan_id": plan.id,
-                      "status": "not_promoted", "core_before": digest(core.model_dump())}
-        try:
-            candidate, assertion, reason = compile_business_relation(
-                data, profile, core, bundle, decision, plan,
-                list(concepts.values()), alignments,
-                template_bindings=list(template_bindings.values()),
-                template_projections=list(template_projections.values()))
-            if candidate is None:
-                derivation["reason"] = reason
-            else:
-                core = candidate
-                existing = concept_relations.get(assertion["id"])
-                if existing:
-                    existing["evidence_ids"] = sorted(set(existing["evidence_ids"])
-                                                       | set(assertion["evidence_ids"]))
-                else:
-                    concept_relations[assertion["id"]] = assertion
-                derivation.update(status="accepted", assertion_id=assertion["id"],
-                                  business_relation_type_id=assertion["predicate"])
-        except ValueError as exc:
-            derivation["reason"] = str(exc)
-        derivation["core_after"] = digest(core.model_dump())
-        relation_derivations.append(derivation)
+    replayed = replay_business_relations(data, profile, state())
+    core = replayed["plan"]
+    concept_relations = {item["id"]: item for item in replayed["concept_relations"]}
     latest_steps = {item["bundle_id"]: item for item in steps}
     statuses = {status: sum(item["status"] == status and not item.get("superseded") for item in latest_steps.values())
                 for status in ("accepted", "no_change", "unresolved", "budget_exhausted", "input_over_budget")}

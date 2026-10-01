@@ -245,7 +245,8 @@ def test_reference_template_roundtrip_reaches_existing_compiler_and_review(tmp_p
             assert candidate['slots'][-1]['evidence']['quote'].startswith('@v')
             # The two witnesses have different scopes: an unaddressed fixed
             # literal is conservatively retained for reviewer comparison.
-            assert candidate['field_templates'][-1]['template'] == 'original:shared:reference:1001'
+            assert next(field for field in candidate['field_templates']
+                        if field['column'] == 'shared_code')['template'] == 'original:shared:reference:1001'
             return 'submit_result', {'accepted': True}
         rows = sent['bundle']['records']
         projection = decision().model_dump()
@@ -283,7 +284,13 @@ def test_reference_template_roundtrip_reaches_existing_compiler_and_review(tmp_p
     assert result['coverage']['statuses']['accepted'] == 1
     assert [binding['slot_values']['record_code'] for binding in result['template_bindings']] == ['row1', 'row2']
     template = result['template_projections'][0]
-    assert template['field_templates'][-1]['template'] == 'original:shared:reference:1001'
+    assert next(field for field in template['field_templates']
+                if field['column'] == 'x12')['template'] == '{record_code}'
+    # Reference values survive decoding on each binding, without becoming
+    # immutable business-type literals merely because the witnesses agree.
+    assert template['instance_columns']['shared_code'] == 'source_checked_record_binding'
+    assert [binding['instance_values']['shared_code'] for binding in result['template_bindings']] == [
+        'original:shared:reference:1001', 'original:shared:reference:1001']
     assert all('@v' not in json.dumps(item, ensure_ascii=False) for item in data.evidence.values())
     source = next(item for item in data.evidence.values()
                   if item.get('source_ref', {}).get('column') == 'x12')
@@ -434,11 +441,13 @@ def test_known_system_aliases_restore_only_in_model_explanations_unknown_always_
                      {'scope': {'reason': rid}}, {'definition_parameters': {'@r999': 'value'}}):
         with pytest.raises(ValueError, match='alias'):
             refs.response(response)
-    # A known reference alias cannot become an explanatory statement or alignment evidence.
+    # A known reference may be mentioned in prose, but cannot bypass an
+    # addressed evidence quote by appearing in an alignment.
     code = refs.payload['bundle']['records'][0]['fields']['reference'][0]['value']
-    for response in ({'reason': code}, {'alignments': [{'record_id': rid, 'mapping_kind': 'unresolved', 'quote': code}]}):
-        with pytest.raises(ValueError, match='alias'):
-            refs.response(response)
+    assert refs.response({'reason': f'Only reference {code}; no semantic evidence.'}) == {
+        'reason': 'Only reference 987654321012345; no semantic evidence.'}
+    with pytest.raises(ValueError, match='alias'):
+        refs.response({'alignments': [{'record_id': rid, 'mapping_kind': 'unresolved', 'quote': code}]})
 
 
 @pytest.mark.parametrize('selector', [

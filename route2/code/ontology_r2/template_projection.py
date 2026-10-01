@@ -9,6 +9,7 @@ closed and return to semantic review.
 from __future__ import annotations
 
 import re
+import json
 from typing import Literal
 
 from pydantic import Field
@@ -60,12 +61,93 @@ class TemplateProjectionDecision(Strict):
     witness_record_ids: list[str]
     existing_type_id: str | None = None
     class_definition: ProjectionQuote | None = None
+    # A row may declare its name, definition and grain in separate cells.
+    # Quotes are retained individually; composition cannot invent prose.
+    class_definition_evidence: list[ProjectionQuote] = Field(default_factory=list)
     definition_parameters: dict[str, str] = Field(default_factory=dict)
     applicability_scope: dict[str, str] = Field(default_factory=dict)
 
 
 _SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 _SEMANTIC = {"name", "alias", "description", "formula", "unit", "scope", "identity", "unknown"}
+
+
+def _source_target_names(data, target):
+    """Only complete, same-snapshot name/alias evidence authorizes captures."""
+    values, evidence_ids = set(), set()
+    for prop in target.source_properties:
+        if prop.role not in {"name", "alias"}:
+            continue
+        for eid in prop.evidence_ids:
+            evidence = data.evidence.get(eid) or {}
+            ref = evidence.get("source_ref") or {}
+            raw = evidence.get("raw_fragment")
+            if (eid not in target.evidence_ids or evidence.get("origin") != "observed_record"
+                    or evidence.get("raw_fragment_truncated") or not isinstance(raw, str)
+                    or ref.get("snapshot_id") != data.snapshot_id
+                    or ref.get("table") != prop.source_table or ref.get("column") != prop.source_column):
+                continue
+            names = [raw]
+            if prop.role == "alias":
+                try:
+                    parsed = json.loads(raw)
+                except (ValueError, TypeError):
+                    parsed = None
+                names = (parsed if isinstance(parsed, list) and all(isinstance(v, str) for v in parsed)
+                         else re.split(r"[;,；，、|]", raw))
+            values.update(name.strip() for name in names if name.strip())
+            evidence_ids.add(eid)
+    return {"type_id": target.id, "accepted_values": sorted(values),
+            "evidence_ids": sorted(evidence_ids), "match": "literal_source_name_or_alias"}
+
+
+def _slot_target_mismatches(slots, captures):
+    """Fail closed for old variable measure contracts without endpoint proof."""
+    return [slot["name"] for slot in slots if slot["role"] == "measure"
+            and slot.get("target_type_id") and "fixed_value" not in slot
+            and (slot.get("target_value_contract", {}).get("type_id") != slot["target_type_id"]
+                 or not slot.get("target_value_contract", {}).get("evidence_ids")
+                 or captures.get(slot["name"]) not in slot.get("target_value_contract", {}).get("accepted_values", []))]
+
+
+def _instance_columns(data, record, slots=()):
+    """Separate declared examples and technical bindings, not arbitrary JSON.
+
+    Unknown JSON may contain a formula or business rule. Only an explicit
+    example/sample declaration or an already checked binding role permits it
+    to vary without changing the type. Its actual value stays on the binding.
+    """
+    values, roles = _fields(record)
+    schema = getattr(data, "tables", {}).get(record["table"], {})
+    columns = {item["column_name"]: item for item in schema.get("columns", [])}
+    binding = {item["column"] for item in record.get("role_conflicts", []) if item.get("binding_only")}
+    coordinates = {item["column"] for item in schema.get("inferred_semantic_roles", [])
+                   if item.get("status") == "source_verified_role_candidate"
+                   and item.get("role") == "dimension_coordinate"}
+    direct_slots = {slot.get("source_column") or slot.get("value_evidence", {}).get("column"): slot
+                    for slot in slots if slot.get("role") in {"record_identity", "dimension"}}
+    result = {}
+    for column, value in values.items():
+        if roles[column] & {"formula", "unit", "identity"}:
+            continue
+        if column in binding or "reference" in roles[column]:
+            result[column] = "source_checked_record_binding"
+        elif (column in direct_slots and direct_slots[column].get("value_evidence", {}).get("quote") == value
+              and (direct_slots[column]["role"] == "record_identity"
+                   or column in coordinates
+                   or re.search(r"(?:^|_)member_(?:code|name|cn_name|en_name|value)$", column, re.I)
+                   or re.search(r"(?:维度|成员).*(?:取值|编码|名称)",
+                                str(columns.get(column, {}).get("column_comment") or "")))):
+            result[column] = "source_checked_observed_slot_value"
+        elif (re.search(r"(?:^|_)(?:request|response)_(?:example|sample)(?:_|$)", column, re.I)
+              or re.search(r"(?:请求|响应|返回)(?:报文|数据)?(?:示例|样例)",
+                           str(columns.get(column, {}).get("column_comment") or ""))):
+            try:
+                if isinstance(json.loads(value), (dict, list)):
+                    result[column] = "declared_structured_example"
+            except (ValueError, TypeError):
+                pass
+    return result
 
 
 def _fields(record):
@@ -145,7 +227,11 @@ def match_projection(template, record):
     if record.get("table") != template["source_table"]:
         return None
     values, roles = _fields(record)
-    semantic = {column: value for column, value in values.items() if roles[column] & _SEMANTIC}
+    instance_columns = template.get("instance_columns", {})
+    if any(roles.get(column, set()) & {"formula", "unit", "identity"} for column in instance_columns):
+        return None  # A later role change cannot bypass protected semantics.
+    semantic = {column: value for column, value in values.items()
+                if roles[column] & _SEMANTIC and column not in instance_columns}
     if set(semantic) != set(template["semantic_columns"]):
         return None
     if any(semantic.get(column) != value for column, value in template["invariants"].items()):
@@ -173,9 +259,12 @@ def match_projection(template, record):
             raise ValueError("Adjacent unbound slots are ambiguous")
     if not set(slots) <= set(captures):
         return None
+    if _slot_target_mismatches(template["slots"], captures):
+        return None
     return {"record_id": record["record_id"], "source_table": record["table"],
             "row_number": record.get("row_number"), "source_card_id": record.get("card_id"),
             "slot_values": captures,
+            "instance_values": {column: values[column] for column in instance_columns if column in values},
             "reference_values": {column: value for column, value in values.items()
                                  if "reference" in roles[column]},
             "mapping_kind": "template_instance", "identity_claim": "none"}
@@ -297,6 +386,11 @@ def compile_projection(data, profile, core, bundle, decision):
             slot["evidence_ids"] = sorted(set(slot["evidence_ids"] + component["evidence_ids"]))
         if slot["target_type_id"] and slot["target_type_id"] not in known:
             raise ValueError("Slot target must be an existing accepted object type")
+        if slot["role"] == "measure" and slot.get("target_type_id") and "fixed_value" not in slot:
+            target = known[slot["target_type_id"]]
+            slot["target_value_contract"] = _source_target_names(data, target)
+            if not slot["target_value_contract"]["accepted_values"]:
+                raise ValueError("A variable measure target requires complete source name or alias evidence")
     orphan_components = sorted(set(components) - {slot["target_component"] for slot in slots
                                                    if slot["target_component"]})
     if orphan_components:
@@ -308,7 +402,29 @@ def compile_projection(data, profile, core, bundle, decision):
     if len({item["column"] for item in field_templates}) != len(field_templates):
         raise ValueError("Duplicate projected field")
     values, roles = _fields(witnesses[0])
-    semantic = {column: value for column, value in values.items() if roles[column] & _SEMANTIC}
+    instance_columns = _instance_columns(data, witnesses[0], slots)
+    # Every witness must independently support the same instance-field roles.
+    instance_columns = {column: basis for column, basis in instance_columns.items()
+                        if all(_instance_columns(data, record, slots).get(column) == basis
+                               or (basis == "source_checked_observed_slot_value" and column in _fields(record)[0])
+                               for record in witnesses)}
+    # A reviewed instance/member slot is captured from each row; retaining its
+    # original witness as a fixed value would silently replay the wrong member.
+    for slot in slots:
+        column = slot.get("source_column") or slot.get("value_evidence", {}).get("column")
+        if (column in instance_columns and slot.get("value_evidence", {}).get("quote") == values.get(column)
+                and slot["role"] in {"record_identity", "reference", "dimension"}):
+            slot.pop("fixed_value", None)
+            slot["source_column"] = column
+            existing_field = next((item for item in field_templates if item["column"] == column), None)
+            if existing_field is not None and not _SLOT.search(existing_field["template"]):
+                existing_field["template"] = "{" + slot["name"] + "}"
+            elif existing_field is None:
+                field_templates.append({"column": column, "template": "{" + slot["name"] + "}"})
+    field_templates = [item for item in field_templates
+                       if item["column"] not in instance_columns or _SLOT.search(item["template"])]
+    semantic = {column: value for column, value in values.items()
+                if roles[column] & _SEMANTIC and column not in instance_columns}
     protected = {column for column, rs in roles.items() if rs & {"formula", "unit", "identity"}}
     protected.update(item["column"] for item in witnesses[0].get("calculation_fragments", [])
                      if item.get("effective_role") == "calculation_operator")
@@ -325,6 +441,7 @@ def compile_projection(data, profile, core, bundle, decision):
                 "source_table": witnesses[0]["table"], "root_type": decision.root_type,
                 "label": decision.label, "definition": decision.definition,
                 "semantic_columns": sorted(semantic), "invariants": {k: v for k, v in semantic.items() if k not in changed},
+                "instance_columns": instance_columns,
                 "field_templates": field_templates, "slots": slots,
                 "evidence_ids": sorted(set(evidence_ids)), "status": "accepted",
                 "identity_claim": "projection_not_exact_source_identity"}
@@ -337,7 +454,7 @@ def compile_projection(data, profile, core, bundle, decision):
                            if "identity" in roles[column]}
     template["identity_qualifiers"] = identity_qualifiers
     for column, value in decision.applicability_scope.items():
-        if not value or column in changed:
+        if not value or column in changed or column in instance_columns:
             raise ValueError("Projection applicability scope must use complete invariant scope fields")
         for record in witnesses:
             raw_values, raw_roles = _fields(record)
@@ -387,12 +504,40 @@ def compile_projection(data, profile, core, bundle, decision):
     declared_class = False
     if decision.class_definition is not None:
         citation = decision.class_definition
-        if (citation.record_id not in records or citation.quote != decision.definition
-                or decision.label not in citation.quote):
-            raise ValueError("Class definition must quote the source statement including its class label")
+        same_row_name = any(item.record_id == citation.record_id
+                            and decision.label in item.quote
+                            and _fields(records[item.record_id])[1].get(item.column, set()) & {"name", "alias"}
+                            for item in decision.label_evidence)
+        if (citation.record_id not in {record["record_id"] for record in witnesses}
+                or citation.quote != decision.definition
+                or "description" not in _fields(records[citation.record_id])[1].get(citation.column, set())
+                or not (decision.label in citation.quote or same_row_name)):
+            raise ValueError("Class definition requires a source description and its same-record class label")
         evidence_ids.append(_evidence(data, records[citation.record_id], citation.column, citation.quote))
         template["evidence_ids"] = sorted(set(evidence_ids))
         template["class_definition"] = citation.model_dump()
+        declared_class = True
+    if decision.class_definition_evidence:
+        citations = decision.class_definition_evidence
+        record_ids = {item.record_id for item in citations}
+        if len(record_ids) != 1 or not record_ids <= {record["record_id"] for record in witnesses}:
+            raise ValueError("Composed class definition must use one complete witness record")
+        rec = records[next(iter(record_ids))]
+        raw_values, raw_roles = _fields(rec)
+        if (decision.definition != "\n".join(item.quote for item in citations)
+                or not any("description" in raw_roles.get(item.column, set()) for item in citations)
+                or not any(item.record_id in record_ids and decision.label in item.quote
+                           and raw_roles.get(item.column, set()) & {"name", "alias"}
+                           for item in decision.label_evidence)):
+            raise ValueError("Composed definition must retain quoted name, description and source constraint cells")
+        for item in citations:
+            if (raw_values.get(item.column) != item.quote
+                    or not raw_roles.get(item.column, set()) & {"name", "alias", "description", "formula", "scope", "identity", "unit"}
+                    or item.column in instance_columns):
+                raise ValueError("Composed definition cannot use partial or instance-only source cells")
+            evidence_ids.append(_evidence(data, rec, item.column, item.quote))
+        template["class_definition_evidence"] = [item.model_dump() for item in citations]
+        template["evidence_ids"] = sorted(set(evidence_ids))
         declared_class = True
     if any("fixed_value" not in slot for slot in slots) and not decision.existing_type_id and not declared_class:
         if len(witnesses) < 2 or not any(len({item["slot_values"][slot["name"]] for item in bindings}) > 1 for slot in slots):
@@ -409,19 +554,27 @@ def compile_projection(data, profile, core, bundle, decision):
                 "varying witnesses sharing the same source definition including its class label")
     if decision.root_type == "Metric":
         for slot in slots:
-            if slot["role"] == "measure" and len({item["slot_values"][slot["name"]] for item in bindings}) > 1:
+            if (slot["role"] == "measure" and not slot.get("target_value_contract")
+                    and len({item["slot_values"][slot["name"]] for item in bindings}) > 1):
                 raise ValueError("Different quantity meanings cannot be wildcarded into one Metric")
-    for slot in slots:
-        target = known.get(slot.get("target_type_id"))
-        ancestry = set()
-        while target is not None and target.parent in known and target.id not in ancestry:
-            ancestry.add(target.id)
-            target = known[target.parent]
-        if (slot["role"] == "measure" and target is not None and target.parent == "Measure"
-                and len({item["slot_values"][slot["name"]] for item in bindings}) > 1):
-            raise ValueError("A varying measure slot cannot statically target one concrete Measure; resolve each value separately")
-    if decision.existing_type_id:
-        existing = known.get(decision.existing_type_id)
+    # Different witnessed spellings are safe only when every capture passed
+    # the target's source-name/alias contract in match_projection above.
+    source_formulas = {values[column].strip() for column, rs in roles.items() if "formula" in rs}
+    def compatible_type(existing):
+        existing_formulas = {str(data.evidence[eid].get("raw_fragment", "")).strip()
+                             for prop in existing.source_properties if prop.role == "formula"
+                             for eid in prop.evidence_ids if eid in data.evidence}
+        return (existing.category == "business_type" and existing.parent == decision.root_type
+                and existing.label == decision.label and existing.definition == decision.definition
+                and (existing.unit or "") == (witnesses[0].get("unit") or "")
+                and existing.definition_parameters == decision.definition_parameters
+                and existing.identity_qualifiers == identity_qualifiers
+                and existing.applicability_scope == decision.applicability_scope
+                and existing_formulas == source_formulas and existing.aggregation_operator is None)
+    compatible = [item for item in core.object_types if compatible_type(item)]
+    existing_type_id = decision.existing_type_id or (compatible[0].id if len(compatible) == 1 else None)
+    if existing_type_id:
+        existing = known.get(existing_type_id)
         existing_formulas = {str(data.evidence[eid].get("raw_fragment", "")).strip()
                              for prop in (existing.source_properties if existing else []) if prop.role == "formula"
                              for eid in prop.evidence_ids if eid in data.evidence}
@@ -472,7 +625,8 @@ def compile_projection(data, profile, core, bundle, decision):
     updated = DerivedType.model_validate({**updated.model_dump(), "source_properties": list(known_properties.values())})
     candidate.object_types[candidate.object_types.index(current)] = updated
     template["contract_hash"] = digest([template["source_table"], template["object_type_id"],
-                                        template["semantic_columns"], template["invariants"], field_templates, slots])
+                                        template["semantic_columns"], template["invariants"], field_templates, slots,
+                                        instance_columns])
     template["template_id"] = "projection:" + template["contract_hash"][:24]
     return candidate, template, [bind_projection(data, template, record) for record in witnesses]
 

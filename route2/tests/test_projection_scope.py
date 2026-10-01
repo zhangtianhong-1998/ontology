@@ -71,7 +71,19 @@ def test_varying_measure_on_general_object_cannot_target_one_concrete_quantity()
     data = SimpleNamespace(snapshot_id="snapshot", evidence={})
     core = BuildPlan(object_types=[DerivedType(id="type:income", parent="Measure", label="收入",
                                                definition="通用收入量", evidence_ids=[])])
-    with pytest.raises(ValueError, match="varying measure slot"):
+    with pytest.raises(ValueError, match="variable measure target requires complete source name or alias evidence"):
+        compile_projection(data, PROFILE, core, {"records": records}, proposed)
+    # Even a grounded name for the target cannot authorize a different
+    # quantity captured in another witness.
+    data.evidence["record:income-name"] = {
+        "id": "record:income-name", "origin": "observed_record", "raw_fragment": "收入",
+        "source_ref": {"snapshot_id": data.snapshot_id, "table": "x.amounts",
+                       "column": "name", "record_id": "income"}}
+    core.object_types[0] = DerivedType(id="type:income", parent="Measure", label="收入",
+        definition="通用收入量", evidence_ids=["record:income-name"],
+        source_properties=[{"role": "name", "source_table": "x.amounts", "source_column": "name",
+                            "evidence_ids": ["record:income-name"]}])
+    with pytest.raises(ValueError, match="Every witness must match"):
         compile_projection(data, PROFILE, core, {"records": records}, proposed)
     proposed.slots[0].target_type_id = None
     _, template, _ = compile_projection(data, PROFILE, core, {"records": records}, proposed)

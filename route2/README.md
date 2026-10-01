@@ -1,5 +1,7 @@
 # 路线2：记录关联与企业知识增强原型
 
+V12 的修复范围和实验配置见 [关系修复说明](../docs/route2/RELATION_REPAIR_V12.md)。全量对照使用 `config/runtime.full-v12.yaml`，保留旧实验结果。
+
 当前已实现可运行原型：本地扫描先核验技术关联，再从有界跨表记录包抽取业务类型和关系；旧的 RIGOR 式逐表增量模式仍可选。AgentScope ReAct、stdio MCP 和本地结果可视化也保留。具体对象和关联由输入证据决定，不要求真实数据包含任何预设业务例子。
 
 - [当前完成与待实现范围](../docs/route2/STATUS.md)

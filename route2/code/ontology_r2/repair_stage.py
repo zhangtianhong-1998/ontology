@@ -31,6 +31,18 @@ def _semantic_digest(result):
                    ('template_projections', 'concepts', 'concept_relations')})
 
 
+def repair_evidence_fingerprint(bundle):
+    """A new round/error message alone is not new evidence for a paid retry."""
+    task = bundle.get('template_repair_task') or {}
+    return digest({'kind': bundle.get('task_kind'),
+                   'unstructured_task_id': bundle.get('bundle_id') if not bundle.get('records') else None,
+                   'records': bundle.get('records'), 'rule': bundle.get('rule'),
+                   'sources': task.get('source_bundle_ids', bundle.get('source_bundle_ids', [])),
+                   'scope': task.get('scope'),
+                   'templates': task.get('known_template_matches'),
+                   'endpoints': task.get('component_type_candidates')})
+
+
 async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
                               bundle_options=None, progress=None, on_checkpoint=None, index=None):
     """Reuse the accepted core; only actual failed/partial patterns reach a model."""
@@ -46,18 +58,35 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
     first_coverage = dict(result.get('coverage', {}))
     first_skipped = result.get('bundles_skipped', 0)
     stop_reason = 'round_limit'
+    attempted_fingerprints = set(result.get('repair_attempt_fingerprints', []))
     pending = {'repair_tasks_not_attempted': 0, 'groups_not_selected': 0,
                'observed_value_tasks_not_selected': 0}
     for number in range(2, settings['max_rounds'] + 1):
         tasks = build_targeted_repair_tasks(
-            data, bundles, result, max_tasks=settings['max_tasks_per_round'],
+            data, bundles, result, max_tasks=max(len(bundles), settings['max_tasks_per_round']),
             max_examples=settings['max_examples_per_task'], round_number=number)
+        if index is not None:
+            from .template_reuse import augment_template_repair_witnesses
+            augmented = augment_template_repair_witnesses(
+                data, index, tasks['bundles'], max_witnesses=2,
+                max_bundle_bytes=bundle_options.get('max_bundle_bytes', 24000))
+            tasks['bundles'] = augmented['bundles']
+            tasks['coverage']['additional_witnesses'] = augmented['coverage']
+        proposed_count = len(tasks['bundles'])
+        tasks['bundles'] = [bundle for bundle in tasks['bundles']
+                           if repair_evidence_fingerprint(bundle) not in attempted_fingerprints]
+        deferred = proposed_count - len(tasks['bundles'])
+        extra = max(0, len(tasks['bundles']) - settings['max_tasks_per_round'])
+        tasks['bundles'] = tasks['bundles'][:settings['max_tasks_per_round']]
+        tasks['coverage']['groups_not_selected'] = tasks['coverage'].get('groups_not_selected', 0) + extra
+        tasks['coverage']['unchanged_tasks_deferred'] = deferred
         # Discovery is refreshed after every changed round. Count its current
         # omissions, rather than retaining gaps a later round already repaired.
         pending = {'repair_tasks_not_attempted': 0,
                    'groups_not_selected': tasks['coverage'].get('groups_not_selected', 0),
                    'observed_value_tasks_not_selected': tasks['coverage'].get(
-                       'observed_value_tasks_not_selected', 0)}
+                       'observed_value_tasks_not_selected', 0),
+                   'unchanged_tasks_deferred': deferred}
         report['tasks'].extend(tasks['tasks'])
         observed = {item['id']: item for item in report['observed_value_tasks']}
         observed.update({item['id']: item for item in tasks.get('observed_value_tasks', [])})
@@ -69,7 +98,7 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
             report['observed_value_lookup'] = lookup['coverage']
         row = {'round': number, 'discovery': tasks['coverage'], 'calls_before': llm.calls}
         if not tasks['bundles']:
-            stop_reason = 'no_targeted_tasks'
+            stop_reason = 'awaiting_new_evidence' if deferred else 'no_targeted_tasks'
             break
         total = llm.config.get('max_calls', 100)
         ceiling = min(total - settings['reserve_calls_for_followup'],
@@ -87,6 +116,12 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
                 max_repairs_per_bundle=bundle_options.get('max_repairs_per_bundle', 0),
                 enable_template_projection=True, concept_batch_size=1, relation_batch_size=1,
                 progress=progress, on_checkpoint=on_checkpoint)
+        attempted_ids = {step['bundle_id'] for step in result.get('steps', [])
+                         if step.get('status') not in ('input_over_budget', 'budget_exhausted')}
+        attempted_fingerprints.update(repair_evidence_fingerprint(bundle)
+                                      for bundle in tasks['bundles']
+                                      if bundle.get('bundle_id') in attempted_ids)
+        result['repair_attempt_fingerprints'] = sorted(attempted_fingerprints)
         pending['repair_tasks_not_attempted'] = result.get('coverage', {}).get(
             'repair_tasks_not_attempted', 0)
         row.update(**pending,

@@ -7,7 +7,7 @@ from ontology_r2.models import BuildPlan, DerivedType
 from ontology_r2.ontology_instances import materialize_ontology_instances
 from ontology_r2.semantic_bindings import compile_template_relations
 from ontology_r2.storage import Dataset, digest, qi
-from ontology_r2.template_projection import bind_projection
+from ontology_r2.template_projection import bind_projection, _source_target_names
 from test_semantic_bindings import PROFILE, _configuration_case, _PurposeModel
 from test_semantic_cards import _table
 from ontology_r2.configuration_relation_stage import adjudicate_configuration_relations
@@ -159,6 +159,8 @@ def test_future_variable_measure_value_cannot_inherit_initial_target(tmp_path):
         template = inputs["template_projections"][0]
         template["template_id"], template["contract_hash"] = "projection:variable", "variable"
         template["slots"][1].pop("fixed_value")
+        target = next(item for item in calculation["plan"].object_types if item.id == "收入")
+        template["slots"][1]["target_value_contract"] = _source_target_names(data, target)
         for binding in inputs["template_bindings"]:
             binding["template_id"] = template["template_id"]
         # The initial reviewed witness binds only the source value 收入.
@@ -169,10 +171,12 @@ def test_future_variable_measure_value_cannot_inherit_initial_target(tmp_path):
         data.db.execute(f"UPDATE {qi(table['sql_name'])} SET measure_ref=? WHERE __r2_row=2", ["成本"])
         inputs["template_bindings"][1]["slot_values"]["amount"] = "成本"
         result = materialize_ontology_instances(data, accepted["plan"], **inputs)
-        assert result["coverage"]["definition_record_instances"] == 4
+        # A different quantity invalidates the complete template mapping before
+        # it can materialize a definition instance or inherit its formula edges.
+        assert result["coverage"]["definition_record_instances"] == 3
         assert result["coverage"]["slot_occurrences"] == 1
-        assert len(result["assertions"]) == 5
-        assert any(item["reason"] == "measure_slot_value_has_no_verified_target" for item in result["pending"])
+        assert len(result["assertions"]) == 3
+        assert any(item["reason"] == "template_replay_differs_from_saved_binding" for item in result["pending"])
         # A fresh compile also cannot publish a universal target over both values.
         retried = compile_template_relations(data, PROFILE, calculation["plan"], [template],
                                               inputs["template_bindings"])

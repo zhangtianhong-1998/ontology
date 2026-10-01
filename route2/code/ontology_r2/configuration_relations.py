@@ -7,8 +7,7 @@ lookup establish endpoints; they do not establish the predicate's meaning.
 
 from __future__ import annotations
 
-from collections import Counter
-from collections import defaultdict
+from collections import Counter, defaultdict, deque
 from itertools import combinations
 import re
 
@@ -70,14 +69,14 @@ def _relation_text_candidate(data, table_name, reference_columns):
     visible = []
     for column in table["columns"]:
         name = column["column_name"]
-        if name in reference_columns:
+        # Identifier names often contain "rule"; that does not make their
+        # numeric IDs a relationship statement.
+        if name in reference_columns or name in table.get("pk", []):
             continue
         try:
             _check_column(data, table_name, name)
         except ValueError:
             continue
-        if _RELATION_TEXT.search(name + " " + str(column.get("column_comment") or "")):
-            return name
         visible.append(name)
     # Opaque names and absent comments do not erase an explicit source
     # statement. This is bounded recall only: compilation still checks the
@@ -85,10 +84,19 @@ def _relation_text_candidate(data, table_name, reference_columns):
     if visible:
         select = ", ".join(f"substr(CAST({qi(name)} AS VARCHAR), 1, 1025)" for name in visible)
         rows = data.db.execute(f"SELECT {select} FROM {qi(table['sql_name'])} ORDER BY __r2_row LIMIT 16").fetchall()
+        scored = []
         for position, name in enumerate(visible):
-            if any(isinstance(row[position], str) and len(row[position]) <= 1024
-                   and _RELATION_VALUE.search(row[position]) for row in rows):
-                return name
+            values = [row[position] for row in rows if isinstance(row[position], str)
+                      and row[position].strip() and len(row[position]) <= 1024]
+            if not values or all(re.fullmatch(r"[\d\s.+-]+", value) for value in values):
+                continue
+            column = next(value for value in table["columns"] if value["column_name"] == name)
+            declared = bool(_RELATION_TEXT.search(name + " " + str(column.get("column_comment") or "")))
+            stated = any(_RELATION_VALUE.search(value) for value in values)
+            if declared or stated:
+                scored.append((int(stated), int(declared), -position, name))
+        if scored:
+            return max(scored)[-1]
     return None
 
 
@@ -209,9 +217,6 @@ def infer_configuration_specs(
             if left["target"]["table"] == right["target"]["table"] and text_column is None:
                 skipped["same_definition_table_alignment_lead"] += 1
                 continue
-            if len(output) >= max_specs:
-                skipped["spec_limit"] += 1
-                continue
             spec = ConfigurationRelationSpec(
                 spec_id="config_spec:" + digest([
                     data.snapshot_id, table_name, left["rule_id"], right["rule_id"]])[:24],
@@ -244,6 +249,18 @@ def infer_configuration_specs(
                 }),
                 "semantic_status": "two_verified_reference_rules_are_not_a_business_predicate",
             })
+    # Spend the bounded spec allowance across tables rather than letting the
+    # lexically first table consume it through many equivalent rule pairings.
+    queues = defaultdict(deque)
+    for item in output:
+        queues[item["spec"]["configuration_table"]].append(item)
+    selected = []
+    while len(selected) < max_specs and any(queues.values()):
+        for key in sorted(queues):
+            if queues[key] and len(selected) < max_specs:
+                selected.append(queues[key].popleft())
+    skipped["spec_limit"] = len(output) - len(selected)
+    output = selected
     return {
         "method": "pair_full_input_checked_config_references_with_separate_semantic_adjudication",
         "snapshot_id": data.snapshot_id,

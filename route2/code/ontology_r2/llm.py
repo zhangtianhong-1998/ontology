@@ -45,7 +45,8 @@ TASK_PROMPTS = {
 }
 
 TASK_PROMPTS["configuration_purpose"] = (
-    "判断结构化配置是否明确表达指标与经营对象、度量或维度的绑定用途。输入reference_paths已经核验"
+    "判断结构化配置是否明确表达allowed_bindings中的有向绑定用途。仅从列表中选择source_type_id、role及其对应目标；"
+    "一般对象参与绑定时也需有明确用途，不能因主题相似就关联。输入reference_paths已经核验"
     "技术引用，但同值、共行、共同引用第三方均不能独立证明该用途。仔细阅读两端完整定义、配置字段、"
     "字段用途、条件和方向；仅当证据支持同一路径的用途时返回proposed，role只能为business_object、"
     "measure或dimension，谓词由程序生成。evidence_id必须指向给出的证据，purpose_quote完整复制其"
@@ -143,12 +144,15 @@ unrestricted必须有明确且无例外的不限制原文。一个来源定义�
 B. 从配置/实例的说明或多个相容记录提取共同类：action=project_template，填写projection；
 不要同时填写exact alignments。外层的label/root_type/definition等exact专用字段可保持默认。
 - label_evidence.quote用组成类名的短片段，每个片段必须真实出现于该列；不要用长句代替名称片段。
-- 若有明确类定义，definition和class_definition.quote必须是同一段逐字原文，且包括label。
+- 若有明确类定义，definition和class_definition.quote必须是同一段逐字原文；名称可由同一记录的独立name列支持。
+  名称、说明、粒度跨列时，可用class_definition_evidence逐项引用完整片段，definition只按换行组合这些原文，不能补写含义。
   新Metric/GeneralObject即使没有变化槽，也必须有逐字class_definition或多个同表见证的共同定义依据；
   单条具体实例不能改一个action就冒充类。没有足够类定义或共同依据则unresolved。
 - witness_record_ids只能使用本包同表、非related_context的记录ID；它们均须匹配以下全部字段规则。
 - field_templates是完整原值的字面文本加{slot_name}。每个变化字段都要列出，未列出的语义字段将严格保持不变。
   名称、说明、同义词、实例坐标、查询示例等只要在见证间变化就要逐一处理；公式、单位、真实计算参数不能通配。
+  同一说明列兼有完整类定义与实例说明时，保留类定义原文；仅将来源支持的实例名称、坐标等声明为槽。
+  包内有共享同文类定义而实例值不同的同表记录时，至少选两条见证逐字段对照，不将首条实例说明固定为类定义。
 - slots.name使用英文snake_case；evidence引用某个witness实际捕获到的值，编码和中文名不能共用同一槽。
   source_column只用于“槽值等于该列完整值”，复合名称中的子串槽不可直接绑定为完整名称列。
   固定成分也要有slot，但不需要field_template；其evidence.quote引用实际成分短值，
@@ -289,7 +293,7 @@ class StructuredLLM:
             task_prompt = (
                 "复核独立类定义投影。核对projection的类定义、每个名称片段、components原文、slots绑定用途及全部见证。"
                 "抽象类名由源片段支持，无须等于完整实例名称，来源记录映射为实例绑定，不要求exact同一性。"
-                "来源记录是实例也能包含明确类定义；不能因此拒绝类投影。类定义句必须与class_definition.quote完全相同。"
+                "来源记录是实例也能包含明确类定义；不能因此拒绝类投影。类定义须对应class_definition.quote，或class_definition_evidence中同记录原文的换行组合；名称可由独立名称列支持。"
                 "经营对象成员、地区与具体期间属于观察绑定，不能成为新的类名。Measure必须有独立通用定义，操作符不能成类。"
                 "Metric必须有原文经营对象依据与槽位；缺某个度量端点可保留未决，不能从名称推测公式依赖。"
                 "逐一核对全部变化字段、槽值、固定片段、单位、公式、真实计算参数和作用域；编码不等于中文名称。"
@@ -436,7 +440,15 @@ class StructuredLLM:
             if task in ("plan", "final_plan") and payload.get("unit"):
                 response = scope_mock_plan(response, payload["unit"])
             wire_result = schema.model_validate(references.response(response, encode=True))
-            result = schema.model_validate(references.response(wire_result.model_dump()))
+            try:
+                result = schema.model_validate(references.response(wire_result.model_dump()))
+            except ValueError as exc:
+                # Save only structured tool arguments, never hidden reasoning.
+                # Failed decoding must remain auditable and must not enter the
+                # successful-response cache.
+                self.trace({"stage": "llm_alias_decode_error", "task": task,
+                            "error": str(exc), "wire_result": wire_result.model_dump()})
+                raise
         else:
             if self.mode != "agentscope":
                 raise ValueError(f"Unknown model mode: {self.mode}")

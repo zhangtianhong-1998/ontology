@@ -529,9 +529,15 @@ class PromptReferences:
                 entry = self._aliases.get(alias)
                 if not entry:
                     raise ValueError(f"Unknown prompt alias: {alias}")
-                # Model explanations may name a known system ID. This narrow
-                # exception does not turn a business literal/quote into evidence.
-                if explanation and not literal and entry["kind"] != "reference":
+                # Explanation text is not executable evidence. Restore known
+                # reference aliases here too; evidence quotes still require an
+                # addressed source cell and unknown aliases remain invalid.
+                if explanation and not literal:
+                    if entry["kind"] == "reference":
+                        originals = {_raw(cell["original"]): cell["original"] for cell in entry["cells"]}
+                        # Normalized join values can have multiple originals.
+                        # Keep the known opaque reference in prose in that case.
+                        return str(next(iter(originals.values()))) if len(originals) == 1 else alias
                     return str(entry["original"])
                 raise ValueError(f"Unaddressed {entry['kind']} alias in model output: {alias}")
             return _ALIAS.sub(replace, node)

@@ -15,7 +15,7 @@ class Strict(BaseModel):
 
 class SourceProperty(Strict):
     role: Literal["name", "alias", "description", "formula", "unit", "scope",
-                  "metadata", "provenance", "identity"]
+                  "metadata", "provenance", "identity", "structured_reference"]
     source_table: str
     source_column: str
     evidence_ids: list[str] = Field(default_factory=list)
@@ -83,7 +83,7 @@ class DerivedType(Strict):
     range: list[str] = Field(default_factory=list)
     endpoint_basis: Literal["record_alignment", "table_binding", "mixed",
                             "configuration_reference", "calculation_binding",
-                            "semantic_binding"] | None = None
+                            "semantic_binding", "semantic_reference"] | None = None
     predicate_name: str | None = None
     semantic_parameters: dict[str, str] = Field(default_factory=dict)
     evidence_scope: Literal["source_schema", "definition_record",
@@ -92,8 +92,10 @@ class DerivedType(Strict):
                             "one_positive_pair_with_exact_type_alignments",
                             "one_positive_pair_with_type_bindings",
                             "one_configuration_witness_with_exact_type_alignments",
+                            "one_configuration_witness_with_type_bindings",
                             "complete_calculation_definition",
-                            "checked_structured_binding", "projected_definition_template"] | None = None
+                            "checked_structured_binding", "projected_definition_template",
+                            "verified_lexical_member_path"] | None = None
 
     @field_validator("unit", "aggregation_operator", "predicate_name", mode="before")
     @classmethod

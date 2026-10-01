@@ -460,6 +460,19 @@ async def build(config, output):
                 bound.update({item["id"]: item for item in projection_members["bindings"]})
                 group_result["template_bindings"] = list(bound.values())
                 manifest["template_bindings"] = projection_members["coverage"]
+                # The full binding pass can resolve witnesses that the bounded
+                # induction packets did not contain. Reuse their reviewed
+                # relation decisions immediately, without new model calls.
+                from .group_incremental import replay_business_relations
+                group_result["plan"] = plan
+                replay_business_relations(data, profile, group_result)
+                plan = group_result["plan"]
+                template_relations = compile_template_relations(
+                    data, profile, plan, group_result.get("template_projections", []),
+                    group_result.get("template_bindings", []))
+                plan = template_relations.pop("plan")
+                group_result["plan"] = plan
+                manifest["template_relations"] = template_relations["coverage"]
                 manifest["template_relations"]["template_instance_bindings"] = len(bound)
                 template_relations["coverage"]["template_instance_bindings"] = len(bound)
                 write_yaml(output / "ontology_bindings.yaml", template_relations)
@@ -600,6 +613,22 @@ async def build(config, output):
                             or configuration_relations["coverage"].get("partial")
                             or config_decisions["coverage"].get("partial")),
         }
+        semantic_references = {"instances": [], "assertions": [], "paths": [], "pending": [],
+                               "coverage": {"status": "disabled", "partial": False}}
+        reference_options = config.get("semantic_references", {})
+        if not isinstance(reference_options, dict) or type(reference_options.get("enabled", False)) is not bool:
+            raise ValueError("semantic_references requires a mapping and boolean enabled")
+        if reference_options.get("enabled", False):
+            from .semantic_references import build_semantic_references
+            semantic_references = build_semantic_references(
+                data, plan, group_result["concepts"], group_result["record_alignments"],
+                memberships=configuration_members,
+                options={key: value for key, value in reference_options.items() if key != "enabled"})
+            plan = semantic_references.pop("plan")
+            group_result["plan"] = plan
+        manifest["semantic_references"] = semantic_references["coverage"]
+        for name in ("instances", "assertions", "paths", "pending", "coverage"):
+            write_yaml(output / f"semantic_reference_{name}.yaml", semantic_references.get(name, []))
         calculations = {"calculations": [], "dependencies": [], "coverage": {"status": "disabled", "partial": False}}
         if config.get("instance_bundles", {}).get("enabled", False):
             index = SemanticCardIndex(output / "work" / "semantic_cards.sqlite")
@@ -691,7 +720,7 @@ async def build(config, output):
             raise ValueError("fact_type_binding must be a mapping")
         unknown_binding_options = set(binding_options) - {
             "enabled", "max_type_candidates_per_field", "max_source_rows_per_instance",
-            "max_binding_calls", "max_definition_chars"}
+            "max_binding_calls", "max_definition_chars", "max_repairs_per_field"}
         if unknown_binding_options:
             raise ValueError("Unknown fact_type_binding settings: "
                              + ", ".join(sorted(unknown_binding_options)))
@@ -786,10 +815,20 @@ async def build(config, output):
                     record_alignments=group_result["record_alignments"], memberships=memberships["memberships"],
                     definition_templates=memberships.get("templates", []),
                     record_relations=group_result["concept_relations"],
+                    configuration_candidates=configuration_relations["candidates"],
                     fact_instances=fact_binding["instances"],
                     **{key: value for key, value in instance_options.items() if key != "enabled"})
                 if task:
                     task.advance(detail=f"{len(instance_graph['objects'])} 节点 / {len(instance_graph['assertions'])} 关系")
+        # These are lexical/member paths, explicitly separate from measured
+        # business facts and from source-definition instances.
+        instance_graph["objects"].extend(semantic_references["instances"])
+        instance_graph["assertions"].extend(semantic_references["assertions"])
+        instance_graph["pending"].extend(semantic_references["pending"])
+        instance_graph["coverage"]["lexical_member_instances"] = len(semantic_references["instances"])
+        instance_graph["coverage"]["lexical_member_assertions"] = len(semantic_references["assertions"])
+        instance_graph["coverage"]["partial"] = bool(instance_graph["coverage"].get("partial")
+                                                    or semantic_references["coverage"].get("partial"))
         manifest["ontology_instantiation"] = instance_graph["coverage"]
         write_yaml(output / "ontology_instance_coverage.yaml", instance_graph["coverage"])
         write_yaml(output / "ontology_instance_mappings.yaml", instance_graph["source_mappings"])
@@ -865,6 +904,11 @@ async def build(config, output):
             if stage:
                 stage.advance()
         write_yaml(output / "validation.yaml", validation)
+        from .graph_coverage import business_graph_coverage
+        graph_coverage = business_graph_coverage(plan)
+        write_yaml(output / "business_graph_coverage.yaml", graph_coverage)
+        manifest["business_graph"] = {key: graph_coverage[key] for key in
+                                      ("node_count", "edge_count", "weak_component_count", "root_pair_counts")}
         write_yaml(output / "metrics.yaml", {"counts": counts, "extraction": stats,
                                              "materialized_records": materialized,
                                              "preview_materialized_records": preview_materialized,
@@ -898,6 +942,7 @@ async def build(config, output):
             "type_equivalence_partial": bool(manifest["type_equivalence"]["partial"]),
             "configuration_relation_candidates_partial": bool(
                 manifest["configuration_relations"]["partial"]),
+            "semantic_reference_paths_partial": bool(semantic_references["coverage"].get("partial")),
         }
         manifest["partial_reasons"] = [name for name, present in partial_causes.items() if present]
         partial = bool(manifest["partial_reasons"])

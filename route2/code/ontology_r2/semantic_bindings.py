@@ -12,7 +12,8 @@ from pydantic import Field, model_validator
 
 from .configuration_relations import declared_reference_evidence
 from .models import BuildPlan, Condition, DerivedType, Strict
-from .relation_contract import canonical_relation_definition, canonical_relation_id
+from .relation_contract import (canonical_relation_definition, canonical_relation_id,
+                                relation_scope_conflicts)
 from .storage import digest
 
 
@@ -21,6 +22,23 @@ _ROLES = {
     "measure": ("measure_binding", "depends_on", "Measure"),
     "dimension": ("scope_constraint", "related_to", "Dimension"),
 }
+
+# Resource slots describe a proved configuration reference, never the
+# resource's own quantity definition. Keep these predicates distinct from the
+# Metric contracts even when the slot and target type are the same.
+_RESOURCE_ROLES = {
+    "business_object": ("resource_object_binding", "related_to", "GeneralObject"),
+    "measure": ("resource_measure_binding", "related_to", "Measure"),
+    "dimension": ("resource_scope_binding", "related_to", "Dimension"),
+}
+_SLOT_CONTRACTS = {"Metric": _ROLES, "GeneralObject": _RESOURCE_ROLES}
+
+
+def _slot_contract(source, types, role):
+    contract = _SLOT_CONTRACTS.get(_root(source, types), {}).get(role)
+    if contract is None:
+        raise ValueError("No registered semantic slot contract for this source root")
+    return contract
 
 
 class OntologySlotBinding(Strict):
@@ -45,6 +63,9 @@ class ConfigurationPurposeDecision(Strict):
 
     status: Literal["proposed", "unresolved", "no_change"]
     role: Literal["business_object", "measure", "dimension"] | None = None
+    # Ambiguous GeneralObject pairs must explicitly identify which resource
+    # owns the configuration; target-first order must never imply direction.
+    source_type_id: str | None = None
     evidence_id: str = ""
     purpose_quote: str = ""
     reason: str = ""
@@ -76,30 +97,24 @@ def _source_evidence(data, evidence_ids):
             raise ValueError("Binding evidence belongs to another snapshot")
 
 
-def _endpoints(types, source_id, target_id, role):
+def _endpoints(types, source_id, target_id, role, data=None):
     source, target = types.get(source_id), types.get(target_id)
     if (source is None or target is None or source_id == target_id
             or source.category != "business_type" or target.category != "business_type"):
         raise ValueError("Binding requires two accepted business type endpoints")
-    if _root(source, types) != "Metric" or _root(target, types) != _ROLES[role][2]:
+    if _root(target, types) != _slot_contract(source, types, role)[2]:
         raise ValueError("Binding endpoint roots disagree with its semantic slot")
-    common = source.applicability_scope.keys() & target.applicability_scope.keys()
-    if any(source.applicability_scope[key] != target.applicability_scope[key] for key in common):
+    if relation_scope_conflicts(source, target, data):
         raise ValueError("Binding endpoint applicability scopes conflict")
-    source_identity = getattr(source, "identity_qualifiers", {})
-    target_identity = getattr(target, "identity_qualifiers", {})
-    if any(source_identity[key] != target_identity[key]
-           for key in source_identity.keys() & target_identity.keys()):
-        raise ValueError("Binding endpoint identity qualifiers conflict")
 
 
 def _publish_binding(data, plan, source_id, slot, contract):
     """One checked contract adds one type edge plus a scoped binding assertion."""
     slot = OntologySlotBinding.model_validate(slot)
     types = {item.id: item for item in plan.object_types}
-    _endpoints(types, source_id, slot.target_type_id, slot.role)
+    _endpoints(types, source_id, slot.target_type_id, slot.role, data)
     _source_evidence(data, slot.evidence_ids)
-    predicate, parent, _ = _ROLES[slot.role]
+    predicate, parent, _ = _slot_contract(types[source_id], types, slot.role)
     proof_body = {
         "snapshot_id": data.snapshot_id, "source_type_id": source_id,
         "slot": slot.model_dump(), "contract": contract,
@@ -154,9 +169,13 @@ def binding_relation_errors(data, relation, object_types):
             if evidence_id != "semantic_binding_proof:" + digest(body)[:24]:
                 raise ValueError("Binding contract hash differs")
             slot = OntologySlotBinding.model_validate(body["slot"])
-            _endpoints(types, body["source_type_id"], slot.target_type_id, slot.role)
+            _endpoints(types, body["source_type_id"], slot.target_type_id, slot.role, data)
             _source_evidence(data, slot.evidence_ids)
-            predicate, parent, _ = _ROLES[slot.role]
+            if (_root(types[body["source_type_id"]], types) == "GeneralObject"
+                    and body.get("contract", {}).get("kind") == "template_projection"):
+                _check_resource_field_contract(data, types[slot.target_type_id],
+                                               body["contract"].get("resource_field_contract", {}))
+            predicate, parent, _ = _slot_contract(types[body["source_type_id"]], types, slot.role)
             if (relation.domain != [body["source_type_id"]] or relation.range != [slot.target_type_id]
                     or relation.predicate_name != predicate or relation.parent != parent):
                 raise ValueError("Binding proof path differs from relation endpoints")
@@ -185,6 +204,48 @@ def measure_slot_value_supported(data, target, value):
     return _norm(value) in names
 
 
+def _resource_slot_proof(data, projection, raw_slot, target, bindings):
+    """Do not promote a query topic or substring of a business-domain label.
+
+    This entry point supports explicit name-valued resource fields. Member
+    codes require the independently checked reference path channel; merely
+    observing EAST, for example, cannot prove which dimension owns it.
+    """
+    current = [item for item in bindings if item.get("template_id") == projection["template_id"]
+               and item.get("status") == "accepted" and item.get("mapping_kind") == "template_instance"
+               and item.get("snapshot_id") == data.snapshot_id
+               and item.get("object_type_id") == projection["object_type_id"]]
+    values = [item.get("slot_values", {}).get(raw_slot["name"]) for item in current]
+    if (not values or any(not isinstance(value, str) or not measure_slot_value_supported(data, target, value)
+                          for value in values)):
+        raise ValueError("Resource slot requires source-backed target names or an independently resolved reference")
+    quote = raw_slot.get("value_evidence", {})
+    contract = {"kind": "literal_target_name_reference", "value_evidence": quote,
+                "source_table": projection.get("source_table"),
+                "evidence_ids": raw_slot.get("evidence_ids", []), "observed_values": sorted(set(values))}
+    _check_resource_field_contract(data, target, contract)
+    return contract
+
+
+def _check_resource_field_contract(data, target, contract):
+    """Replay the resource-specific source proof when validating saved types."""
+    quote = contract.get("value_evidence", {})
+    if (contract.get("kind") != "literal_target_name_reference" or not contract.get("observed_values")
+            or any(not measure_slot_value_supported(data, target, value)
+                   for value in contract["observed_values"])):
+        raise ValueError("Resource binding lacks a checked literal target-name contract")
+    if not any((proof := data.evidence.get(eid, {})).get("origin") == "observed_record"
+               and not proof.get("raw_fragment_truncated")
+               and proof.get("source_ref", {}).get("snapshot_id") == data.snapshot_id
+               and proof.get("source_ref", {}).get("table") == contract.get("source_table")
+               and proof.get("source_ref", {}).get("record_id") == quote.get("record_id")
+               and proof.get("source_ref", {}).get("column") == quote.get("column")
+               and proof.get("raw_fragment") == quote.get("quote")
+               and measure_slot_value_supported(data, target, quote.get("quote"))
+               for eid in contract.get("evidence_ids", [])):
+        raise ValueError("Resource slot needs a complete literal source field, not a topic substring")
+
+
 def compile_template_relations(data, profile, plan, template_projections, template_bindings=()):
     """Publish reusable type edges once; observed member values remain bindings."""
     from .validation import validate_plan
@@ -192,7 +253,7 @@ def compile_template_relations(data, profile, plan, template_projections, templa
     candidate = BuildPlan.model_validate(plan).model_copy(deep=True)
     assertions, pending, seen = [], [], set()
     for projection in template_projections:
-        if projection.get("status") != "accepted" or projection.get("root_type") != "Metric":
+        if projection.get("status") != "accepted" or projection.get("root_type") not in _SLOT_CONTRACTS:
             continue
         for raw_slot in projection.get("slots", []):
             if raw_slot.get("role") not in _ROLES:
@@ -202,6 +263,12 @@ def compile_template_relations(data, profile, plan, template_projections, templa
                     raise ValueError("Template projection snapshot differs")
                 if not raw_slot.get("target_type_id"):
                     raise ValueError("Slot requires a targeted definition endpoint")
+                resource_contract = None
+                if projection.get("root_type") == "GeneralObject":
+                    target = next((item for item in candidate.object_types if item.id == raw_slot["target_type_id"]), None)
+                    if target is None:
+                        raise ValueError("Resource slot target is not an accepted type")
+                    resource_contract = _resource_slot_proof(data, projection, raw_slot, target, template_bindings)
                 variable = any("{" + raw_slot["name"] + "}" in field.get("template", "")
                                for field in projection.get("field_templates", []))
                 if raw_slot["role"] == "measure" and variable:
@@ -215,6 +282,8 @@ def compile_template_relations(data, profile, plan, template_projections, templa
                 contract = {"kind": "template_projection", "template_id": projection["template_id"],
                             "contract_hash": projection["contract_hash"],
                             "source_table": projection.get("source_table")}
+                if resource_contract:
+                    contract["resource_field_contract"] = resource_contract
                 assertion = _publish_binding(data, candidate, projection["object_type_id"], slot, contract)
                 if assertion["id"] not in seen:
                     assertions.append(assertion)
@@ -246,7 +315,13 @@ def configuration_purpose_packet(data, candidate, witness, plan, checked_rules):
     if left is None or right is None:
         return None
     roots = (_root(left, types), _root(right, types))
-    if "Metric" not in roots or not ({"Measure", "Dimension", "GeneralObject"} & set(roots)):
+    possibilities = []
+    for source, target in ((left, right), (right, left)):
+        for role, contract in _SLOT_CONTRACTS.get(_root(source, types), {}).items():
+            if _root(target, types) == contract[2] and source.id != target.id:
+                possibilities.append({"source_type_id": source.id, "target_type_id": target.id,
+                                      "role": role, "predicate_name": contract[0]})
+    if not possibilities:
         return None
     for side in ("source", "target"):
         rule = rules.get(candidate.get(side + "_rule_id"))
@@ -287,18 +362,25 @@ def configuration_purpose_packet(data, candidate, witness, plan, checked_rules):
                 "record_id": candidate["configuration_record_id"], "row": witness["__r2_row"],
                 "snapshot_id": data.snapshot_id}}
         evidence.append({"evidence_id": evidence_id, "kind": "configuration_value", "column": name, "text": value})
+    from .configuration_relation_stage import _definition_previews
     return {"candidate_id": candidate["id"], "snapshot_id": data.snapshot_id,
             "configuration_table": table_name, "evidence": evidence, "omitted_overlong_fields": omitted,
             "endpoints": [{"type_id": item.id, "root": root, "label": item.label,
-                            "definition": item.definition, "scope": item.applicability_scope}
-                           for item, root in zip((left, right), roots)],
+                            "definition": item.definition, "scope": item.applicability_scope,
+                            "definition_evidence": _definition_previews(data, item,
+                                candidate[side + "_definition"]["record_id"],
+                                candidate[side + "_definition"].get("evidence_ids", []))}
+                           for item, root, side in zip((left, right), roots, ("source", "target"))],
+            "allowed_bindings": possibilities,
             "reference_paths": [{**{key: rules[candidate[side + "_rule_id"]].get(key)
                                   for key in ("rule_id", "source", "target", "selector", "scope_bindings")},
                                   "declaration": declared_reference_evidence(data, rules[candidate[side + "_rule_id"]])}
                                  for side in ("source", "target")],
             "contract": "Judge a configuration purpose, not a formula or row identity. Code equality and "
                         "co-occurrence are insufficient. Quote one complete source item that explains the "
-                        "metric's measure, business object, or dimension binding. Return unresolved when absent."}
+                        "definition or resource's measure, business object, or dimension binding. "
+                        "Select source_type_id and role from allowed_bindings; a resource reference "
+                        "is not a quantity definition or a calculation. Return unresolved when absent."}
 
 
 def checked_purpose_decision(packet, decision):
@@ -309,7 +391,12 @@ def checked_purpose_decision(packet, decision):
     if (source is None or not decision.role or not decision.purpose_quote.strip()
             or decision.purpose_quote != source["text"] or not decision.reason.strip()):
         raise ValueError("Configuration purpose requires a complete source quote and explanation")
+    allowed = [item for item in packet.get("allowed_bindings", []) if item["role"] == decision.role
+               and (decision.source_type_id is None or item["source_type_id"] == decision.source_type_id)]
+    if len(allowed) != 1:
+        raise ValueError("Configuration purpose requires an unambiguous supported source endpoint")
     return {"role": decision.role, "evidence_id": decision.evidence_id, "quote": source["text"],
+            "source_type_id": allowed[0]["source_type_id"],
             "declaration": decision.reason, "method": "bounded_model_purpose_judgement",
             "packet_hash": digest(packet)}
 
@@ -403,8 +490,18 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
                             "declaration": declaration,
                             "verification_hash": digest(rule["verification"])})
     left, right = endpoints["source"], endpoints["target"]
-    source, target = (left, right) if _root(left, types) == "Metric" else (right, left)
-    _endpoints(types, source.id, target.id, role)
+    options = [(source, target) for source, target in ((left, right), (right, left))
+               if role in _SLOT_CONTRACTS.get(_root(source, types), {})
+               and _root(target, types) == _SLOT_CONTRACTS[_root(source, types)][role][2]
+               and (purpose.get("source_type_id") is None or source.id == purpose["source_type_id"])]
+    # Existing literal declarations explicitly say "Metric". They must not
+    # silently authorize a resource relationship with a different meaning.
+    if purpose.get("method") != "bounded_model_purpose_judgement":
+        options = [(source, target) for source, target in options if _root(source, types) == "Metric"]
+    if len(options) != 1:
+        raise ValueError("Configuration purpose does not uniquely determine a registered endpoint contract")
+    source, target = options[0]
+    _endpoints(types, source.id, target.id, role, data)
     evidence_ids = sorted(set(candidate["evidence_ids"] + [purpose["evidence_id"]]))
     # Endpoint proof may include earlier automatic audits; binding proof keeps
     # the original records/schema and the exact two executable reference paths.

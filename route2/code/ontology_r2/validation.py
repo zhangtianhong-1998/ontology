@@ -41,19 +41,25 @@ def validate_plan(plan: BuildPlan, data, profile):
         if not set(item.domain + item.range) <= set(types):
             errors.append("relation domain/range names an unknown object type: " + item.id)
         if item.category == "business_relation_type":
+            from .relation_contract import predicate_endpoint_errors
+            errors.extend(reason + ": " + item.id for reason in
+                          predicate_endpoint_errors(item, plan.object_types))
             business_ids = {t.id for t in plan.object_types if t.category == "business_type"}
             valid_basis = (
                 (item.endpoint_basis == "record_alignment"
                  and item.evidence_scope in ("one_positive_pair_with_exact_type_alignments",
                                              "one_positive_pair_with_type_bindings"))
                 or (item.endpoint_basis == "configuration_reference"
-                    and item.evidence_scope == "one_configuration_witness_with_exact_type_alignments")
+                    and item.evidence_scope in ("one_configuration_witness_with_exact_type_alignments",
+                                                "one_configuration_witness_with_type_bindings"))
                 or (item.endpoint_basis == "calculation_binding"
                     and item.evidence_scope == "complete_calculation_definition"
                     and item.parent == "depends_on"
                     and item.predicate_name == "calculation_dependency")
                 or (item.endpoint_basis == "semantic_binding"
                     and item.evidence_scope == "checked_structured_binding")
+                or (item.endpoint_basis == "semantic_reference"
+                    and item.evidence_scope == "verified_lexical_member_path")
             )
             if (not item.domain or not item.range
                     or not set(item.domain + item.range) <= business_ids
@@ -82,6 +88,12 @@ def validate_plan(plan: BuildPlan, data, profile):
                 from .semantic_bindings import binding_relation_errors
                 errors.extend(reason + ": " + item.id for reason in
                               binding_relation_errors(data, item, plan.object_types))
+            if item.endpoint_basis == "semantic_reference":
+                from .semantic_references import verify_semantic_reference_relation
+                try:
+                    verify_semantic_reference_relation(data, item, plan)
+                except (ValueError, KeyError) as exc:
+                    errors.append("semantic reference proof failed: " + str(exc) + ": " + item.id)
         if item.endpoint_basis == "table_binding":
             bindings = [relation for relation in plan.relations if relation.predicate == item.id]
             if len(item.domain) != 1 or len(item.range) != 1 or not bindings:

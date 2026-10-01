@@ -107,8 +107,9 @@ def _eligible_groups(plan, data):
     groups = defaultdict(list)
     for item in plan.object_types:
         if (item.category != "business_type"
-                or item.derivation_kind != "exact_definition"
-                or item.evidence_scope != "definition_record"
+                or (item.derivation_kind, item.evidence_scope) not in {
+                    ("exact_definition", "definition_record"),
+                    ("template_projection", "projected_definition_template")}
                 or not item.label or not item.definition):
             continue
         root = _root_of(item, by_id)

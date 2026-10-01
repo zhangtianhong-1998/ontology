@@ -10,7 +10,7 @@ import json
 
 from .models import BuildPlan
 from .storage import digest
-from .template_projection import _fields, _match_text, _SEMANTIC, match_projection
+from .template_projection import _fields, _match_text, _SEMANTIC, _slot_target_mismatches, match_projection
 
 
 SEMANTIC_SLOTS = {"business_object", "measure", "dimension"}
@@ -28,7 +28,8 @@ def projection_match_report(template, record):
     if record.get("table") != template.get("source_table"):
         return None
     values, roles = _fields(record)
-    semantic = {key for key in values if roles[key] & _SEMANTIC}
+    semantic = {key for key in values if roles[key] & _SEMANTIC
+                and key not in template.get("instance_columns", {})}
     matched, missing = set(), {}
     for column in set(template["semantic_columns"]) ^ semantic:
         missing[column] = "semantic_field_set_changed"
@@ -70,6 +71,11 @@ def projection_match_report(template, record):
     class_quote = (template.get("class_definition") or {}).get("quote") or template.get("definition", "")
     class_supported = bool(class_quote and any(class_quote in values[column]
                            for column in values if "description" in roles[column]))
+    if template.get("class_definition_evidence"):
+        class_supported = all(values.get(item["column"]) == item["quote"]
+                              for item in template["class_definition_evidence"])
+    for name in _slot_target_mismatches(template["slots"], captures):
+        missing["slot:" + name] = "captured_value_not_supported_by_target_name_or_alias"
     protected = {column for column in values if roles[column] & {"formula", "unit", "identity"}}
     unresolved_slots = [{"name": slot["name"], "role": slot["role"], "label": slot["label"],
                          "observed_value": captures.get(slot["name"])}
@@ -107,9 +113,9 @@ def template_reuse_context(templates, bundle, *, limit=4):
         # an identity match. The full contract remains available for review.
         report["accepted_template"] = {key: deepcopy(template.get(key)) for key in (
             "template_id", "object_type_id", "source_table", "root_type", "label", "definition",
-            "class_definition", "definition_parameters", "identity_qualifiers", "applicability_scope", "semantic_columns", "invariants", "field_templates")}
+            "class_definition", "class_definition_evidence", "definition_parameters", "identity_qualifiers", "applicability_scope", "semantic_columns", "invariants", "instance_columns", "field_templates")}
         report["accepted_template"]["slots"] = [{key: deepcopy(slot.get(key)) for key in (
-            "name", "role", "label", "source_column", "fixed_value", "target_type_id", "target_component")
+            "name", "role", "label", "source_column", "fixed_value", "target_type_id", "target_component", "target_value_contract")
             if key in slot} for slot in template["slots"]]
         reports.append(report)
     complete_ids = sorted({item["object_type_id"] for item in reports if item["status"] == "complete_match"})
@@ -208,6 +214,117 @@ def lookup_observed_value_sources(data, index, tasks, *, max_tasks=64, max_candi
         "scope": "bounded_candidate_recall_not_exhaustive_member_discovery"}}
 
 
+def augment_template_repair_witnesses(data, index, repair_bundles, *, max_witnesses=2,
+                                      max_candidates=16, max_bundle_bytes=24000):
+    """Recall bounded variation witnesses for an already quoted class definition.
+
+    Retrieval only enriches a real field-gap repair. Every hit is refreshed from
+    its source row, and neither shared prose nor a lookup hit grants exact type
+    identity. In particular, the original exact-alignment allowlist is preserved.
+    """
+    from .definition_memberships import _read_rows
+    from .template_projection import _instance_columns
+
+    if type(max_witnesses) is not int or not 0 <= max_witnesses <= 2:
+        raise ValueError("Variation witness limit must be in 0..2")
+    if type(max_candidates) is not int or not 1 <= max_candidates <= 100:
+        raise ValueError("Variation candidate limit must be in 1..100")
+    if type(max_bundle_bytes) is not int or max_bundle_bytes < 1000:
+        raise ValueError("Variation bundle byte limit must be at least 1000")
+    if index.coverage.get("snapshot_id") != data.snapshot_id:
+        raise ValueError("Variation witness index has a different snapshot")
+    output, counts, search_cache = [], Counter(), {}
+    for original in repair_bundles:
+        packet = deepcopy(original)
+        output.append(packet)
+        task = packet.get("template_repair_task") or {}
+        seed = representative_record(packet)
+        if not max_witnesses or task.get("scope") != "template_field_gaps" or seed is None:
+            continue
+        seed_values, seed_roles = _fields(seed)
+        identities = {column: seed_values[column] for column in seed_values
+                      if "identity" in seed_roles[column]}
+        selected = None
+        for context in task.get("known_template_matches", []):
+            template = context.get("accepted_template") or {}
+            declaration = template.get("class_definition") or {}
+            quote, column = declaration.get("quote"), declaration.get("column")
+            if (context.get("status") == "partial_match" and context.get("unresolved_fields")
+                    and not context.get("protected_fields_changed")
+                    and template.get("source_table") == seed["table"]
+                    and template.get("identity_qualifiers", {}) == identities
+                    and isinstance(quote, str) and 0 < len(quote) <= 512
+                    and "description" in seed_roles.get(column, set())
+                    and quote in seed_values[column]):
+                selected = template, quote, column, {item["column"] for item in context["unresolved_fields"]}
+                break
+        if selected is None:
+            continue
+        template, quote, column, gap_columns = selected
+        counts["bundles_queried"] += 1
+        query_key = seed["table"], quote
+        if query_key not in search_cache:
+            search_cache[query_key] = index.search(quote, limit=max_candidates,
+                                                   kind="definition", table=seed["table"])
+            counts["index_queries"] += 1
+        hits = search_cache[query_key]
+        counts["index_hits_examined"] += len(hits)
+        seen = {record["record_id"] for record in packet["records"]}
+        additions = 0
+        for hit in hits:
+            if hit["table"] != seed["table"] or hit["record_id"] in seen:
+                continue
+            columns = {entry["column"] for entries in hit.get("fields", {}).values() for entry in entries}
+            row = _read_rows(data, hit["table"], [hit["row_number"]], columns).get(hit["row_number"])
+            if row is None or data.record_id(hit["table"], row) != hit["record_id"]:
+                counts["stale_source_hits"] += 1
+                continue
+            card = deepcopy(hit)
+            for entries in card["fields"].values():
+                for entry in entries:
+                    entry.update(value=str(row.get(entry["column"]) or ""), truncated=False)
+            values, roles = _fields(card)
+            observed_identity = {field: values[field] for field in values if "identity" in roles[field]}
+            if (observed_identity != identities or "description" not in roles.get(column, set())
+                    or quote not in values[column]
+                    or any(values.get(field) != value for field, value in template.get("applicability_scope", {}).items())):
+                counts["incompatible_source_hits"] += 1
+                continue
+            instance_fields = set(_instance_columns(data, card, template.get("slots", [])))
+            instance_fields.update(field for field in values if roles[field] & {"name", "reference"})
+            varied = sorted(field for field in instance_fields & seed_values.keys()
+                            if values[field] != seed_values[field])
+            # ID variation alone is not useful: require a different descriptive
+            # instance field as well as the identical quoted class definition.
+            if (not varied or not any(roles[field] & {"name", "scope", "description"} for field in varied)
+                    or not any(field in values and field in seed_values and values[field] != seed_values[field]
+                               for field in gap_columns)):
+                continue
+            card.update(context_role="repair_witness", candidate_status="unjudged",
+                        identity_claim="none", variation_template_id=template["template_id"])
+            proposed = deepcopy(packet)
+            proposed["records"].append(card)
+            proposed.setdefault("exact_alignment_record_ids", [seed["record_id"]])
+            proposed["template_repair_task"].setdefault("variation_witnesses", []).append({
+                "record_id": card["record_id"], "source_column": column,
+                "class_definition_quote": quote, "changed_instance_fields": varied,
+                "status": "candidate_only_not_exact_alignment"})
+            if len(json.dumps(proposed, ensure_ascii=False, default=str).encode("utf-8")) > max_bundle_bytes:
+                counts["witnesses_omitted_by_byte_limit"] += 1
+                continue
+            packet = proposed
+            output[-1] = packet
+            seen.add(card["record_id"])
+            additions += 1
+            counts["witnesses_added"] += 1
+            if additions >= max_witnesses:
+                break
+    return {"bundles": output, "coverage": {**dict(counts), "llm_calls": 0,
+        "max_witnesses_per_bundle": max_witnesses, "max_candidates_per_bundle": max_candidates,
+        "max_bundle_bytes": max_bundle_bytes, "exact_alignments_added": 0,
+        "scope": "bounded_same_table_class_quote_candidates"}}
+
+
 def build_targeted_repair_tasks(data, bundles, prior_result, *, max_tasks=24, max_examples=3, round_number=2,
                                 max_value_tasks=64):
     """Build new task IDs for gaps, preserving the first pass and its bindings."""
@@ -232,7 +349,16 @@ def build_targeted_repair_tasks(data, bundles, prior_result, *, max_tasks=24, ma
                 value = binding.get("slot_values", {}).get(slot["name"])
                 if slot["role"] in SEMANTIC_SLOTS and value is not None:
                     known_values.add((template["source_table"], slot["role"], slot["name"], value))
-    previous = {step["bundle_id"]: step for step in prior_result.get("steps", [])}
+    previous = {}
+    # Repair IDs are new each round. Map the latest outcome back to every
+    # original bundle it addressed, including failed/no-change repairs.
+    for step in prior_result.get("steps", []):
+        previous[step["bundle_id"]] = step
+        sources = set(step.get("source_bundle_ids", [])) | set(step.get("resolved_source_bundle_ids", []))
+        if step.get("source_bundle_id"):
+            sources.add(step["source_bundle_id"])
+        for source_id in sources:
+            previous[source_id] = step
     grouped, counts = {}, Counter()
     for bundle in bundles:
         if bundle.get("task_kind") != "concept_induction":
@@ -302,6 +428,7 @@ def build_targeted_repair_tasks(data, bundles, prior_result, *, max_tasks=24, ma
                                  if item["record_id"] not in seen)
         seed = representative_record(packet)
         context = {"task_id": task_id, "round_number": round_number, "scope": group["scope"],
+                   "source_bundle_ids": list(group["source_bundle_ids"]),
                    "preserve_type_id": group["preserve_type_id"], "previous_error": group["previous_error"],
                    "known_template_matches": group["contexts"],
                    "component_type_candidates": component_type_candidates(core, seed),
@@ -313,6 +440,7 @@ def build_targeted_repair_tasks(data, bundles, prior_result, *, max_tasks=24, ma
                        "formulas and parameters. A candidate name is retrieval evidence, not an endpoint binding. "
                        "Unknown slot values require source definitions or membership evidence; do not invent a new type.")}
         packet.update(bundle_id=task_id, source_bundle_id=group["bundle"]["bundle_id"],
+                      source_bundle_ids=list(group["source_bundle_ids"]),
                       template_repair_task=context, template_repair_sources=group["example_sources"])
         tasks.append(context)
         repair_bundles.append(packet)

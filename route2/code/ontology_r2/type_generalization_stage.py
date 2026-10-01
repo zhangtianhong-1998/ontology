@@ -14,7 +14,7 @@ from .group_incremental import ROOTS
 from .llm import BudgetExceeded
 from .type_generalization import (
     GeneralizationDecision, _semantic_fragments, compile_generalization,
-    propose_generalization_candidates,
+    propose_generalization_candidates, generalization_eligible_types,
 )
 
 
@@ -75,10 +75,7 @@ async def run_generalization(data, profile, core, decide, *, max_pairs=20,
 
     candidates = propose_generalization_candidates(core, data, max_pairs)
     types = {item.id: item for item in core.object_types}
-    eligible = {item.id for item in core.object_types
-                if item.category == "business_type" and item.parent in ROOTS
-                and item.derivation_kind in (None, "exact_definition")
-                and any(_semantic_fragments(data, item))}
+    eligible = {item.id for item in generalization_eligible_types(core, data)}
     candidate_type_ids = {type_id for candidate in candidates
                           for type_id in candidate["child_type_ids"]}
     current = core.model_copy(deep=True)
@@ -140,6 +137,9 @@ async def run_generalization(data, profile, core, decide, *, max_pairs=20,
         "candidate_generation": "bounded_lexical_recall_candidate_only",
         "all_possible_pairs_enumerated": False,
         "eligible_source_type_count": len(eligible),
+        "excluded_measure_type_count": sum(item.category == "business_type" and item.parent == "Measure"
+                                            for item in core.object_types),
+        "measure_exclusion_reason": "requires_reusable_quantity_scope_contract",
         "candidate_pairs_returned": len(candidates),
         "types_in_candidate_pairs": len(candidate_type_ids),
         "eligible_types_outside_candidate_pairs": len(unselected),
