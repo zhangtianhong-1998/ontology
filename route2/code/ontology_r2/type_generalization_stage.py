@@ -36,6 +36,7 @@ def _packet(data, candidate, types):
             "applicability_scope": item.applicability_scope,
             "definition_parameters": item.definition_parameters,
             "identity_qualifiers": item.identity_qualifiers,
+            "classification_attributes": item.classification_attributes,
             "derivation_kind": item.derivation_kind,
             "definition_fragments": fragments,
         })

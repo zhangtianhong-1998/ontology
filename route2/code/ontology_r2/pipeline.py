@@ -185,6 +185,13 @@ async def build(config, output):
     try:
         progress = ProgressReporter(config.get("progress"))
         repair_settings(config.get("targeted_repair"), config["llm"].get("max_calls", 100))
+        path_options = config.get("configuration_relations", {})
+        if (not isinstance(path_options, dict)
+                or type(path_options.get("auxiliary_paths", False)) is not bool):
+            raise ValueError("configuration_relations.auxiliary_paths must be boolean")
+        for key in ("max_auxiliary_witnesses", "max_auxiliary_paths_per_witness"):
+            if key in path_options and (type(path_options[key]) is not int or path_options[key] < 0):
+                raise ValueError(f"configuration_relations.{key} must be a nonnegative integer")
         instance_options = config.get("ontology_instantiation", {})
         if (not isinstance(instance_options, dict)
                 or set(instance_options) - {"enabled", "max_records", "max_assertions"}
@@ -554,6 +561,8 @@ async def build(config, output):
         configuration_relations = {"candidates": [],
                                    "coverage": {"status": "disabled", "partial": False}}
         configuration_members = memberships["memberships"] + group_result.get("template_bindings", [])
+        auxiliary_paths = {"candidates": [], "proofs": [], "pending": [],
+                           "coverage": {"status": "disabled", "partial": False}}
         if config_relation_options.get("enabled", False):
             configuration_specs = completed_stage("configuration_specs") or infer_configuration_specs(
                 data, plan, group_result["concepts"], group_result["record_alignments"],
@@ -565,6 +574,21 @@ async def build(config, output):
                 [item["spec"] for item in configuration_specs["spec_candidates"]],
                 max_pairs_per_spec=config_relation_options.get("max_pairs_per_spec", 200),
                 memberships=configuration_members)
+            if config_relation_options.get("auxiliary_paths", False):
+                from .auxiliary_relation_paths import build_auxiliary_path_projections
+                auxiliary_paths = completed_stage("auxiliary_paths") or build_auxiliary_path_projections(
+                    data, plan, association["rules"], group_result["concepts"],
+                    group_result["record_alignments"], memberships=configuration_members,
+                    max_witnesses=config_relation_options.get("max_auxiliary_witnesses", 200),
+                    max_paths_per_witness=config_relation_options.get("max_auxiliary_paths_per_witness", 16))
+                by_id = {candidate["id"]: candidate for candidate in configuration_relations["candidates"]}
+                # Keep both discovery routes. Semantic scheduling deduplicates
+                # the same witness/endpoints/text and prefers the path proof.
+                by_id.update({candidate["id"]: candidate for candidate in auxiliary_paths["candidates"]})
+                configuration_relations["candidates"] = list(by_id.values())
+        for name in ("proofs", "pending", "coverage"):
+            write_yaml(output / f"auxiliary_relation_{name}.yaml", auxiliary_paths[name])
+        manifest["auxiliary_relations"] = auxiliary_paths["coverage"]
         config_decisions = {"assertions": [], "steps": [],
                             "coverage": {"status": "disabled", "partial": False,
                                          "accepted": 0, "attempted": 0, "not_attempted": 0}}
@@ -606,12 +630,15 @@ async def build(config, output):
             "spec_candidates": len(configuration_specs["spec_candidates"]),
             "endpoint_verified_candidates": configuration_relations["coverage"].get(
                 "endpoint_verified_candidates", 0),
+            "auxiliary_endpoint_candidates": len(auxiliary_paths["candidates"]),
+            "combined_candidate_records": len(configuration_relations["candidates"]),
             "semantic_decisions": config_decisions["coverage"].get("attempted", 0),
             "accepted_business_relations": config_decisions["coverage"].get("accepted", 0),
             "predicate_status": "accepted_per_witness_or_unjudged",
             "partial": bool(configuration_specs["coverage"].get("partial")
                             or configuration_relations["coverage"].get("partial")
-                            or config_decisions["coverage"].get("partial")),
+                            or config_decisions["coverage"].get("partial")
+                            or auxiliary_paths["coverage"].get("partial")),
         }
         semantic_references = {"instances": [], "assertions": [], "paths": [], "pending": [],
                                "coverage": {"status": "disabled", "partial": False}}
@@ -787,6 +814,7 @@ async def build(config, output):
                                               "generalization": generalization,
                                               "configuration_specs": configuration_specs,
                                               "configuration_relations": configuration_relations,
+                                              "auxiliary_paths": auxiliary_paths,
                                               "config_decisions": config_decisions,
                                               "equivalence": equivalence,
                                               "fact_schema": fact_schema,
@@ -799,6 +827,15 @@ async def build(config, output):
         write_yaml(output / "concept_relations.yaml", group_result["concept_relations"])
         write_yaml(output / "concept_relation_derivations.yaml",
                    group_result["concept_relation_derivations"])
+        if config.get("instance_bundles", {}).get("enabled", False):
+            from .definition_coverage import summarize_definition_coverage
+            definition_coverage = summarize_definition_coverage(
+                output / "work" / "semantic_cards.sqlite", group_result,
+                definition_memberships=memberships["memberships"], plan=plan, data=data)
+            write_yaml(output / "definition_source_coverage.yaml", definition_coverage)
+            manifest["definition_source_coverage"] = {
+                "scope": definition_coverage["scope"], **definition_coverage["totals"],
+                "source_index_partial": definition_coverage["source_index_partial"]}
         instance_graph = {"objects": [], "assertions": [], "source_mappings": [], "pending": [],
                           "coverage": {"status": "disabled", "partial": False}}
         if instance_options.get("enabled", False):

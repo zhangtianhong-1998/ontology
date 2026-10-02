@@ -15,6 +15,7 @@ from typing import Literal
 
 from .models import BuildPlan, DerivedType, Strict
 from .storage import digest
+from .unit_identity import unit_identity
 
 
 ROOTS = frozenset(("GeneralObject", "Measure", "Metric", "Dimension", "Term"))
@@ -115,7 +116,7 @@ def _eligible_groups(plan, data):
         root = _root_of(item, by_id)
         if root is None:
             continue
-        unit = _norm(item.unit)
+        unit = unit_identity(item.unit)
         # Two unknown units do not establish a compatible quantitative unit.
         if root == "Metric" and not unit:
             continue
@@ -131,7 +132,8 @@ def _eligible_groups(plan, data):
         # case or whitespace here could erase a meaningful calculation setting.
         parameters = tuple(sorted(item.definition_parameters.items()))
         key = (root, _norm(item.label), unit, scope, item.aggregation_operator, parameters,
-               tuple(sorted(item.identity_qualifiers.items())))
+               tuple(sorted(item.identity_qualifiers.items())),
+               tuple(sorted(item.classification_attributes.items())))
         groups[key].append((item, fragments))
     for values in groups.values():
         values.sort(key=lambda pair: pair[0].id)
@@ -150,6 +152,7 @@ def _candidate(data, group_key, source, target):
         "unit": left.unit, "aggregation_operator": left.aggregation_operator,
         "applicability_scope": dict(group_key[3]),
         "definition_parameters": dict(left.definition_parameters),
+        "classification_attributes": dict(left.classification_attributes),
         "status": "candidate_only",
     }
 
@@ -201,6 +204,9 @@ def compile_equivalence(data, core: BuildPlan, candidate, decision):
         raise ValueError("Decision does not name the exact candidate pair")
     current_types = {item.id: item for item in core.object_types}
     if (source_id in current_types and target_id in current_types
+            and current_types[source_id].classification_attributes != current_types[target_id].classification_attributes):
+        raise ValueError("Source classification attributes differ; exact equivalence is unsupported")
+    if (source_id in current_types and target_id in current_types
             and current_types[source_id].identity_qualifiers != current_types[target_id].identity_qualifiers):
         raise ValueError("Definition identity qualifiers differ; cross-namespace equivalence is unsupported")
     if (source_id in current_types and target_id in current_types
@@ -221,6 +227,8 @@ def compile_equivalence(data, core: BuildPlan, candidate, decision):
         raise ValueError("Candidate identity changed")
     if candidate.get("definition_parameters", {}) != source.definition_parameters:
         raise ValueError("Candidate definition parameters changed")
+    if candidate.get("classification_attributes", {}) != source.classification_attributes:
+        raise ValueError("Candidate classification attributes changed")
     left = _selected_fragment(source_fragments, "description",
                               decision.source_description_evidence_id,
                               decision.source_description_quote)
@@ -283,6 +291,7 @@ def compile_equivalence(data, core: BuildPlan, candidate, decision):
         "unit": source.unit, "aggregation_operator": source.aggregation_operator,
         "applicability_scope": source.applicability_scope,
         "definition_parameters": dict(source.definition_parameters),
+        "classification_attributes": dict(source.classification_attributes),
         "source_description_evidence_ids": [x["evidence_id"] for x in source_fragments["description"]],
         "target_description_evidence_ids": [x["evidence_id"] for x in target_fragments["description"]],
         "source_formula_evidence_ids": [x["evidence_id"] for x in source_fragments["formula"]],

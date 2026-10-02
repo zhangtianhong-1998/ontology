@@ -35,7 +35,8 @@ def test_declared_physical_names_only_share_scheduling_pattern(tmp_path):
             "reason": "declared_physical_resource_name", "declaration": "physical table name，合成业务字段",
             "schema_evidence_id": "schema:fruit.resource_definition:physical_table_name",
             "scope": "definition_pattern_scheduling_only", "entity_identity_claim": False,
-            "template_membership_still_compares_original_value": True}]
+            "template_membership_requires_complete_projection_contract": True,
+            "original_value_retained_as_source_or_instance_value": True}]
         assert "physical_table_name" not in report["binding_columns_excluded_from_semantic_pattern"]
         index = SemanticCardIndex(built["index_path"])
         try:

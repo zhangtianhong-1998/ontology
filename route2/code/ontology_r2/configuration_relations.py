@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict, deque
 from itertools import combinations
+import json
 import re
 
 from pydantic import Field
@@ -44,6 +45,70 @@ _RELATION_TEXT = re.compile(
     r"(?:^|_)(?:relation|relationship|dependency|depends|formula|description|rule)"
     r"(?:_|$)|关系|依赖|计算公式|关系说明|引用说明", re.I)
 _RELATION_VALUE = re.compile(r"包含|含有|依赖|取决于|指向|引用|关联|相关于|\b(?:contains|depends on|points to|references|related to)\b", re.I)
+
+
+def _structured_document(value):
+    """A document containing codes is not a statement about any chosen pair."""
+    try:
+        return isinstance(json.loads(value), (dict, list))
+    except (TypeError, ValueError):
+        return False
+
+
+def configuration_text_pair_binding(data, candidate, types):
+    """Bind text to this pair, without accepting its predicate or direction.
+
+    Complete sentences may identify both current endpoints by their codes or
+    names. A generic purpose statement can describe the sole schema-declared
+    reference pair. JSON requires its own declared field-path contract; a
+    table-wide document must never be borrowed by arbitrary column pairings.
+    """
+    literal = candidate.get("predicate_literal")
+    if not candidate.get("relation_text_column") or literal is None:
+        return None
+    if not isinstance(literal, str) or not literal.strip() or _structured_document(literal):
+        raise ValueError("configuration_text_is_not_a_statement_for_the_selected_reference_pair")
+
+    def mentioned(anchor):
+        if not isinstance(anchor, str) or len(anchor.strip()) < 2:
+            return False
+        # Do not match Q1 inside Q10. This is only recall; compilation checks
+        # the full positive clause and preserves direction and qualifiers.
+        return re.search(r"(?<![A-Za-z0-9_])" + re.escape(anchor.strip()) +
+                         r"(?![A-Za-z0-9_])", literal, re.I) is not None
+
+    anchors = []
+    for side in ("source", "target"):
+        endpoint = candidate.get(side + "_definition", {})
+        item = types.get(candidate.get(side + "_type_id"))
+        label = item.label if item is not None else None
+        values = [candidate.get(side + "_code"), label, *endpoint.get("lookup_scope", {}).values()]
+        anchors.append({value for value in values if mentioned(value)})
+    if any(left != right for left in anchors[0] for right in anchors[1]):
+        return {"kind": "literal_endpoint_anchors", "column": candidate["relation_text_column"],
+                "source_anchors": sorted(anchors[0]), "target_anchors": sorted(anchors[1])}
+    table = data.tables[candidate["configuration_table"]]
+    declared = {item["column_name"] for item in table["columns"]
+                if re.search(r"引用|对应.*(?:编码|定义|表)|\b(?:references?|foreign key)\b",
+                             str(item.get("column_comment") or ""), re.I)}
+    declared.update(fk.get("column_name") for fk in table.get("foreign_keys", ()))
+    selected = {candidate.get("source_code_column"), candidate.get("target_code_column")}
+    if len(selected) == 2 and declared == selected:
+        return {"kind": "sole_schema_declared_reference_pair", "column": candidate["relation_text_column"],
+                "reference_columns": sorted(selected)}
+    raise ValueError("configuration_text_does_not_identify_the_selected_reference_pair")
+
+
+def verify_configuration_pair(data, plan, candidate, witness):
+    """Recheck cheap pair constraints before semantic judgement or replay."""
+    left = candidate.get("source_definition", {}).get("record_id")
+    right = candidate.get("target_definition", {}).get("record_id")
+    if left and left == right:
+        raise ValueError("configuration_references_resolve_to_the_same_record")
+    column = candidate.get("relation_text_column")
+    if column and witness.get(column) != candidate.get("predicate_literal"):
+        raise ValueError("Configuration relationship text is absent, changed or over budget")
+    return configuration_text_pair_binding(data, candidate, {item.id: item for item in plan.object_types})
 
 
 def _accepted_definition_roots(data, plan, concepts, alignments, memberships=()):
@@ -88,7 +153,8 @@ def _relation_text_candidate(data, table_name, reference_columns):
         for position, name in enumerate(visible):
             values = [row[position] for row in rows if isinstance(row[position], str)
                       and row[position].strip() and len(row[position]) <= 1024]
-            if not values or all(re.fullmatch(r"[\d\s.+-]+", value) for value in values):
+            if not values or all(re.fullmatch(r"[\d\s.+-]+", value) or _structured_document(value)
+                                 for value in values):
                 continue
             column = next(value for value in table["columns"] if value["column_name"] == name)
             declared = bool(_RELATION_TEXT.search(name + " " + str(column.get("column_comment") or "")))
@@ -100,12 +166,13 @@ def _relation_text_candidate(data, table_name, reference_columns):
     return None
 
 
-def declared_reference_evidence(data, rule):
-    """Return an exact original FK declaration, never infer one from key overlap.
+def declared_reference_evidence(data, rule, *, definition_tables=None):
+    """Resolve an original FK or explicitly named target column declaration.
 
     A bridge column may be both PK and FK. This exception proves the reference
     path only; full-input uniqueness and the business predicate still need
-    their independent checks. Unparsed comments are not declaration evidence.
+    their independent checks. Bare target columns require one definition
+    table in the supplied accepted-type scope, never a best name match.
     """
     source, target = rule.get("source") or {}, rule.get("target") or {}
     local = data.tables.get(source.get("table"))
@@ -119,6 +186,62 @@ def declared_reference_evidence(data, rule):
                 and fk.get("referenced_column") == target.get("field")):
             return {"kind": "declared_foreign_key", "source_table": source["table"],
                     "declaration": dict(fk)}
+    column = next((item for item in local["columns"] if item["column_name"] == source.get("field")), {})
+    quote = str(column.get("column_comment") or "")
+    scope = sorted(set(data.tables if definition_tables is None else definition_tables))
+    target_roots = definition_tables if isinstance(definition_tables, dict) else {}
+    for clause in re.split(r"[,;，；。\n]", quote):
+        if re.search(r"不|未|可能|或|\b(?:not|may|or|unless)\b", clause, re.I):
+            continue
+        # Conditional branches are literal discriminator values, not a
+        # guessed interpretation of labels such as "dimension-like".
+        conditional = re.fullmatch(r"\s*([A-Za-z_][\w-]*)\s*(?:引用|references?)\s*([A-Za-z_][\w.]*)\s*", clause, re.I)
+        condition = {}
+        if conditional:
+            branch, token = conditional.groups()
+            fields = [item["column_name"] for item in local["columns"]
+                      if (rule.get("selector") or {}).get(item["column_name"]) == branch
+                      and re.search(r"类型|种类|\b(?:type|kind|discriminator)\b",
+                                    str(item.get("column_comment") or ""), re.I)]
+            if len(fields) != 1:
+                continue
+            condition = {fields[0]: branch}
+        else:
+            match = re.search(r"(?:引用|对应|\breferences?\s+)[^A-Za-z_]*([A-Za-z_][\w.]*)", clause, re.I)
+            if not match:
+                # "quantity code, corresponds to the measure definition"
+                # declares the local code's role. Without a named definition
+                # root below this cannot fall back to same-column matching.
+                token = source.get("field", "")
+            else:
+                token = match.group(1).rstrip(".")
+        declared_roots = {root for root, name in (("Dimension", "维度"), ("Measure", "度量"), ("Metric", "指标"))
+                          if re.search(r"(?:引用|对应|references?).*(?:" + name + "|" + root +
+                                       r").*(?:定义|definition)", clause, re.I)}
+        if not conditional and match is None and (len(declared_roots) != 1 or not
+                re.search(r"编码|\bcode\b", quote, re.I)):
+            continue
+        parts = token.split(".")
+        if len(parts) > 3 or parts[-1] != target.get("field"):
+            continue
+        matches = []
+        for name in scope:
+            table = data.tables.get(name, {})
+            if declared_roots and (len(declared_roots) != 1 or target_roots.get(name) != declared_roots):
+                continue
+            if parts[-1] not in table.get("column_names", []):
+                continue
+            if len(parts) == 3 and name != ".".join(parts[:2]):
+                continue
+            if len(parts) == 2 and table.get("table_name") != parts[0]:
+                continue
+            matches.append(name)
+        if matches != [target.get("table")]:
+            continue
+        return {"kind": "declared_column_reference", "source_table": source["table"],
+                "column": source["field"], "quote": quote, "target_token": token,
+                "target": dict(target), "condition": condition,
+                "definition_table_scope": scope, "declared_target_roots": sorted(declared_roots)}
     return None
 
 
@@ -477,7 +600,6 @@ def discover_configuration_relations(
                               item["target_code"], target_scope)
             verified = source["status"] == target["status"] == "accepted_type"
             status = "endpoint_verified_candidate" if verified else "unresolved"
-            statuses[status] += 1
             candidate = {
                 "id": "configuration_relation_candidate:" + digest([
                     data.snapshot_id, spec.spec_id, item["source_code"], item["target_code"],
@@ -511,6 +633,12 @@ def discover_configuration_relations(
                 "evidence_scope": "one_configuration_witness_with_full_snapshot_unique_code_lookup",
                 "semantic_status": "code_references_do_not_prove_relation_meaning",
             }
+            if verified:
+                try:
+                    candidate["text_pair_binding"] = verify_configuration_pair(data, plan, candidate, witness)
+                except ValueError as exc:
+                    candidate.update(status="unresolved", reason=str(exc))
+            statuses[candidate["status"]] += 1
             candidates.append(candidate)
         reports.append({"spec_id": spec.spec_id, "configuration_table": spec.configuration_table,
                         "scan_scope": "full_input", "input_rows": total_rows,

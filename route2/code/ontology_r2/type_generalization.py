@@ -16,6 +16,7 @@ from pydantic import Field
 
 from .models import BuildPlan, DerivedType, Strict
 from .storage import digest
+from .unit_identity import unit_identity
 from .validation import validate_plan
 
 
@@ -113,10 +114,11 @@ def propose_generalization_candidates(plan: BuildPlan, data, max_pairs: int):
     for item in eligible:
         fragments = list(_semantic_fragments(data, item))
         if fragments:
-            by_group[(item.parent, _norm(item.unit), tuple(sorted(item.definition_parameters.items())),
-                      tuple(sorted(item.identity_qualifiers.items())))].append((item, fragments))
+            by_group[(item.parent, unit_identity(item.unit), tuple(sorted(item.definition_parameters.items())),
+                      tuple(sorted(item.identity_qualifiers.items())),
+                      tuple(sorted(item.classification_attributes.items())))].append((item, fragments))
     ranked = []
-    for (root, unit, parameters, qualifiers), entries in by_group.items():
+    for (root, unit, parameters, qualifiers, classifications), entries in by_group.items():
         inverted = defaultdict(list)
         for index, (_, fragments) in enumerate(entries):
             for term in _terms(" ".join(fragment for _, _, fragment, _ in fragments)):
@@ -144,6 +146,7 @@ def propose_generalization_candidates(plan: BuildPlan, data, max_pairs: int):
                            "unit": unit or None, "lexical_overlap": score,
                            "definition_parameters": dict(parameters),
                            "identity_qualifiers": dict(qualifiers),
+                           "classification_attributes": dict(classifications),
                            "status": "candidate_only",
                            "candidate_id": "generalization:" + digest(identity)[:24]})
     return sorted(ranked, key=lambda x: (-x["lexical_overlap"], x["child_type_ids"]))[:max_pairs]
@@ -202,12 +205,15 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
         raise ValueError("Measure generalization requires a reusable-quantity scope contract")
     parameters = dict(children[0].definition_parameters)
     qualifiers = dict(children[0].identity_qualifiers)
+    classifications = dict(children[0].classification_attributes)
+    if any(item.classification_attributes != classifications for item in children[1:]):
+        raise ValueError("Child classification attributes differ; classification-dropping generalization is unsupported")
     if any(item.identity_qualifiers != qualifiers for item in children[1:]):
         raise ValueError("Child identity qualifiers differ; cross-namespace generalization is unsupported")
     if any(item.definition_parameters != parameters for item in children[1:]):
         raise ValueError("Child definition parameters differ; parameter-dropping generalization is unsupported")
-    units = {_norm(item.unit) for item in children}
-    if len(units) != 1 or _norm(decision.unit) not in units:
+    units = {unit_identity(item.unit) for item in children}
+    if len(units) != 1 or unit_identity(decision.unit) not in units:
         raise ValueError("Child units conflict with the proposed parent unit")
     if decision.root_type == "Metric" and not next(iter(units)):
         raise ValueError("Quantitative generalization requires known compatible units")
@@ -222,19 +228,22 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
     label = " ".join(_norm(decision.label).split())
     definition = " ".join(_norm(decision.definition).split())
     identity = ["shared_supertype", decision.root_type, label,
-                definition, common_scope, _norm(decision.unit)]
+                definition, common_scope, unit_identity(decision.unit)]
     # Empty parameters retain old IDs, allowing pre-parameter plans to replay.
     if parameters:
         identity.append(parameters)
     if qualifiers:
         identity.append({"identity_qualifiers": qualifiers})
+    if classifications:
+        identity.append({"classification_attributes": classifications})
     parent_id = "type:" + digest(identity)[:24]
     old_parent = existing.get(parent_id)
     if old_parent and (old_parent.category != "business_type"
                        or old_parent.derivation_kind != "shared_supertype"
                        or old_parent.parent != decision.root_type
                        or old_parent.definition != decision.definition.strip()
-                       or old_parent.definition_parameters != parameters):
+                       or old_parent.definition_parameters != parameters
+                       or old_parent.classification_attributes != classifications):
         raise ValueError("Generalized parent ID conflicts with an existing type")
 
     evidence_ids, templates, terms, record_ids = set(), [], set(), set()
@@ -312,6 +321,7 @@ def compile_generalization(data, profile, core: BuildPlan, decision):
         applicability_scope=common_scope,
         definition_parameters=parameters,
         identity_qualifiers=qualifiers,
+        classification_attributes=classifications,
         evidence_scope="multiple_definition_records",
         evidence_ids=sorted(evidence_ids),
         source_concept_ids=sorted({concept_id for item in children

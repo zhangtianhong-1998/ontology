@@ -54,11 +54,11 @@ def test_repair_witnesses_keep_exact_quote_identity_and_source_freshness(tmp_pat
         data.close()
 
 
-def test_witness_lookup_only_enriches_bounded_field_gap_repairs(tmp_path):
+def test_witness_lookup_only_enriches_bounded_definition_or_field_gap_repairs(tmp_path):
     data, index, packet = fixture(tmp_path)
     try:
         no_gap = deepcopy(packet)
-        no_gap["template_repair_task"]["scope"] = "unresolved_source_definition"
+        no_gap["template_repair_task"]["scope"] = "template_slot_endpoints"
         result = augment_template_repair_witnesses(data, index, [no_gap])
         assert result["bundles"] == [no_gap]
         assert result["coverage"].get("bundles_queried", 0) == 0

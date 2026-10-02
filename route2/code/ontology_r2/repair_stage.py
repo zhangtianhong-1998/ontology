@@ -59,12 +59,16 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
     first_skipped = result.get('bundles_skipped', 0)
     stop_reason = 'round_limit'
     attempted_fingerprints = set(result.get('repair_attempt_fingerprints', []))
+    blocked_fingerprints = set(result.get('repair_input_blocked_fingerprints', []))
+    def input_fingerprint(bundle):
+        return digest([repair_evidence_fingerprint(bundle), llm.config.get('max_input_bytes', 100000)])
     pending = {'repair_tasks_not_attempted': 0, 'groups_not_selected': 0,
                'observed_value_tasks_not_selected': 0}
     for number in range(2, settings['max_rounds'] + 1):
         tasks = build_targeted_repair_tasks(
             data, bundles, result, max_tasks=max(len(bundles), settings['max_tasks_per_round']),
-            max_examples=settings['max_examples_per_task'], round_number=number)
+            max_examples=settings['max_examples_per_task'], round_number=number,
+            max_bundle_bytes=bundle_options.get('max_bundle_bytes', 24000))
         if index is not None:
             from .template_reuse import augment_template_repair_witnesses
             augmented = augment_template_repair_witnesses(
@@ -76,17 +80,22 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
         tasks['bundles'] = [bundle for bundle in tasks['bundles']
                            if repair_evidence_fingerprint(bundle) not in attempted_fingerprints]
         deferred = proposed_count - len(tasks['bundles'])
+        blocked_count = sum(input_fingerprint(bundle) in blocked_fingerprints for bundle in tasks['bundles'])
+        tasks['bundles'] = [bundle for bundle in tasks['bundles']
+                           if input_fingerprint(bundle) not in blocked_fingerprints]
         extra = max(0, len(tasks['bundles']) - settings['max_tasks_per_round'])
         tasks['bundles'] = tasks['bundles'][:settings['max_tasks_per_round']]
         tasks['coverage']['groups_not_selected'] = tasks['coverage'].get('groups_not_selected', 0) + extra
         tasks['coverage']['unchanged_tasks_deferred'] = deferred
+        tasks['coverage']['input_blocked_tasks_deferred'] = blocked_count
         # Discovery is refreshed after every changed round. Count its current
         # omissions, rather than retaining gaps a later round already repaired.
         pending = {'repair_tasks_not_attempted': 0,
                    'groups_not_selected': tasks['coverage'].get('groups_not_selected', 0),
                    'observed_value_tasks_not_selected': tasks['coverage'].get(
                        'observed_value_tasks_not_selected', 0),
-                   'unchanged_tasks_deferred': deferred}
+                   'unchanged_tasks_deferred': deferred,
+                   'input_blocked_tasks_deferred': blocked_count}
         report['tasks'].extend(tasks['tasks'])
         observed = {item['id']: item for item in report['observed_value_tasks']}
         observed.update({item['id']: item for item in tasks.get('observed_value_tasks', [])})
@@ -98,7 +107,8 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
             report['observed_value_lookup'] = lookup['coverage']
         row = {'round': number, 'discovery': tasks['coverage'], 'calls_before': llm.calls}
         if not tasks['bundles']:
-            stop_reason = 'awaiting_new_evidence' if deferred else 'no_targeted_tasks'
+            stop_reason = ('input_budget_blocked' if blocked_count else
+                           'awaiting_new_evidence' if deferred else 'no_targeted_tasks')
             break
         total = llm.config.get('max_calls', 100)
         ceiling = min(total - settings['reserve_calls_for_followup'],
@@ -122,6 +132,11 @@ async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
                                       for bundle in tasks['bundles']
                                       if bundle.get('bundle_id') in attempted_ids)
         result['repair_attempt_fingerprints'] = sorted(attempted_fingerprints)
+        blocked_ids = {step['bundle_id'] for step in result.get('steps', [])
+                       if step.get('status') == 'input_over_budget'}
+        blocked_fingerprints.update(input_fingerprint(bundle) for bundle in tasks['bundles']
+                                    if bundle.get('bundle_id') in blocked_ids)
+        result['repair_input_blocked_fingerprints'] = sorted(blocked_fingerprints)
         pending['repair_tasks_not_attempted'] = result.get('coverage', {}).get(
             'repair_tasks_not_attempted', 0)
         row.update(**pending,

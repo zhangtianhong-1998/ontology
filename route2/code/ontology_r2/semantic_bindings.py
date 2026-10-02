@@ -453,6 +453,11 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
         raise ValueError("Configuration binding snapshot differs")
     rules = {item["rule_id"]: item for item in checked_rules}
     plan = BuildPlan.model_validate(core).model_copy(deep=True)
+    from .configuration_relations import verify_configuration_pair
+    verify_configuration_pair(data, plan, candidate, witness)
+    if candidate.get("auxiliary_path_proof"):
+        from .auxiliary_relation_paths import replay_auxiliary_path
+        replay_auxiliary_path(data, candidate, plan=plan)
     types = {item.id: item for item in plan.object_types}
     role = purpose["role"]
     endpoints, endpoint_matches, rule_proofs = {}, {}, []
@@ -521,6 +526,11 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
                 "declaration": purpose, "reference_paths": rule_proofs,
                 "selector": candidate.get("selector", {}),
                 "support_scope": "checked_reference_pattern_and_observed_definition_pair"}
+    if candidate.get("auxiliary_path_proof"):
+        # Instance materialization replays this saved candidate through the
+        # same path verifier before resolving the two concrete records.
+        from copy import deepcopy
+        contract["auxiliary_path_candidate"] = deepcopy(candidate)
     assertion = _publish_binding(data, plan, source.id, slot, contract)
     errors = validate_plan(plan, data, profile)
     if errors:

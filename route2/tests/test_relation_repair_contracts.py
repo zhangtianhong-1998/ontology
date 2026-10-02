@@ -196,7 +196,7 @@ def test_configuration_instance_replay_rejects_swapped_pair_and_changed_source(t
             verify_configuration_assertion(data, changed, relation, candidate, concepts, alignments, plan=compiled)
         table = data.tables[spec["configuration_table"]]
         data.db.execute(f"UPDATE {qi(table['sql_name'])} SET relation_text='经营利润不依赖收入'")
-        with pytest.raises(ValueError, match="predicate and direction"):
+        with pytest.raises(ValueError, match="predicate and direction|text is absent, changed"):
             verify_configuration_assertion(data, assertion, relation, candidate, concepts, alignments, plan=compiled)
     finally:
         data.close()

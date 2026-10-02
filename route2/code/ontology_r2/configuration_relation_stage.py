@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator
 
-from .configuration_relations import _check_column, _type_alignments
+from .configuration_relations import _check_column, _type_alignments, verify_configuration_pair
 from .models import BuildPlan, DerivedType, Strict, json_null_placeholder
 from .relation_contract import (canonical_relation_id, canonical_relation_label,
                                 relation_semantic_parameters,
@@ -181,6 +181,9 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
     if decision.parent_relation not in relation_roots:
         raise ValueError("Configuration relation root is not in the profile")
     core = BuildPlan.model_validate(core)
+    if candidate.get("auxiliary_path_proof"):
+        from .auxiliary_relation_paths import replay_auxiliary_path
+        replay_auxiliary_path(data, candidate, plan=core)
     aligned, conflicting = _type_alignments(core, concepts, alignments, memberships)
     source_type, source_match, source_record = _endpoint(data, core, candidate, "source", aligned)
     target_type, target_match, target_record = _endpoint(data, core, candidate, "target", aligned)
@@ -194,6 +197,7 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
         raise ValueError("Configuration endpoints have conflicting applicability scopes")
 
     witness = _read_witness(data, candidate)
+    verify_configuration_pair(data, core, candidate, witness)
     text_column = candidate.get("relation_text_column")
     if not text_column or text_column not in data.tables[candidate["configuration_table"]]["column_names"]:
         raise ValueError("Configuration row has no explicit relationship text")
@@ -293,6 +297,7 @@ def compile_configuration_relation(data, profile, core: BuildPlan, candidate,
         "source_record_pair": {"source": subject_record, "target": object_record},
         "configuration_witness_record_id": candidate["configuration_record_id"],
         "configuration_candidate_id": candidate["id"],
+        "auxiliary_path_proof_id": (candidate.get("auxiliary_path_proof") or {}).get("id"),
         "configuration_text": literal, "assertion_status": "affirmed",
         "configuration_decision": decision.model_dump(),
         "endpoint_scope": "exact_definition_pair" if both_exact else "typed_record_witness",
@@ -328,6 +333,11 @@ def verify_configuration_assertion(data, assertion, relation, candidate, concept
         raise ValueError("Configuration assertion lacks its current verified candidate")
     relation = DerivedType.model_validate(relation)
     plan = BuildPlan.model_validate(plan)
+    if assertion.get("auxiliary_path_proof_id") or candidate.get("auxiliary_path_proof"):
+        from .auxiliary_relation_paths import replay_auxiliary_path
+        if assertion.get("auxiliary_path_proof_id") != (candidate.get("auxiliary_path_proof") or {}).get("id"):
+            raise ValueError("Configuration assertion auxiliary path proof is absent or changed")
+        replay_auxiliary_path(data, candidate, plan=plan)
     decision = ConfigurationRelationDecision.model_validate(assertion.get("configuration_decision", {}))
     if decision.status != "proposed" or decision.assertion_status != "affirmed" or decision.qualifier_quote:
         raise ValueError("Configuration assertion lacks a complete affirmative decision")
@@ -346,6 +356,7 @@ def verify_configuration_assertion(data, assertion, relation, candidate, concept
     if relation_scope_conflicts(source_type, target_type, data):
         raise ValueError("Configuration assertion endpoint scopes conflict")
     witness = _read_witness(data, candidate)
+    verify_configuration_pair(data, plan, candidate, witness)
     if any(witness.get(key) != value for key, value in candidate.get("selector", {}).items()):
         raise ValueError("Configuration assertion witness selector changed")
     column = candidate.get("relation_text_column")
@@ -408,12 +419,27 @@ def _balanced_configuration_candidates(candidates, limit):
     pairs and complete text remain separate candidates and in coverage.
     """
     specs = defaultdict(lambda: defaultdict(deque))
-    seen, duplicates = set(), 0
-    for item in candidates:
+    seen, seen_pairs, duplicates = set(), set(), 0
+    # A separately discovered path may use a different candidate ID for the
+    # same witness. Retain its replayable proof before deduplicating routes.
+    for item in sorted(candidates, key=lambda value: not bool(value.get("auxiliary_path_proof"))):
         if item["id"] in seen:
             duplicates += 1
             continue
         seen.add(item["id"])
+        pair = tuple(item.get(side + "_definition", {}).get("record_id") for side in ("source", "target"))
+        witness = item.get("configuration_record_id")
+        if witness and all(pair):
+            # Alternative checked join paths to the same current endpoints
+            # are proof alternatives, not fresh semantic decisions.
+            key = (witness, pair, item.get("source_type_id"), item.get("target_type_id"),
+                   item.get("relation_text_column"), item.get("predicate_literal"),
+                   item.get("direction_status"), item.get("predicate_name"),
+                   digest(item.get("semantic_parameters", {})))
+            if key in seen_pairs:
+                duplicates += 1
+                continue
+            seen_pairs.add(key)
         literal = str(item.get("predicate_literal") or "")
         # Code substitutions affect scheduling only; original text is retained
         # verbatim for every decision and replay check.
@@ -479,6 +505,10 @@ async def adjudicate_configuration_relations(data, profile, core, candidates,
             if item.get("snapshot_id") != data.snapshot_id:
                 raise ValueError("Configuration candidate snapshot differs from the input")
             witness = _read_witness(data, item)
+            verify_configuration_pair(data, plan, item, witness)
+            if item.get("auxiliary_path_proof"):
+                from .auxiliary_relation_paths import replay_auxiliary_path
+                replay_auxiliary_path(data, item, plan=plan)
             if any(witness.get(field) != value for field, value in item.get("selector", {}).items()):
                 raise ValueError("Configuration witness does not satisfy its condition")
             # Structured purposes describe the config's function, independently
@@ -581,7 +611,9 @@ async def adjudicate_configuration_relations(data, profile, core, candidates,
                          "not_endpoint_verified": len(candidates) - len(selected),
                          "endpoint_verified_candidates": len(selected),
                          "selection_method": "round_robin_spec_and_semantic_pattern",
-                         "duplicate_candidate_ids": duplicate_candidates,
+                         "duplicate_candidate_ids": len(selected) - len({item["id"] for item in selected}),
+                         "equivalent_witness_candidates": duplicate_candidates -
+                             (len(selected) - len({item["id"] for item in selected})),
                          "attempted": len(steps), "not_attempted": not_attempted,
                          "accepted": sum(item["status"] == "accepted" for item in steps),
                          "unresolved": sum(item["status"] == "unresolved" for item in steps),

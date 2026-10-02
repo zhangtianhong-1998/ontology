@@ -41,7 +41,7 @@ class FactFieldBindingDecision(Strict):
 
 
 _UNIT_MARKER = re.compile(
-    r"(?:单位\s*(?:[：:]|为|是)\s*([^，。；;、\s（）()]+)|[（(]\s*([^（）()]+?)\s*[）)])"
+    r"(?:单位\s*(?:[：:]|为|是)|\b(?:unit|uom)\s*[:=])\s*([^，。；;、\s（）()]+)", re.I
 )
 # Without punctuation/copula, match a complete measurement token. Treating
 # every word after 单位 as a unit would misread 单位成本 or 单位名称.
@@ -55,6 +55,11 @@ _COMPACT_UNIT_MARKER = re.compile(
     + r")*)(?=$|[，。；;、\s（）()])"
 )
 _MISSING_UNIT = {"无", "未知", "不详", "未注明", "待定", "null", "none", "n/a"}
+_UNIT_TOKEN = re.compile(
+    r"(?:[百千万亿]?(?:美元|欧元|元|吨|千克|公斤|克|千米|公里|厘米|毫米|米|"
+    r"平方米|立方米|毫升|升|件|个|台|套|次|人|笔|单|箱|包|袋|辆|年|月|日|天|"
+    r"小时|分钟|秒)|kg|mg|g|t|ton(?:ne)?s?|km|cm|mm|m|m[²³]|ml|l|"
+    r"m[23]|kwh|mwh|wh|kw|mw|w|pa|kpa|mpa|hz|mhz|ghz|s|ms|h|cny|usd|eur|%|‰|℃|°c)", re.I)
 _WORD = re.compile(r"[a-z0-9]+|[\u3400-\u9fff]{2,}", re.I)
 _HAN = re.compile(r"[\u3400-\u9fff]")
 
@@ -63,13 +68,37 @@ def _norm(value):
     return "".join(unicodedata.normalize("NFKC", str(value or "")).casefold().split())
 
 
+def _unit_key(value):
+    """Normalize literal unit spellings, never scales or observation values.
+
+    SI symbol case matters: MW and mW must not become the same unit. Chinese
+    denominator syntax and same-scale names such as 千克/kg are equivalent.
+    """
+    text = "".join(unicodedata.normalize("NFKC", str(value or "")).split()).replace("每", "/")
+    aliases = {"千克": "kg", "公斤": "kg", "克": "g", "吨": "吨",
+               "ton": "吨", "tons": "吨", "tonne": "吨", "tonnes": "吨",
+               "千瓦时": "kWh", "千瓦·时": "kWh", "千瓦": "kW", "瓦": "W",
+               "立方米": "m3", "平方米": "m2", "摄氏度": "°C"}
+    if text in aliases:
+        return aliases[text]
+    return "/".join(aliases.get(atom, atom) for atom in text.split("/"))
+
+
 def _unit_from_comment(comment):
     """Read literal declared units; retain conflicting declarations separately."""
     text = str(comment or "")
-    units = {_norm(match.group(1) or match.group(2))
-             for match in _UNIT_MARKER.finditer(text)}
-    units.update(_norm(match.group(1)) for match in _COMPACT_UNIT_MARKER.finditer(text))
-    return units - _MISSING_UNIT
+    units = {_unit_key(match.group(1)) for match in _UNIT_MARKER.finditer(text)}
+    compact = [_unit_key(match.group(1)) for match in _COMPACT_UNIT_MARKER.finditer(text)]
+    units.update(value for value in compact
+                 if all(_UNIT_TOKEN.fullmatch(atom) for atom in re.split(r"[/·*]", value)))
+    # A whole measurement token delimited by punctuation is a declaration
+    # (e.g. "power, kWh"). Prose, identifiers and arbitrary parentheses are not.
+    for fragment in re.split(r"[，,。；;、（）()\[\]【】]", text):
+        token = _unit_key(fragment)
+        atoms = re.split(r"[/·*]", token)
+        if atoms and all(_UNIT_TOKEN.fullmatch(atom) for atom in atoms):
+            units.add(token)
+    return {value for value in units if _norm(value) not in _MISSING_UNIT}
 
 
 def _root_of(item: DerivedType, by_id):
@@ -153,12 +182,57 @@ def _terms(value):
     return words | grams
 
 
+def _source_names(item, data):
+    """Use accepted name/alias cells, never formula operands as quantity names."""
+    names = [{"value": item.label or "", "basis": "accepted_type_label", "evidence_ids": []}]
+    for source in item.source_properties:
+        if source.role not in ("name", "alias"):
+            continue
+        for eid in source.evidence_ids:
+            evidence = data.evidence.get(eid) or {}
+            ref = evidence.get("source_ref") or {}
+            raw = evidence.get("raw_fragment")
+            if (eid not in item.evidence_ids or evidence.get("origin") != "observed_record"
+                    or evidence.get("raw_fragment_truncated")
+                    or ref.get("snapshot_id") != data.snapshot_id
+                    or ref.get("table") != source.source_table or ref.get("column") != source.source_column
+                    or not ref.get("record_id") or not isinstance(raw, str) or len(raw) > 2048):
+                continue
+            # A list of explicitly declared aliases supplies separate surfaces;
+            # splitting a formula or arbitrary description would be unsafe.
+            for value in re.split(r"[;,；，、|\n]", raw) if source.role == "alias" else [raw]:
+                if value.strip():
+                    names.append({"value": value.strip(), "basis": "source_" + source.role,
+                                  "source_table": source.source_table,
+                                  "source_column": source.source_column, "evidence_ids": [eid]})
+    return names
+
+
+def _name_in_declaration(name, declaration):
+    normalized, text = _norm(name), _norm(declaration)
+    if len(normalized) < 2:
+        return False
+    if _HAN.search(normalized):
+        return normalized in text
+    # Preserve word boundaries while allowing declared identifier separators.
+    # "load_kw" matches "load_kw_hourly"; "gas" does not match "gasoline".
+    name = re.sub(r"[_\W]+", " ", unicodedata.normalize("NFKC", str(name)).casefold()).strip()
+    text = re.sub(r"[_\W]+", " ", unicodedata.normalize("NFKC", str(declaration)).casefold()).strip()
+    return bool(name and re.search(r"(?<!\w)" + r"\s*".join(map(re.escape, name.split())) + r"(?!\w)", text))
+
+
+def _matching_source_names(item, data, declaration):
+    return [entry for entry in _source_names(item, data)
+            if _name_in_declaration(entry["value"], declaration)]
+
+
 def _recall_types(data, core, table, column, *, max_candidates, max_definition_chars):
     by_id = {item.id: item for item in core.object_types}
     comment = str(column.get("column_comment") or "").strip()
     source = f"{column['column_name']} {comment}"
-    source_norm, source_terms = _norm(source), _terms(source)
+    source_terms = _terms(source)
     found = []
+    complete_name_ids = set()
     excluded = Counter()
     for item in core.object_types:
         # A measured quantity need not be a composed business Metric. Its
@@ -178,8 +252,10 @@ def _recall_types(data, core, table, column, *, max_candidates, max_definition_c
         label = _norm(item.label)
         if not label:
             continue
-        overlap = source_terms & _terms(item.label)
-        score = (100 if label in source_norm or item.evidence_scope == "source_schema" else 0) + 2 * len(overlap)
+        names = _source_names(item, data)
+        exact_name = any(_name_in_declaration(entry["value"], source) for entry in names)
+        overlap = source_terms & set().union(*(_terms(entry["value"]) for entry in names))
+        score = (100 if exact_name or item.evidence_scope == "source_schema" else 0) + 2 * len(overlap)
         if score == 0:
             continue
         evidence, invalid_reason = _source_definition_evidence(
@@ -187,11 +263,18 @@ def _recall_types(data, core, table, column, *, max_candidates, max_definition_c
         if invalid_reason:
             # An exact-label peer with hidden or conflicting source meanings
             # could change the identity decision. Do not silently ignore it.
-            if label in source_norm:
+            if exact_name:
                 excluded[invalid_reason] += 1
             continue
         found.append((score, item, evidence))
+        if exact_name or item.evidence_scope == "source_schema":
+            complete_name_ids.add(item.id)
     found.sort(key=lambda entry: (-entry[0], entry[1].id))
+    if complete_name_ids:
+        # Only a complete declared name can pass the binding compiler. Keep
+        # every such competitor; fragment-only leads cannot displace one or
+        # force a false candidate-cap failure after a source alias matched.
+        found = [entry for entry in found if entry[1].id in complete_name_ids]
     return found[:max_candidates], max(0, len(found) - max_candidates), dict(excluded)
 
 
@@ -208,12 +291,12 @@ def _scope_consistent(item, table, column_comment, coordinates, scope_bindings=N
         return False
     for key, value in {**item.applicability_scope, **identity}.items():
         if key in fixed:
-            if fixed[key] not in constants or _norm(constants[fixed[key]]) != _norm(value):
+            if fixed[key] not in constants or str(constants[fixed[key]]) != str(value):
                 return False
             continue
         field = scope_bindings.get(key, key)
         if field in coordinates:
-            if _norm(coordinates[field]) != _norm(value):
+            if str(coordinates[field]) != str(value):
                 return False
         else:
             # Text mentioning a place is not a binding to the row's coordinate.
@@ -222,7 +305,54 @@ def _scope_consistent(item, table, column_comment, coordinates, scope_bindings=N
     return True
 
 
-def field_scope_constants(data, table, scope_keys):
+def _scope_surface(value):
+    text = re.split(r"[，,。;；]", str(value or ""))[0].strip()
+    text = re.sub(r"(?:[_\s](?:code|id|name)|(?:编码|代码|标识|名称))$", "", text, flags=re.I)
+    return re.sub(r"[_\W]+", "", _norm(text))
+
+
+def field_scope_mapping_candidates(data, table, item, coordinate_columns=()):
+    """Propose mappings from source declarations, never from value overlap.
+
+    These are names of existing columns. Constancy and coordinate values are
+    independently verified; a missing domain/namespace cannot be synthesized.
+    """
+    result = []
+    for key, expected in {**item.applicability_scope, **item.identity_qualifiers}.items():
+        declarations = []
+        for source in item.source_properties:
+            if source.role not in ("scope", "identity") or source.source_column != key:
+                continue
+            definition_table = data.tables.get(source.source_table, {})
+            declaration = next((entry for entry in definition_table.get("columns", [])
+                                if entry["column_name"] == key), {})
+            if declaration.get("column_comment"):
+                declarations.append({"source_table": source.source_table, "source_column": key,
+                    "column_comment": declaration["column_comment"],
+                    "evidence_id": f"schema:{source.source_table}:{key}"})
+        for column in table["columns"]:
+            name, comment = column["column_name"], column.get("column_comment") or ""
+            if is_sensitive_column(column) or name in table.get("semantic_excluded_columns", ()):
+                continue
+            basis = None
+            if name == key:
+                basis = "same_declared_column_name"
+            elif _scope_surface(name) == _scope_surface(key):
+                basis = "same_scope_identifier_stem"
+            elif comment and any(_scope_surface(comment) == _scope_surface(value['column_comment'])
+                                 for value in declarations):
+                basis = "same_source_scope_declaration"
+            if basis:
+                result.append({"scope_key": key, "column": name, "expected_value": expected,
+                               "kind": "coordinate" if name in coordinate_columns else "requires_constant_check",
+                               "basis": basis, "column_comment": comment,
+                               "definition_scope_declarations": declarations,
+                               "evidence_ids": [f"schema:{table['name']}:{name}",
+                                                *(value['evidence_id'] for value in declarations)]})
+    return result
+
+
+def field_scope_constants(data, table, scope_keys, *, candidate_columns=()):
     """Full-column checks for explicit scope fields; samples cannot certify constants."""
     inferred = {item['column'] for item in table.get('inferred_semantic_roles', [])
                 if item.get('role') in ('scope', 'identity')
@@ -230,7 +360,7 @@ def field_scope_constants(data, table, scope_keys):
     result = []
     for column in table['columns']:
         name = column['column_name']
-        if (name not in scope_keys and name not in inferred) or is_sensitive_column(column):
+        if (name not in scope_keys and name not in inferred and name not in candidate_columns) or is_sensitive_column(column):
             continue
         if name in table.get('semantic_excluded_columns', ()):
             continue
@@ -239,14 +369,21 @@ def field_scope_constants(data, table, scope_keys):
             f'count(distinct {qi(name)}), min(cast({qi(name)} AS VARCHAR)) '
             f'FROM {qi(table["sql_name"])}').fetchone()
         if count and valid == count and distinct == 1 and len(str(value)) <= 256:
+            eid = "field_scope_constant:" + digest([data.snapshot_id, table['name'], name, value])[:24]
+            data.evidence[eid] = {"id": eid, "origin": "observed_scope_column",
+                "raw_fragment": str(value), "raw_fragment_truncated": False,
+                "source_ref": {"table": table["name"], "column": name, "snapshot_id": data.snapshot_id},
+                "verification": {"scan_scope": "full_input", "rows": count,
+                                 "nonblank_rows": valid, "distinct_values": distinct}}
             result.append({'column': name, 'value': value, 'scope': 'full_input',
-                           'rows': count, 'column_comment': column.get('column_comment', '')})
+                           'rows': count, 'column_comment': column.get('column_comment', ''),
+                           'evidence_ids': [eid, f"schema:{table['name']}:{name}"]})
     return result
 
 
 def _unit_consistent(item, column_comment):
     observed = _unit_from_comment(column_comment)
-    expected = _norm(item.unit)
+    expected = _unit_key(item.unit)
     if expected:
         return observed == {expected}
     return not observed
@@ -265,7 +402,10 @@ def field_unit_evidence(data, table, column):
     role_supported = any(item.get("column") == column and item.get("role") == "unit"
                          and item.get("status") == "source_verified_role_candidate"
                          for item in table.get("inferred_semantic_roles", []))
-    if not role_supported and not re.search(r"(?:^|[_\s])(?:unit|uom)(?:[_\s]|$)|单位", column + " " + str(metadata.get("column_comment") or ""), re.I):
+    declared_unit_column = (re.search(r"(?:^|[_\s])(?:unit|uom)(?:[_\s]|$)", column, re.I)
+                            or re.fullmatch(r"(?:计量|度量|测量|数值)?单位(?:名称|编码|字段)?",
+                                            str(metadata.get("column_comment") or "").strip()))
+    if not role_supported and not declared_unit_column:
         return None
     sql = f"SELECT {qi(column)}, count(*), min(__r2_row) FROM {qi(table['sql_name'])} GROUP BY {qi(column)} ORDER BY {qi(column)} LIMIT 3"
     values = data.db.execute(sql).fetchall()
@@ -287,19 +427,7 @@ def field_unit_evidence(data, table, column):
 
 
 def _business_name_in_comment(item, comment, data):
-    # Spaces and identifier separators do not distinguish a declared name.
-    surface = _norm(comment).replace("_", "")
-    if not surface:
-        return False
-    names = [item.label]
-    for source in item.source_properties:
-        if source.role not in ("name", "alias"):
-            continue
-        for evidence_id in source.evidence_ids:
-            evidence = data.evidence.get(evidence_id)
-            if evidence and not evidence.get("raw_fragment_truncated"):
-                names.append(evidence.get("raw_fragment") or "")
-    return any(len(_norm(name)) >= 2 and _norm(name).replace("_", "") in surface for name in names)
+    return bool(_matching_source_names(item, data, comment))
 
 
 def _validate_binding(decision, choices, data, table, column_comment,
@@ -318,7 +446,7 @@ def _validate_binding(decision, choices, data, table, column_comment,
     local_schema_binding = item.evidence_scope == "source_schema" and any(
         source.source_table == table["name"] and source.source_column == column_name
         for source in item.source_properties)
-    if not local_schema_binding and not _business_name_in_comment(item, declaration, data):
+    if not local_schema_binding and not _business_name_in_comment(item, column_name + " " + declaration, data):
         return None, "column_comment_lacks_business_type_name"
     if (not set(decision.scope_bindings.values()) <= set(coordinate_columns)
             or any(not key.strip() for key in decision.scope_bindings)
@@ -328,7 +456,7 @@ def _validate_binding(decision, choices, data, table, column_comment,
     scopes = {**item.applicability_scope, **item.identity_qualifiers}
     if (set(decision.constant_scope_bindings) & set(decision.scope_bindings)
             or any(key not in scopes or field not in constants
-                   or _norm(constants[field]) != _norm(scopes[key])
+                   or str(constants[field]) != str(scopes[key])
                    for key, field in decision.constant_scope_bindings.items())):
         return None, "scope_constant_missing_or_conflicting"
     if (not decision.type_definition_quote.strip()
@@ -342,18 +470,26 @@ def _validate_binding(decision, choices, data, table, column_comment,
     if decision.unit_column:
         unit = next((value for value in unit_sources if value["column"] == decision.unit_column), None)
         unit_ok = (unit and unit["status"] == "verified_single_unit"
-                   and _norm(item.unit) == _norm(unit["value"])
-                   and not (_unit_from_comment(declaration) - {_norm(item.unit)}))
+                   and _unit_key(item.unit) == _unit_key(unit["value"])
+                   and not (_unit_from_comment(declaration) - {_unit_key(item.unit)}))
     else:
         unit_ok = _unit_consistent(item, declaration)
     if not unit_ok:
         return None, "unit_missing_or_conflicting"
+    mappings = {(value['scope_key'], value['column']) for value in
+                field_scope_mapping_candidates(data, table, item, coordinate_columns)}
+    for key in scopes:
+        field = decision.constant_scope_bindings.get(key, decision.scope_bindings.get(key, key))
+        if ((key, field) not in mappings or
+                field not in (constants if key in decision.constant_scope_bindings else coordinate_columns)):
+            return None, "applicability_scope_unverified_or_conflicting"
     # Equal labels, units and applicability among two accepted exact types are
     # still ambiguous when their definitions differ; the field cannot resolve
     # them with only its name/comment.
     same_label = [other for _, other, _ in choices if other.id != item.id
-                  and _norm(other.label) == _norm(item.label)
-                  and _norm(other.unit) == _norm(item.unit)
+                  and (_norm(other.label) == _norm(item.label)
+                       or _business_name_in_comment(other, column_name + " " + declaration, data))
+                  and _unit_key(other.unit) == _unit_key(item.unit)
                   and other.applicability_scope == item.applicability_scope]
     canonical_id = canonical_type_map.get(item.id, item.id)
     peers = [item, *same_label]
@@ -361,7 +497,9 @@ def _validate_binding(decision, choices, data, table, column_comment,
             for other in peers)
             or any(frozenset((left.id, right.id)) not in verified_equivalence_pairs
                    for left, right in combinations(peers, 2))):
-        return None, "multiple_compatible_types_share_label"
+        return None, ("multiple_compatible_types_share_label" if all(
+            _norm(other.label) == _norm(item.label) for other in same_label)
+            else "multiple_compatible_types_share_source_name")
     return item, None
 
 
@@ -414,7 +552,7 @@ def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
                              scope_constants):
         return None, 'applicability_scope_unverified_or_conflicting'
     fixed_values = {value['column']: value['value'] for value in scope_constants}
-    if any(_norm(row.get(field)) != _norm(fixed_values.get(field)) for row in rows
+    if any(str(row.get(field)) != str(fixed_values.get(field)) for row in rows
            for field in decision.constant_scope_bindings.values()):
         return None, 'source_scope_constant_changed'
     # Column-role heuristics can miss a business coordinate. If source rows
@@ -448,6 +586,16 @@ def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
         if not unit_evidence_id or unit_evidence_id not in data.evidence:
             return None, "unit_column_changed_or_unverified"
         evidence_ids.append(unit_evidence_id)
+    for constant in scope_constants:
+        if constant['column'] in decision.constant_scope_bindings.values():
+            evidence_ids.extend(constant.get('evidence_ids', []))
+    evidence_ids.extend(f"schema:{table['name']}:{field}" for field in decision.scope_bindings.values())
+    scope_mapping_evidence = [value for value in field_scope_mapping_candidates(
+        data, table, item, coordinate_columns) if decision.constant_scope_bindings.get(value['scope_key'],
+            decision.scope_bindings.get(value['scope_key'], value['scope_key'])) == value['column']]
+    evidence_ids.extend(eid for value in scope_mapping_evidence for eid in value['evidence_ids'])
+    for name_evidence in _matching_source_names(item, data, candidate['value_column'] + " " + decision.source_column_quote):
+        evidence_ids.extend(name_evidence['evidence_ids'])
     instance_id = "fact_observation:" + digest([
         data.snapshot_id, table["name"], item.id, candidate["value_column"],
         coordinates, candidate["observed_value"]])[:24]
@@ -482,6 +630,7 @@ def _instantiate(data, table, item, candidate, coordinate_columns, decision, *,
             "constant_scope_bindings": decision.constant_scope_bindings,
             "source_checked_scope_constants": [value for value in scope_constants
                                                if value['column'] in decision.constant_scope_bindings.values()],
+            "source_scope_mapping_evidence": scope_mapping_evidence,
             "bound_scope_values": {key: coordinates[field] for key, field in decision.scope_bindings.items()},
             "identity_qualifiers": dict(getattr(item, "identity_qualifiers", {})),
             "unit_column": decision.unit_column,
@@ -563,9 +712,12 @@ async def bind_fact_observations(
         columns = {entry["column_name"]: entry for entry in table["columns"]}
         unit_sources = [value for column in columns
                         if (value := field_unit_evidence(data, table, column)) is not None]
+        scope_mappings = {item.id: field_scope_mapping_candidates(data, table, item, coordinate_columns)
+                          for item in core.object_types}
         scope_constants = field_scope_constants(data, table,
             {key for item in core.object_types for key in
-             (*item.applicability_scope, *item.identity_qualifiers)})
+             (*item.applicability_scope, *item.identity_qualifiers)},
+             candidate_columns={value['column'] for values in scope_mappings.values() for value in values})
         by_field = {}
         for candidate in report.get("candidates", []):
             candidate_tuples += 1
@@ -635,6 +787,7 @@ async def bind_fact_observations(
                 "scope_binding_contract": "scope_bindings maps scope keys to coordinate COLUMN NAMES. constant_scope_bindings may instead name a full-input verified constant scope column listed below. Never place a literal code, unit or scope value in either mapping or in unit_column; use null for unit_column when its unit is in the field declaration. Missing scope evidence requires unresolved.",
                 "source_checked_scope_constants": scope_constants,
                 "coordinate_columns": coordinate_columns,
+                "coordinate_declarations": [columns[field] for field in coordinate_columns],
                 "type_candidates_omitted_by_limit": omitted_types,
                 "type_candidates": [
                     {"id": item.id, "label": item.label, "root_type": _root_of(
@@ -643,6 +796,8 @@ async def bind_fact_observations(
                      "definition": item.definition,
                      "unit": item.unit, "applicability_scope": item.applicability_scope,
                      "identity_qualifiers": getattr(item, "identity_qualifiers", {}),
+                     "source_name_matches": _matching_source_names(item, data, name + " " + comment),
+                     "scope_mapping_candidates": scope_mappings[item.id],
                      "full_source_definitions": evidence}
                     for _, item, evidence in choices],
             }
@@ -689,7 +844,7 @@ async def bind_fact_observations(
             canonical_id = canonical_type_map.get(item.id, item.id)
             canonical_item = by_type_id[canonical_id]
             if (_norm(canonical_item.label) != _norm(item.label)
-                    or _norm(canonical_item.unit) != _norm(item.unit)
+                    or _unit_key(canonical_item.unit) != _unit_key(item.unit)
                     or canonical_item.applicability_scope != item.applicability_scope
                     or getattr(canonical_item, "identity_qualifiers", {}) != getattr(item, "identity_qualifiers", {})
                     or canonical_item.definition_parameters != item.definition_parameters):

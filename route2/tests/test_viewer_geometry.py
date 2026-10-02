@@ -31,7 +31,7 @@ function boundsFor(nodes,padding=75){const xs=nodes.map(n=>n.x),ys=nodes.map(n=>
 """
 
 
-def test_published_258_nodes_pack_without_collisions_and_routes_avoid_nodes():
+def test_published_258_nodes_pack_without_collisions_and_bounded_routes():
     fixture = json.loads((ROOT / "tests/fixtures/viewer_v8_topology.json").read_text())
     js(GEOMETRY_SETUP + helpers("function packBoxes(", "function drawGraph(") + """
 const D=JSON.parse(require('fs').readFileSync(0,'utf8'));
@@ -41,7 +41,7 @@ for(const [width,height] of [[1200,700],[800,600],[600,640]]){
   assert.equal(positions.size,258);assert(bounds.height/bounds.width<3,'old layout was an unreadable 15:1 strip');
   for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++)assert(Math.hypot(nodes[i].x-nodes[j].x,nodes[i].y-nodes[j].y)>=80);
   const routes=routeGraphEdges(nodes,D.edges);assert.equal(routes.length,D.edges.length);
-  routes.forEach((path,i)=>{assert(path.length>=2);for(let j=1;j<path.length;j++)assert(segmentClear(path[j-1],path[j],nodes,new Set([D.edges[i].from,D.edges[i].to]),40),'edge crosses an unrelated node')});
+  routes.forEach(path=>{assert(path.length>=2&&path.length<=4);path.forEach(p=>assert(Number.isFinite(p.x)&&Number.isFinite(p.y)))});
 }
 """, fixture)
 
@@ -112,4 +112,19 @@ events.pointermove({pointerId:1,clientX:101,clientY:101});assert.equal(captured,
 events.pointerup({pointerId:1});assert.equal(graphState.suppressClickUntil,0);
 events.pointerdown({button:0,pointerId:2,clientX:100,clientY:100,target});
 events.pointermove({pointerId:2,clientX:110,clientY:100});assert.equal(captured,1);
+""")
+
+
+def test_edges_cross_intermediate_nodes_but_labels_find_free_space():
+    js(GEOMETRY_SETUP + helpers("function edgeLabelPlacement(", "function updateEdgeLabels(")
+       + helpers("function packBoxes(", "function drawGraph(") + """
+const nodes=[{id:'a',x:0,y:0},{id:'middle',x:150,y:0},{id:'b',x:300,y:0}];
+const route=routeGraphEdges(nodes,[{from:'a',to:'b'}])[0];
+assert.equal(route.length,2,'a middle node must not cause a routing detour');
+const blocked=[{x:104,y:-46,width:92,height:92}];
+const placed=edgeLabelPlacement(route,80,18,blocked,1);
+assert.equal(placed.penalty,0);assert(placed.box.y+placed.box.height<=-46||placed.box.y>=46||placed.box.x+80<=104||placed.box.x>=196);
+const page=require('fs').readFileSync('code/ontology_r2/viewer.html','utf8');
+assert(page.includes('svg.append(edgeLayer,labelLayer,nodeLayer)'));
+assert(page.includes('edgeLayer.append(hit)')&&page.includes('nodeLayer.append(g)'));
 """)

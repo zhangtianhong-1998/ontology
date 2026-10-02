@@ -15,7 +15,7 @@ class Strict(BaseModel):
 
 class SourceProperty(Strict):
     role: Literal["name", "alias", "description", "formula", "unit", "scope",
-                  "metadata", "provenance", "identity", "structured_reference"]
+                  "metadata", "provenance", "identity", "structured_reference", "classification"]
     source_table: str
     source_column: str
     evidence_ids: list[str] = Field(default_factory=list)
@@ -67,6 +67,8 @@ class DerivedType(Strict):
     definition_parameters: dict[str, str] = Field(default_factory=dict)
     # Namespace/tenant/version of a definition, not a row ID or observation.
     identity_qualifiers: dict[str, str] = Field(default_factory=dict)
+    # Source-declared category attributes; retained in class identity, not row filters.
+    classification_attributes: dict[str, str] = Field(default_factory=dict)
     unit: str | None = None
     # Optional calculation attribute of a reusable Measure quantity. SUM/AVG
     # alone are operations, never Measure ontology types.

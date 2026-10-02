@@ -7,6 +7,7 @@ groups: unsubmitted rows are not claimed to be semantically covered.
 from collections import Counter
 from copy import deepcopy
 import json
+import re
 
 from .models import BuildPlan
 from .storage import digest
@@ -214,11 +215,64 @@ def lookup_observed_value_sources(data, index, tasks, *, max_tasks=64, max_candi
         "scope": "bounded_candidate_recall_not_exhaustive_member_discovery"}}
 
 
+def _class_declaration_candidates(record):
+    """Recall whole, explicitly declarative clauses; never invent a class name.
+
+    These source fragments are scheduling candidates only. The source fields
+    remain complete in the packet and the normal compiler/reviewer decides
+    whether a quoted clause really declares the proposed business class.
+    """
+    result = []
+    for entry in record.get("fields", {}).get("description", []):
+        if entry.get("truncated"):
+            continue
+        raw = str(entry["value"])
+        for clause in re.split(r"[。！？；;\n]|(?<!\d)\.(?:\s+|$)|[!?](?:\s+|$)", raw):
+            quote = clause.strip()
+            chinese = re.fullmatch(r"([^，,]{1,80}?)(?:是一(?:类|种)|是用于|是用来).+", quote)
+            english = re.fullmatch(r"(.{1,80}?)\s+is\s+(?:a|an)\s+(?:class|type|kind|category)\s+of\s+.+",
+                                   quote, flags=re.I)
+            matched = chinese or english
+            if matched and not re.search(r"(?:不|并非|不是|非)$", matched[1]):
+                result.append({"column": entry["column"], "quote": quote,
+                               "label_fragment": matched[1].strip(), "status": "source_clause_candidate"})
+    return result
+
+
+def _repair_type_identity(data, record):
+    """Keep error grouping separate from source-backed class identity."""
+    from .template_projection import _instance_columns
+
+    values, roles = _fields(record)
+    clauses = _class_declaration_candidates(record)
+    instances = _instance_columns(data, record)
+    protected = {column: value for column, value in values.items()
+                 if roles[column] & {"identity", "formula", "unit"}
+                 or "scope" in roles[column] and column not in instances}
+    if clauses:
+        return {"table": record["table"], "class_clauses": clauses, "protected": protected}
+    # Without an explicit class clause, require the complete semantic record
+    # rather than grouping unrelated classes that happen to fail the same way.
+    return {"table": record["table"], "protected": protected,
+            "semantic_fields": {column: value for column, value in values.items()
+                                if roles[column] & _SEMANTIC and column not in instances}}
+
+
+def _repair_evidence_bytes(packet):
+    """Bound complete record evidence, independently of scheduling provenance.
+
+    Source bundle IDs and duplicate template context stay on the saved packet;
+    the caller accounts for the actual serialized model request separately.
+    """
+    return len(json.dumps(packet.get("records", []), ensure_ascii=False,
+                          default=str).encode("utf-8"))
+
+
 def augment_template_repair_witnesses(data, index, repair_bundles, *, max_witnesses=2,
                                       max_candidates=16, max_bundle_bytes=24000):
-    """Recall bounded variation witnesses for an already quoted class definition.
+    """Recall bounded variation witnesses from accepted or source-declared classes.
 
-    Retrieval only enriches a real field-gap repair. Every hit is refreshed from
+    Retrieval only enriches a field-gap or unresolved-definition repair. Every hit is refreshed from
     its source row, and neither shared prose nor a lookup hit grants exact type
     identity. In particular, the original exact-alignment allowlist is preserved.
     """
@@ -239,12 +293,13 @@ def augment_template_repair_witnesses(data, index, repair_bundles, *, max_witnes
         output.append(packet)
         task = packet.get("template_repair_task") or {}
         seed = representative_record(packet)
-        if not max_witnesses or task.get("scope") != "template_field_gaps" or seed is None:
+        if (not max_witnesses or task.get("scope") not in {
+                "template_field_gaps", "unresolved_source_definition"} or seed is None):
             continue
         seed_values, seed_roles = _fields(seed)
         identities = {column: seed_values[column] for column in seed_values
                       if "identity" in seed_roles[column]}
-        selected = None
+        selected, cold_start = None, False
         for context in task.get("known_template_matches", []):
             template = context.get("accepted_template") or {}
             declaration = template.get("class_definition") or {}
@@ -259,14 +314,37 @@ def augment_template_repair_witnesses(data, index, repair_bundles, *, max_witnes
                 selected = template, quote, column, {item["column"] for item in context["unresolved_fields"]}
                 break
         if selected is None:
-            continue
+            clauses = _class_declaration_candidates(seed)
+            declaration = next((item for item in clauses if 0 < len(item["quote"]) <= 512), None)
+            if declaration is None:
+                continue
+            # Cold start: shared explicit source text is enough to recall a
+            # second witness, but grants neither a type nor an exact alignment.
+            template = {"slots": [], "applicability_scope": {}}
+            cold_start = True
+            selected = template, declaration["quote"], declaration["column"], set(seed_values)
+            task["class_definition_candidates"] = clauses
+            task["witness_lookup_basis"] = "explicit_source_class_clause_without_accepted_template"
         template, quote, column, gap_columns = selected
+        seed_identity = _repair_type_identity(data, seed)
         counts["bundles_queried"] += 1
-        query_key = seed["table"], quote
+        # Apply the stored scope filter before ranking so a common class quote
+        # cannot spend the entire bounded hit window on another namespace.
+        query_scope = seed.get("scope") if isinstance(seed.get("scope"), dict) else None
+        excluded_pattern = seed.get("pattern_id") if cold_start else None
+        query_key = (seed["table"], quote, json.dumps(query_scope, ensure_ascii=False, sort_keys=True),
+                     excluded_pattern)
         if query_key not in search_cache:
             search_cache[query_key] = index.search(quote, limit=max_candidates,
-                                                   kind="definition", table=seed["table"])
+                kind="definition", table=seed["table"], scope=query_scope,
+                exclude_pattern_id=excluded_pattern)
             counts["index_queries"] += 1
+            # Prefer another complete semantic pattern over repeated IDs of
+            # the seed. If none exists, instance-only variation can still help.
+            if not search_cache[query_key] and excluded_pattern:
+                search_cache[query_key] = index.search(quote, limit=max_candidates,
+                    kind="definition", table=seed["table"], scope=query_scope)
+                counts["index_queries"] += 1
         hits = search_cache[query_key]
         counts["index_hits_examined"] += len(hits)
         seen = {record["record_id"] for record in packet["records"]}
@@ -287,6 +365,7 @@ def augment_template_repair_witnesses(data, index, repair_bundles, *, max_witnes
             observed_identity = {field: values[field] for field in values if "identity" in roles[field]}
             if (observed_identity != identities or "description" not in roles.get(column, set())
                     or quote not in values[column]
+                    or _repair_type_identity(data, card) != seed_identity
                     or any(values.get(field) != value for field, value in template.get("applicability_scope", {}).items())):
                 counts["incompatible_source_hits"] += 1
                 continue
@@ -301,7 +380,7 @@ def augment_template_repair_witnesses(data, index, repair_bundles, *, max_witnes
                                for field in gap_columns)):
                 continue
             card.update(context_role="repair_witness", candidate_status="unjudged",
-                        identity_claim="none", variation_template_id=template["template_id"])
+                        identity_claim="none", variation_template_id=template.get("template_id"))
             proposed = deepcopy(packet)
             proposed["records"].append(card)
             proposed.setdefault("exact_alignment_record_ids", [seed["record_id"]])
@@ -309,7 +388,7 @@ def augment_template_repair_witnesses(data, index, repair_bundles, *, max_witnes
                 "record_id": card["record_id"], "source_column": column,
                 "class_definition_quote": quote, "changed_instance_fields": varied,
                 "status": "candidate_only_not_exact_alignment"})
-            if len(json.dumps(proposed, ensure_ascii=False, default=str).encode("utf-8")) > max_bundle_bytes:
+            if _repair_evidence_bytes(proposed) > max_bundle_bytes:
                 counts["witnesses_omitted_by_byte_limit"] += 1
                 continue
             packet = proposed
@@ -326,7 +405,7 @@ def augment_template_repair_witnesses(data, index, repair_bundles, *, max_witnes
 
 
 def build_targeted_repair_tasks(data, bundles, prior_result, *, max_tasks=24, max_examples=3, round_number=2,
-                                max_value_tasks=64):
+                                max_value_tasks=64, max_bundle_bytes=24000):
     """Build new task IDs for gaps, preserving the first pass and its bindings."""
     if any(type(value) is not int or value < 1 for value in (max_examples, round_number)):
         raise ValueError("Repair examples and round number must be positive integers")
@@ -334,6 +413,8 @@ def build_targeted_repair_tasks(data, bundles, prior_result, *, max_tasks=24, ma
         raise ValueError("Repair task limit must be nonnegative")
     if type(max_value_tasks) is not int or max_value_tasks < 0:
         raise ValueError("Observed value task limit must be nonnegative")
+    if type(max_bundle_bytes) is not int or max_bundle_bytes < 1000:
+        raise ValueError("Repair bundle byte limit must be at least 1000")
     if prior_result.get("snapshot_id") != data.snapshot_id:
         raise ValueError("Repair state must belong to the current source snapshot")
     core = prior_result.get("plan", BuildPlan())
@@ -403,6 +484,11 @@ def build_targeted_repair_tasks(data, bundles, prior_result, *, max_tasks=24, ma
         else:
             scope, preserved = "unresolved_source_definition", None
             signature = [scope, seed["table"], old.get("error_type"), old.get("reason")]
+        # Complete projection proof already establishes one class while its
+        # checked observation slots may vary. Unproven partial/error groups
+        # still need a source identity boundary independent of their error.
+        signature.append({"accepted_type_id": preserved} if scope == "template_slot_endpoints"
+                         else _repair_type_identity(data, seed))
         key = digest(signature)
         if key not in grouped:
             grouped[key] = {"scope": scope, "preserve_type_id": preserved, "contexts": contexts,
@@ -424,8 +510,10 @@ def build_targeted_repair_tasks(data, bundles, prior_result, *, max_tasks=24, ma
         packet = deepcopy(group["bundle"])
         task_id = "template_repair:" + digest([data.snapshot_id, round_number, key])[:24]
         seen = {item["record_id"] for item in packet["records"]}
-        packet["records"].extend({**item, "context_role": "repair_witness"} for item in group["examples"]
-                                 if item["record_id"] not in seen)
+        added = []
+        for item in group["examples"]:
+            if item["record_id"] not in seen:
+                added.append({**item, "context_role": "repair_witness"})
         seed = representative_record(packet)
         context = {"task_id": task_id, "round_number": round_number, "scope": group["scope"],
                    "source_bundle_ids": list(group["source_bundle_ids"]),
@@ -442,6 +530,20 @@ def build_targeted_repair_tasks(data, bundles, prior_result, *, max_tasks=24, ma
         packet.update(bundle_id=task_id, source_bundle_id=group["bundle"]["bundle_id"],
                       source_bundle_ids=list(group["source_bundle_ids"]),
                       template_repair_task=context, template_repair_sources=group["example_sources"])
+        packet.setdefault("exact_alignment_record_ids", [seed["record_id"]])
+        for record in added:
+            proposed = {**packet, "records": [*packet["records"], record]}
+            if _repair_evidence_bytes(proposed) > max_bundle_bytes:
+                counts["group_witnesses_omitted_by_byte_limit"] += 1
+                continue
+            packet["records"].append(record)
+        context["representatives_submitted"] = sum(
+            item["record_id"] in {record["record_id"] for record in packet["records"]}
+            for item in group["examples"])
+        if _repair_evidence_bytes(packet) > max_bundle_bytes:
+            # Existing input is retained for the caller's real request budget
+            # check. This limit only prevents adding more source evidence.
+            counts["original_evidence_over_byte_limit"] += 1
         tasks.append(context)
         repair_bundles.append(packet)
     observed_value_tasks = list(new_values.values())[:max_value_tasks]

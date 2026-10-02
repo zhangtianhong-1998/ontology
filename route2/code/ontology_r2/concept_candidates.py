@@ -194,7 +194,8 @@ def _sample_definition_rows(data, table_name, roles, limit, max_field_chars):
 
 
 def _unit_values(card):
-    return {entry["value"].strip().casefold() for entry in card["fields"].get("unit", [])}
+    from .unit_identity import unit_identity
+    return {unit_identity(entry["value"]) for entry in card["fields"].get("unit", [])}
 
 
 def recall_concept_candidates(data, *, max_definition_tables=16,

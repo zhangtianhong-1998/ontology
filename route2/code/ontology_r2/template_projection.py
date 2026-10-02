@@ -126,12 +126,21 @@ def _instance_columns(data, record, slots=()):
                    and item.get("role") == "dimension_coordinate"}
     direct_slots = {slot.get("source_column") or slot.get("value_evidence", {}).get("column"): slot
                     for slot in slots if slot.get("role") in {"record_identity", "dimension"}}
+    # Reuse the independent declaration check already used by card scheduling.
+    # A storage locator is instance data even when no model supplied its slot.
+    from .semantic_cards import _definition_pattern_exclusions
+    role_columns = {role: [column for column in values if role in roles[column]]
+                    for role in {role for column_roles in roles.values() for role in column_roles}}
+    physical_names = {item["column"] for item in _definition_pattern_exclusions(
+        {**schema, "name": record["table"], "columns": schema.get("columns", [])}, role_columns)}
     result = {}
     for column, value in values.items():
         if roles[column] & {"formula", "unit", "identity"}:
             continue
         if column in binding or "reference" in roles[column]:
             result[column] = "source_checked_record_binding"
+        elif column in physical_names:
+            result[column] = "declared_physical_resource_name"
         elif (column in direct_slots and direct_slots[column].get("value_evidence", {}).get("quote") == value
               and (direct_slots[column]["role"] == "record_identity"
                    or column in coordinates
@@ -295,6 +304,15 @@ def compile_projection(data, profile, core, bundle, decision):
         raise ValueError("A projection matcher belongs to one source schema")
     if any(record.get("context_role") == "related_context" for record in witnesses):
         raise ValueError("Joined context cannot silently become a template witness")
+    from .classification_attributes import source_classifications
+    classifications, classification_evidence = source_classifications(data, witnesses)
+    if any(source_classifications(data, [record])[0] != classifications for record in witnesses):
+        raise ValueError("Projection witnesses have different source classification attributes")
+    decision = decision.model_copy(update={
+        "applicability_scope": {key: value for key, value in decision.applicability_scope.items()
+                                if key not in classifications},
+        "definition_parameters": {key: value for key, value in decision.definition_parameters.items()
+                                  if key not in classifications}})
     if not decision.label.strip() or not decision.definition.strip() or not decision.label_evidence:
         raise ValueError("Projection requires a label, definition and source-grounded label fragments")
     evidence_ids, fragments = [], []
@@ -426,13 +444,14 @@ def compile_projection(data, profile, core, bundle, decision):
     semantic = {column: value for column, value in values.items()
                 if roles[column] & _SEMANTIC and column not in instance_columns}
     protected = {column for column, rs in roles.items() if rs & {"formula", "unit", "identity"}}
+    protected.update(classifications)
     protected.update(item["column"] for item in witnesses[0].get("calculation_fragments", [])
                      if item.get("effective_role") == "calculation_operator")
     for item in field_templates:
         if item["column"] not in values:
             raise ValueError("Projected field is absent from the source record")
         if item["column"] in protected and _SLOT.search(item["template"]):
-            raise ValueError("Formula, unit, definition identity and calculation operators cannot be wildcarded")
+            raise ValueError("Formula, unit, definition identity, classification and calculation operators cannot be wildcarded")
         if _SLOT.search(item["template"]) and re.sub(_SLOT, "", item["template"]).count("{"):
             raise ValueError("A projected field needs declared literal placeholders")
     # Explicit literal fields remain invariants, including formula/unit parameters.
@@ -449,6 +468,8 @@ def compile_projection(data, profile, core, bundle, decision):
         if not name or value not in template["invariants"].values():
             raise ValueError("Definition parameter must retain a complete invariant source value")
     template["definition_parameters"] = dict(decision.definition_parameters)
+    template["classification_attributes"] = classifications
+    template["classification_attribute_evidence"] = classification_evidence
     # Definition namespace/version is preserved independently of business scope.
     identity_qualifiers = {column: value for column, value in values.items()
                            if "identity" in roles[column]}
@@ -471,6 +492,8 @@ def compile_projection(data, profile, core, bundle, decision):
         for column, role_set in raw_roles.items():
             for role in role_set & {"name", "alias", "description", "formula", "unit", "scope",
                                    "metadata", "provenance", "identity"}:
+                if role == "scope" and column in classifications:
+                    role = "classification"
                 eid = _evidence(data, record, column, raw_values[column])
                 source_properties.setdefault((role, record["table"], column), set()).add(eid)
                 evidence_ids.append(eid)
@@ -569,6 +592,7 @@ def compile_projection(data, profile, core, bundle, decision):
                 and (existing.unit or "") == (witnesses[0].get("unit") or "")
                 and existing.definition_parameters == decision.definition_parameters
                 and existing.identity_qualifiers == identity_qualifiers
+                and existing.classification_attributes == classifications
                 and existing.applicability_scope == decision.applicability_scope
                 and existing_formulas == source_formulas and existing.aggregation_operator is None)
     compatible = [item for item in core.object_types if compatible_type(item)]
@@ -585,6 +609,7 @@ def compile_projection(data, profile, core, bundle, decision):
                 or (existing.unit or "") != (witnesses[0].get("unit") or "")
                 or existing.definition_parameters != decision.definition_parameters
                 or existing.identity_qualifiers != identity_qualifiers
+                or existing.classification_attributes != classifications
                 or existing.applicability_scope != decision.applicability_scope
                 or existing_formulas != source_formulas):
             raise ValueError("Template target must match an existing type definition, unit, formula, parameters and applicability scope")
@@ -601,6 +626,8 @@ def compile_projection(data, profile, core, bundle, decision):
             identity.append({"applicability_scope": decision.applicability_scope})
         if identity_qualifiers:
             identity.append({"identity_qualifiers": identity_qualifiers})
+        if classifications:
+            identity.append({"classification_attributes": classifications})
         template["object_type_id"] = "type:" + digest(identity)[:24]
         if template["object_type_id"] not in known:
             candidate.object_types.append(DerivedType(
@@ -610,6 +637,7 @@ def compile_projection(data, profile, core, bundle, decision):
                 unit=witnesses[0].get("unit") or None,
                 definition_parameters=decision.definition_parameters,
                 identity_qualifiers=identity_qualifiers,
+                classification_attributes=classifications,
                 applicability_scope=decision.applicability_scope, source_properties=properties))
     # Add projection mappings without inventing exact record-to-type identity.
     current = next(item for item in candidate.object_types if item.id == template["object_type_id"])

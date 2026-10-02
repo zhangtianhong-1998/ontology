@@ -7,7 +7,7 @@
 :root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;color:#1f3043;background:#f6f8fb}*{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}
 header{background:white;border-bottom:1px solid #dce5ee;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:17px 24px}h1{font-size:20px;margin:0 0 5px}header p{font-size:12px;color:#708095;margin:0}.switch{display:flex;gap:4px;padding:4px;background:#ecf1f6;border-radius:8px}.switch button{border:0;background:transparent;padding:8px 13px;border-radius:6px;color:#53687f;white-space:nowrap}.switch button.active{background:#fff;color:#175487;box-shadow:0 1px 4px #2343;font-weight:600}.status{border:1px solid #d7e1eb;border-radius:40px;padding:6px 10px;font-size:12px;white-space:nowrap}.status.partial,.status.failed{border-color:#e1bd87;color:#946e30}
 main{max-width:1800px;margin:auto;padding:15px}.notice{padding:10px 13px;border-left:3px solid #8fb0d0;background:#edf4fb;margin:0 0 12px;font-size:12px;line-height:1.55;color:#52677d}.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:12px;min-height:calc(100vh - 145px)}.graph-pane,.details{min-width:0;border:1px solid #dce5ee;background:#fff;border-radius:9px}.graph-pane{position:relative;display:flex;flex-direction:column;overflow:hidden;height:calc(100vh - 165px);min-height:640px}.search-toggle{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;padding:7px 10px}.search-toggle:hover{background:#eff5fa}.search-panel{position:absolute;z-index:5;top:58px;left:14px;width:min(320px,calc(100% - 28px));max-height:65vh;overflow:auto;background:white;border:1px solid #dce5ee;box-shadow:0 8px 22px #16365425;border-radius:8px;padding:11px}.search-panel[hidden]{display:none}.search-panel input{width:100%;border:1px solid #d4e0eb;border-radius:6px;padding:8px 9px;outline:none}.search-panel input:focus,button:focus-visible{outline:2px solid #77a8d8;outline-offset:2px}.group-title{font-size:11px;font-weight:600;color:#7c8999;margin:17px 5px 6px}.index-item{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:6px;padding:8px 9px;color:#34516a;line-height:1.35;overflow-wrap:anywhere}.index-item:hover{background:#eff5fa}.index-item.active{background:#e6f1fc;color:#175386;font-weight:600}.index-item small{display:block;font-size:10px;color:#7c8ca0;margin-top:2px;font-weight:400}
-.graph-head{padding:13px 15px 10px;border-bottom:1px solid #e6edf4;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}.graph-head h2{font-size:17px;margin:0 0 5px}.graph-head p{font-size:12px;color:#708093;line-height:1.55;margin:0}.graph-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;flex-shrink:0}.view-control{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;min-width:31px;height:31px;padding:3px 7px}.view-control:hover{background:#eff5fa}.zoom-level{min-width:39px;text-align:center;color:#667d92;font-size:11px;font-variant-numeric:tabular-nums}.graph-viewport{overflow:hidden;position:relative;flex:1;min-height:420px;background:radial-gradient(#e4ebf2 .7px,transparent .7px);background-size:18px 18px;touch-action:none}.graph-viewport svg{display:block;position:absolute;inset:0;width:100%;height:100%;min-height:0;cursor:grab;touch-action:none}.graph-viewport.is-panning svg{cursor:grabbing}.graph-foot{border-top:1px solid #e6edf4;color:#728396;font-size:12px;padding:11px 16px;line-height:1.55}.node{cursor:pointer}.node circle{stroke:#b7c9d9;stroke-width:1.1}.node.selected circle,.node:hover circle,.node:focus circle{stroke:#1a619a;stroke-width:2}.node text{font-size:11.5px;fill:#27445d;pointer-events:none;font-weight:600}.edge{stroke:#a1b3c5;stroke-width:1.2;fill:none}.edge.relation{stroke:#8c69ad;stroke-dasharray:5 3;stroke-width:2;cursor:pointer}.edge.relation:hover,.edge.relation.selected{stroke:#593783;stroke-width:3}.edge.declared{stroke:#469370;stroke-width:2}.edge.technical_link{stroke:#407ba9;stroke-width:2;stroke-dasharray:6 4}.edge.technical_link.observed_subset{stroke:#b38136}.edge.table_has_column{stroke:#c6d3df}.edge[role="button"]{cursor:pointer}.edge-label{fill:#6c7e91;font-size:10px;font-weight:600;pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}.edge-label.relation{fill:#724d97}.edge.quiet{stroke-width:1;opacity:.25}.edge.hovered,.edge:focus{opacity:1;stroke-width:2.6}.edge-label.label-hidden{opacity:0}.edge-label.hovered{opacity:1}.edge-hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}.node .table-caption{font-size:9px;font-weight:400;fill:#688198}.node .table-label{font-size:11px}.graph-viewport svg.is-node-hover .edge:not(.hovered){opacity:.08}
+.graph-head{padding:13px 15px 10px;border-bottom:1px solid #e6edf4;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}.graph-head h2{font-size:17px;margin:0 0 5px}.graph-head p{font-size:12px;color:#708093;line-height:1.55;margin:0}.graph-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;flex-shrink:0}.view-control{border:1px solid #d4e0eb;background:#fff;color:#34516a;border-radius:6px;min-width:31px;height:31px;padding:3px 7px}.view-control:hover{background:#eff5fa}.zoom-level{min-width:39px;text-align:center;color:#667d92;font-size:11px;font-variant-numeric:tabular-nums}.graph-viewport{overflow:hidden;position:relative;flex:1;min-height:420px;background:radial-gradient(#e4ebf2 .7px,transparent .7px);background-size:18px 18px;touch-action:none}.graph-viewport svg{display:block;position:absolute;inset:0;width:100%;height:100%;min-height:0;cursor:grab;touch-action:none}.graph-viewport.is-panning svg{cursor:grabbing}.graph-foot{border-top:1px solid #e6edf4;color:#728396;font-size:12px;padding:11px 16px;line-height:1.55}.node{cursor:pointer}.node circle{stroke:#b7c9d9;stroke-width:1.1}.node.selected circle,.node:hover circle,.node:focus circle{stroke:#1a619a;stroke-width:2}.node text{font-size:11.5px;fill:#27445d;pointer-events:none;font-weight:600}.edge{stroke:#a1b3c5;stroke-width:1.2;fill:none}.edge.relation{stroke:#8c69ad;stroke-dasharray:5 3;stroke-width:2;cursor:pointer}.edge.relation:hover,.edge.relation.selected{stroke:#593783;stroke-width:3}.edge.declared{stroke:#469370;stroke-width:2}.edge.technical_link{stroke:#407ba9;stroke-width:2;stroke-dasharray:6 4}.edge.technical_link.observed_subset{stroke:#b38136}.edge.table_has_column{stroke:#c6d3df}.edge[role="button"]{cursor:pointer}.edge-label{fill:#6c7e91;font-size:10px;font-weight:600;pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}.edge-label.relation{fill:#724d97}.edge.quiet{stroke-width:1;opacity:.25}.edge.hovered,.edge:focus{opacity:1;stroke-width:2.6}.edge-label.label-hidden,.edge-label.label-crowded{opacity:0}.edge-label.label-crowded:not(.hovered){pointer-events:none}.edge-label.hovered{opacity:1}.edge-hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}.node .table-caption{font-size:9px;font-weight:400;fill:#688198}.node .table-label{font-size:11px}.graph-viewport svg.is-node-hover .edge:not(.hovered){opacity:.08}
 .details{max-height:calc(100vh - 135px);overflow:auto;padding:17px}.details h2{font-size:17px;margin:0 0 6px;line-height:1.4;overflow-wrap:anywhere}.kind{font-size:11px;color:#38648c;background:#eaf2fb;border-radius:4px;padding:3px 6px;display:inline-block;margin-bottom:9px}.id{font-size:11px;color:#75879a;overflow-wrap:anywhere}.label{font-size:11px;font-weight:600;color:#79899a;margin:15px 0 5px}.value{font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.section{border-top:1px solid #e5edf3;padding-top:13px;margin-top:17px}.section h3,.evidence h3{font-size:13px;margin:0 0 9px}.item{display:block;width:100%;text-align:left;border:1px solid #e2eaf1;background:#fbfdff;border-radius:6px;padding:8px 9px;margin:5px 0;color:#34516b;overflow-wrap:anywhere;line-height:1.4}.item:hover{background:#edf5fb}.item small{display:block;color:#798a9c;font-size:10px;margin-top:3px}.empty{font-size:12px;color:#79899a;line-height:1.55}.evidence{border-top:1px solid #e5edf3;padding-top:13px;margin-top:20px}.quote{padding:9px 10px;border-left:3px solid #97b7d7;background:#f5f9fc;font-size:12px;line-height:1.6;margin:7px 0;overflow-wrap:anywhere}.quote small{display:block;color:#72869a;margin-top:4px}.plain{font-size:12px;color:#596d80;line-height:1.6;overflow-wrap:anywhere}footer{font-size:11px;color:#8391a0;padding:12px 1px 0}
 @media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr)}.graph-pane{min-height:1000px}.details{max-height:none}}@media(max-width:580px){header{flex-wrap:wrap;padding:14px}.switch{order:3;width:100%}.switch button{flex:1}.layout{display:block}.graph-pane,.details{max-height:none;margin-bottom:10px}.graph-head{flex-wrap:wrap}.graph-actions{justify-content:flex-start}main{padding:10px}}
 .risk-warning{margin:12px 0;padding:10px 12px;border-left:4px solid #b7791f;background:#fff5db;color:#865616;font-size:13px;line-height:1.6;font-weight:600}
@@ -90,7 +90,7 @@ for(const [title,items,kind] of groups){const found=items.filter(x=>`${name(x)} 
 function renderDetails(){const p=$('details'),point=selected;p.replaceChildren();p.scrollTop=0;p.setAttribute('data-selected-id',point?.id||'');p.setAttribute('data-selected-kind',point?.kind||'');if(!point?.id){p.append(el('h2',mode==='ontology'?'整体本体结构':'元数据图'));p.append(el('p',mode==='ontology'?'点击对象节点或关系连线，查看属性、关系、实例和证据。':'点击物理表或声明外键，查看元数据和来源。','empty'));return}
 if(mode==='ontology'){
 if(point.kind==='object'){const x=T.get(point.id);if(!x)return;const children=(O.object_types||[]).filter(y=>y.parent===x.id),as=objectAttrs(x.id),rs=objectRels(x.id),samples=objectInstances(x.id);
-p.append(el('h2',name(x)),el('span',typeKind(x),'kind'),el('div',x.id,'id'));field(p,'定义',x.definition);if(x.parent)field(p,'上位类型',name(T.get(x.parent))||x.parent);field(p,'适用范围',Object.keys(x.applicability_scope||{}).length?x.applicability_scope:undefined);field(p,'计算参数',Object.keys(x.definition_parameters||{}).length?x.definition_parameters:undefined);field(p,'单位',x.unit);field(p,'计算运算',x.aggregation_operator);
+p.append(el('h2',name(x)),el('span',typeKind(x),'kind'),el('div',x.id,'id'));field(p,'定义',x.definition);if(x.parent)field(p,'上位类型',name(T.get(x.parent))||x.parent);field(p,'分类属性',Object.keys(x.classification_attributes||{}).length?x.classification_attributes:undefined);field(p,'适用范围',Object.keys(x.applicability_scope||{}).length?x.applicability_scope:undefined);field(p,'计算参数',Object.keys(x.definition_parameters||{}).length?x.definition_parameters:undefined);field(p,'单位',x.unit);field(p,'计算运算',x.aggregation_operator);
 if(x.category==='business_type'&&(x.canonical_type_id||x.equivalent_type_ids?.length)){
 const canonical=T.get(x.canonical_type_id||x.id),equivalents=verifiedEquivalentTypes(x),judgements=equivalenceEvidence(x);
 section(p,'规范类型',canonical?[canonical]:[],y=>button(name(y),y.id,()=>select('object',y.id)),'规范类型未进入页面预览');
@@ -159,19 +159,30 @@ function updateNodeLabels(scale){
     lines.forEach((line,i)=>{const span=svgEl('tspan',{x:n.x,dy:i?'1.2em':0});span.textContent=line;item.element.append(span)})
   }
 }
+function edgeLabelPlacement(route,width,height,blocked,scale){
+  const intersects=(a,b)=>a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height;
+  let best=null;
+  for(const fraction of [.5,.35,.65,.2,.8]){
+    const anchor=pathMidpoint(route,fraction),before=pathMidpoint(route,Math.max(0,fraction-.01)),after=pathMidpoint(route,Math.min(1,fraction+.01)),d=Math.hypot(after.x-before.x,after.y-before.y)||1;
+    for(const offset of [-14,14,-32,32,-54,54,-78,78]){
+      const point={x:anchor.x-(after.y-before.y)/d*offset/scale,y:anchor.y+(after.x-before.x)/d*offset/scale};
+      const box={x:point.x-width/2,y:point.y-height/2,width,height},penalty=blocked.filter(x=>intersects(box,x)).length;
+      if(!best||penalty<best.penalty)best={anchor,point,box,penalty};
+      if(!penalty)return best;
+    }
+  }
+  return best
+}
 function updateEdgeLabels(scale){
   const blocked=(graphState.labels||[]).map(({element})=>element.getBBox()).map(r=>({x:r.x-4/scale,y:r.y-4/scale,width:r.width+8/scale,height:r.height+8/scale}));
-  for(const n of graphState.nodes||[])blocked.push({x:n.x-NODE_RADIUS-5,y:n.y-NODE_RADIUS-5,width:2*NODE_RADIUS+10,height:2*NODE_RADIUS+10});
-  const intersects=(a,b)=>a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height;
-  for(const item of graphState.edgeLabels||[]){
-    if(item.edge.showLabel===false)continue;
+  for(const n of graphState.nodes||[])blocked.push({x:n.x-NODE_RADIUS-6,y:n.y-NODE_RADIUS-6,width:2*NODE_RADIUS+12,height:2*NODE_RADIUS+12});
+  const labels=[...(graphState.edgeLabels||[])].sort((a,b)=>Number(b.edge.id===selected?.id)-Number(a.edge.id===selected?.id));
+  for(const item of labels){
     const lines=wrapNodeLabel(item.edge.label,125,11),width=Math.min(125,Math.max(...lines.map(x=>[...x].reduce((n,c)=>n+(/[\u2e80-\u9fff]/u.test(c)?11:6.6),0))))/scale,height=lines.length*14/scale;
-    let best=null;
-    for(const fraction of [.5,.4,.6,.25,.75])for(const offset of [-10,-28,12,-46,30]){
-      const point=pathMidpoint(item.route,fraction),box={x:point.x-width/2,y:point.y+(offset-11)/scale,width,height},penalty=blocked.filter(x=>intersects(box,x)).length;
-      if(!best||penalty<best.penalty)best={point,box,penalty};if(!penalty)break;
-    }
-    item.element.replaceChildren();lines.forEach((line,i)=>{const span=svgEl('tspan',{x:best.point.x,y:best.box.y+(11+i*14)/scale});span.textContent=line;item.element.append(span)});blocked.push(best.box)
+    const best=edgeLabelPlacement(item.route,width,height,blocked,scale);if(!best)continue;
+    item.element.replaceChildren();lines.forEach((line,i)=>{const span=svgEl('tspan',{x:best.point.x,y:best.box.y+(11+i*14)/scale});span.textContent=line;item.element.append(span)});
+    item.element.classList.toggle('label-crowded',best.penalty>0);
+    if(item.edge.showLabel!==false)blocked.push(best.box);
   }
 }
 function applyView(){
@@ -275,35 +286,18 @@ function ontologyPositions(items,aspect=1.4){
   const packed=packBoxes(boxes.sort((a,b)=>b.height-a.height||b.width-a.width||a.id.localeCompare(b.id)),aspect,100),out=new Map();for(const {box,x,y} of packed.placements)for(const [id,p] of box.points)out.set(id,{x:x+p.x,y:y+p.y});
   treeLayoutCache.set(signature,out);return out
 }
-function segmentClear(a,b,nodes,ignored,clearance=NODE_RADIUS+7){
-  const dx=b.x-a.x,dy=b.y-a.y,length=dx*dx+dy*dy;
-  return nodes.every(n=>{if(ignored.has(n.id))return true;const t=length?Math.max(0,Math.min(1,((n.x-a.x)*dx+(n.y-a.y)*dy)/length)):0;return Math.hypot(n.x-a.x-t*dx,n.y-a.y-t*dy)>=clearance})
-}
-// Local A* uses a bounded spatial grid; it never creates a semantic edge.
+// Edges run beneath opaque nodes. Only parallel edges need separate lanes.
 function routeGraphEdges(nodes,edges){
-  const map=new Map(nodes.map(n=>[n.id,n])),bounds=boundsFor(nodes,190),cell=28,cols=Math.ceil(bounds.width/cell)+1,rows=Math.ceil(bounds.height/cell)+1,owners=new Map();
-  const point=k=>({x:bounds.x+k%cols*cell,y:bounds.y+Math.floor(k/cols)*cell}),key=p=>Math.max(0,Math.min(rows-1,Math.round((p.y-bounds.y)/cell)))*cols+Math.max(0,Math.min(cols-1,Math.round((p.x-bounds.x)/cell)));
-  for(const n of nodes){const radius=NODE_RADIUS+cell*.8,k=key(n),cx=k%cols,cy=Math.floor(k/cols),r=Math.ceil(radius/cell)+1;for(let y=Math.max(0,cy-r);y<=Math.min(rows-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(cols-1,cx+r);x++){const id=y*cols+x,p=point(id);if(Math.hypot(p.x-n.x,p.y-n.y)<radius){if(!owners.has(id))owners.set(id,new Set());owners.get(id).add(n.id)}}}
-  const paths=[];
-  for(const e of edges){const a=map.get(e.from),b=map.get(e.to);if(!a||!b){paths.push([]);continue}const ignored=new Set([a.id,b.id]);if(a.id===b.id){paths.push([{x:a.x+28,y:a.y-28},{x:a.x+95,y:a.y-100},{x:a.x-95,y:a.y-100},{x:a.x-28,y:a.y-28}]);continue}
-    if(segmentClear(a,b,nodes,ignored)){paths.push([a,b]);continue}
-    const start=key(a),goal=key(b),g=new Map([[start,0]]),previous=new Map(),closed=new Set(),heap=[];
-    const heuristic=k=>Math.abs(k%cols-goal%cols)+Math.abs(Math.floor(k/cols)-Math.floor(goal/cols));
-    const push=(k,f)=>{heap.push({k,f});let i=heap.length-1;while(i){const p=(i-1)>>1;if(heap[p].f<=f)break;[heap[i],heap[p]]=[heap[p],heap[i]];i=p}};
-    const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let i=0;while(true){let j=i*2+1;if(j>=heap.length)break;if(j+1<heap.length&&heap[j+1].f<heap[j].f)j++;if(heap[i].f<=heap[j].f)break;[heap[i],heap[j]]=[heap[j],heap[i]];i=j}}return top.k};push(start,heuristic(start));
-    while(heap.length&&closed.size<cols*rows){const k=pop();if(closed.has(k))continue;if(k===goal)break;closed.add(k);const x=k%cols,y=Math.floor(k/cols);
-      for(const next of [x? k-1:-1,x<cols-1?k+1:-1,y?k-cols:-1,y<rows-1?k+cols:-1]){if(next<0||closed.has(next)||[...(owners.get(next)||[])].some(id=>!ignored.has(id)))continue;const score=g.get(k)+1;if(score<(g.get(next)??Infinity)){g.set(next,score);previous.set(next,k);push(next,score+heuristic(next))}}
-    }
-    if(!previous.has(goal)){paths.push([a,b]);continue}
-    const raw=[];let current=goal;while(current!==start){raw.push(point(current));current=previous.get(current)}raw.push(point(start));raw.reverse();raw.unshift(a);raw.push(b);
-    const compressed=[raw[0]];let cursor=0;while(cursor<raw.length-1){let next=cursor+1;while(next+1<raw.length&&segmentClear(raw[cursor],raw[next+1],nodes,ignored))next++;compressed.push(raw[next]);cursor=next}paths.push(compressed)
-  }
-  const parallel=new Map();edges.forEach((e,i)=>{const key=[e.from,e.to].sort().join('|');if(!parallel.has(key))parallel.set(key,[]);parallel.get(key).push(i)});
-  for(const indexes of parallel.values())if(indexes.length>1)indexes.forEach((index,rank)=>{
-    const e=edges[index],path=paths[index];if(path.length!==2||e.from===e.to)return;const [a,b]=path,d=Math.hypot(b.x-a.x,b.y-a.y)||1,offset=(rank-(indexes.length-1)/2)*24*(e.from<e.to?1:-1),mid={x:(a.x+b.x)/2-(b.y-a.y)/d*offset,y:(a.y+b.y)/2+(b.x-a.x)/d*offset},ignored=new Set([e.from,e.to]);
-    if(segmentClear(a,mid,nodes,ignored)&&segmentClear(mid,b,nodes,ignored))paths[index]=[a,mid,b]
-  });
-  return paths
+  const map=new Map(nodes.map(n=>[n.id,n])),parallel=new Map();
+  edges.forEach((e,i)=>{const key=[e.from,e.to].sort().join('|');if(!parallel.has(key))parallel.set(key,[]);parallel.get(key).push(i)});
+  return edges.map((e,index)=>{
+    const a=map.get(e.from),b=map.get(e.to);if(!a||!b)return[];
+    const siblings=parallel.get([e.from,e.to].sort().join('|')),rank=siblings.indexOf(index);
+    if(a.id===b.id){const lane=rank*28;return[{x:a.x+28,y:a.y-28},{x:a.x+95+lane,y:a.y-100-lane},{x:a.x-95-lane,y:a.y-100-lane},{x:a.x-28,y:a.y-28}]}
+    if(siblings.length===1)return[a,b];
+    const d=Math.hypot(b.x-a.x,b.y-a.y)||1,offset=(rank-(siblings.length-1)/2)*28*(e.from<e.to?1:-1);
+    return[a,{x:(a.x+b.x)/2-(b.y-a.y)/d*offset,y:(a.y+b.y)/2+(b.x-a.x)/d*offset},b]
+  })
 }
 function trimRoute(points){if(points.length<2)return points;const out=points.map(p=>({x:p.x,y:p.y}));for(const [i,j] of [[0,1],[out.length-1,out.length-2]]){const a=points[i],b=points[j],d=Math.hypot(b.x-a.x,b.y-a.y)||1;out[i]={x:a.x+(b.x-a.x)*NODE_RADIUS/d,y:a.y+(b.y-a.y)*NODE_RADIUS/d}}return out}
 function pathMidpoint(points,fraction=.5){let length=0;for(let i=1;i<points.length;i++)length+=Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y);let left=length*fraction;for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],d=Math.hypot(b.x-a.x,b.y-a.y);if(left<=d)return{x:a.x+(b.x-a.x)*left/(d||1),y:a.y+(b.y-a.y)*left/(d||1)};left-=d}return points[0]||{x:0,y:0}}
@@ -312,7 +306,7 @@ function drawGraph(nodes,edges){
   graphState.nodes=nodes;graphState.edges=edges;graphState.labels=[];graphState.edgeLabels=[];
   const selectedNode=nodes.find(n=>n.id===selected?.id);$('zoom-selection').disabled=!selected;$('pin-selection').disabled=!selectedNode;$('pin-selection').textContent=pinnedPositions[mode].has(selected?.id)?'取消固定':'固定节点';$('pin-selection').setAttribute('aria-pressed',String(pinnedPositions[mode].has(selected?.id)));
   const routeKey=nodes.map(n=>`${n.id}:${n.x.toFixed(1)},${n.y.toFixed(1)}`).join('|')+edges.map(e=>`${e.from}>${e.to}`).join('|');
-  if(graphState.routeKey!==routeKey&&!graphState.drag?.nodeId){graphState.routes=routeGraphEdges(nodes,edges);graphState.routeKey=routeKey}
+  if(graphState.routeKey!==routeKey){graphState.routes=routeGraphEdges(nodes,edges);graphState.routeKey=routeKey}
   const xs=nodes.map(x=>x.x),ys=nodes.map(x=>x.y),paddingX=mode==='metadata'?100:44,paddingY=edges.some(e=>e.from===e.to)?115:80;
   const bounds=nodes.length?{x:Math.min(...xs)-NODE_RADIUS-paddingX,y:Math.min(...ys)-NODE_RADIUS-paddingY,width:Math.max(...xs)-Math.min(...xs)+2*(NODE_RADIUS+paddingX),height:Math.max(...ys)-Math.min(...ys)+2*(NODE_RADIUS+paddingY)}:{x:0,y:0,width:600,height:400};
   const preserve=graphState.key===key&&graphState.view&&graphState.userViewChanged;
@@ -321,6 +315,7 @@ function drawGraph(nodes,edges){
   requestAnimationFrame(()=>{if(!graphState.userViewChanged&&graphState.key===key)fitGraph()});
   const defs=svgEl('defs'),marker=svgEl('marker',{id:'arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:6,markerHeight:6,orient:'auto-start-reverse'});
   marker.append(svgEl('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#8797aa'}));defs.append(marker);svg.append(defs);
+  const edgeLayer=svgEl('g',{'data-layer':'edges'}),labelLayer=svgEl('g',{'data-layer':'relations'}),nodeLayer=svgEl('g',{'data-layer':'nodes'});svg.append(edgeLayer,labelLayer,nodeLayer);
   const map=new Map(nodes.map(x=>[x.id,x]));
   const parallel=new Map();edges.forEach((edge,index)=>{const key=[edge.from,edge.to].sort().join('|');if(!parallel.has(key))parallel.set(key,[]);parallel.get(key).push(index)});
   const renderedEdges=[];
@@ -331,13 +326,13 @@ function drawGraph(nodes,edges){
     const relation=e.kind==='relation',self=a.id===b.id,siblings=parallel.get([e.from,e.to].sort().join('|')),rank=siblings.indexOf(index);
     const curve=siblings.length>1?(rank-(siblings.length-1)/2)*38*(e.from<e.to?1:-1):relation?Math.min(38,distance*.22):0,cx=(sx+tx)/2+nx*curve,cy=(sy+ty)/2+ny*curve,loop=rank*28;
     const straightPath=self?`M ${a.x+28} ${a.y-28} C ${a.x+98+loop} ${a.y-112-loop}, ${a.x-98-loop} ${a.y-112-loop}, ${a.x-28} ${a.y-28}`:curve?`M ${sx} ${sy} Q ${cx} ${cy} ${tx} ${ty}`:`M ${sx} ${sy} L ${tx} ${ty}`;
-    const route=graphState.drag?.nodeId?[a,b]:graphState.routes[index]||[a,b],trimmed=self?route:trimRoute(route);
+    const route=graphState.routes[index]||[a,b],trimmed=self?route:trimRoute(route);
     const path=self?straightPath:trimmed.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
     const line=svgEl('path',{d:path,class:`edge ${e.kind||''} ${e.status||''} ${e.quiet?'quiet':''} ${selected?.id===e.id?'selected':''}`,'marker-end':'url(#arrow)','marker-start':e.bidirectional?'url(#arrow)':'none','data-edge-index':index});
     if(e.action){line.setAttribute('role','button');line.setAttribute('tabindex','0');line.setAttribute('aria-label',e.label||e.id);line.onclick=e.action;line.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();e.action()}}}
-    const title=svgEl('title');title.textContent=e.label||e.kind||'连接';line.append(title);svg.append(line);
+    const title=svgEl('title');title.textContent=e.label||e.kind||'连接';line.append(title);edgeLayer.append(line);
     const hit=e.action?svgEl('path',{d:path,class:'edge-hit','aria-hidden':'true'}):null;
-    if(hit){hit.onclick=e.action;svg.append(hit)}
+    if(hit){hit.onclick=e.action;edgeLayer.append(hit)}
     let textNode=null;
     if(e.label){
       const oldMidX=self?a.x:(curve?(sx+2*cx+tx)/4:(sx+tx)/2)+nx*(curve?0:12);
@@ -345,7 +340,7 @@ function drawGraph(nodes,edges){
       const middle=pathMidpoint(trimmed),midX=self?oldMidX:middle.x,midY=self?oldMidY:middle.y-7;
       textNode=svgEl('text',{x:midX,y:midY,'text-anchor':'middle',class:`edge-label ${e.kind||''} ${e.showLabel===false?'label-hidden':''}`,'data-edge-label-for':index});
       if(e.action){textNode.setAttribute('role','button');textNode.setAttribute('tabindex','0');textNode.setAttribute('data-relation-id',e.id||'');textNode.onclick=event=>{event.stopPropagation();e.action()};textNode.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();e.action()}}}
-      textNode.textContent=clip(e.label,24);const labelTitle=svgEl('title');labelTitle.textContent=e.label;textNode.append(labelTitle);svg.append(textNode);graphState.edgeLabels.push({element:textNode,edge:e,route:trimmed})
+      textNode.textContent=clip(e.label,24);const labelTitle=svgEl('title');labelTitle.textContent=e.label;textNode.append(labelTitle);labelLayer.append(textNode);graphState.edgeLabels.push({element:textNode,edge:e,route:trimmed})
     }
     const highlight=active=>{line.classList.toggle('hovered',active);textNode?.classList.toggle('hovered',active)};
     [line,hit].filter(Boolean).forEach(item=>{item.onmouseenter=()=>highlight(true);item.onmouseleave=()=>highlight(false);item.onfocus=()=>highlight(true);item.onblur=()=>highlight(false)});
@@ -360,7 +355,7 @@ function drawGraph(nodes,edges){
     const full=svgEl('text',{x:n.x,y:n.y+NODE_RADIUS+22,'text-anchor':'middle',class:'full-node-label'});
     full.setAttribute('data-label-for',n.id);full.setAttribute('role','button');full.setAttribute('aria-label',`${n.kind}：${n.label}`);full.onclick=event=>{event.stopPropagation();if(Date.now()>graphState.suppressClickUntil)n.action()};graphState.labels.push({element:full,node:n});g.append(full);
     const highlightNode=active=>{svg.classList.toggle('is-node-hover',active);renderedEdges.forEach(({edge,highlight})=>highlight(active&&(edge.from===n.id||edge.to===n.id)))};g.onmouseenter=()=>highlightNode(true);g.onmouseleave=()=>highlightNode(false);g.onfocus=()=>highlightNode(true);g.onblur=()=>highlightNode(false);
-    const title=svgEl('title');title.textContent=`${n.label}${n.subtitle?` · ${n.subtitle}`:''}\n${n.id}`;g.append(title);g.onclick=()=>{if(Date.now()>graphState.suppressClickUntil)n.action()};g.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();n.action()}};svg.append(g)
+    const title=svgEl('title');title.textContent=`${n.label}${n.subtitle?` · ${n.subtitle}`:''}\n${n.id}`;g.append(title);g.onclick=()=>{if(Date.now()>graphState.suppressClickUntil)n.action()};g.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();n.action()}};nodeLayer.append(g)
   });applyView()
 }
 function ontologyGraph(){

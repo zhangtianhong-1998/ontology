@@ -12,6 +12,8 @@
 
 ## 路线2专题
 
+- [V13：类定义、关系路径、实例绑定与画布修复](route2/ONTOLOGY_REPAIR_V13.md)
+
 - [V12：关系构建、类型复用与新实验](route2/RELATION_REPAIR_V12.md)
 - [完成状态与待实现范围](route2/STATUS.md)
 - [本轮关联重构与需求核对](route2/ASSOCIATION_REBUILD_ACCEPTANCE.md)

@@ -264,6 +264,13 @@ def materialize_ontology_instances(data, plan, *, template_projections=(), templ
                 add_edge(subject, target, binding["relation_type_id"], proofs,
                     binding_id=binding["id"], slot_name=slot["name"], selector=slot.get("selector"))
         elif contract.get("kind") == "configuration_references":
+            if contract.get("auxiliary_path_candidate"):
+                from .auxiliary_relation_paths import replay_auxiliary_path
+                try:
+                    replay_auxiliary_path(data, contract["auxiliary_path_candidate"], plan=plan)
+                except ValueError as exc:
+                    unresolved("auxiliary_path_execution_failed", binding_id=binding["id"], error=str(exc))
+                    continue
             endpoints = contract.get("endpoints", {})
             table, number = contract.get("configuration_table"), contract.get("configuration_row_number")
             valid = table in data.tables and type(number) is int

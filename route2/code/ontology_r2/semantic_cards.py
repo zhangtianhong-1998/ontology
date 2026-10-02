@@ -43,8 +43,9 @@ def _definition_pattern_exclusions(table, roles):
     """Separate only declared technical physical names from scheduling.
 
     Generic resource/object names may denote business assets and remain intact.
-    Do not reuse the binding-role exclusion contract: template membership must
-    still compare these complete original name values before assigning a type.
+    Their complete values remain in source cards. A checked projection contract
+    may preserve them as instance values instead of fixing a class invariant;
+    this scheduling hint alone never proves membership.
     """
     names = set(roles.get("name", ()))
     result = []
@@ -60,7 +61,8 @@ def _definition_pattern_exclusions(table, roles):
                            "schema_evidence_id": f"schema:{table['name']}:{column['column_name']}",
                            "scope": "definition_pattern_scheduling_only",
                            "entity_identity_claim": False,
-                           "template_membership_still_compares_original_value": True})
+                           "template_membership_requires_complete_projection_contract": True,
+                           "original_value_retained_as_source_or_instance_value": True})
     return result
 
 

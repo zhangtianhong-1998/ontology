@@ -281,7 +281,7 @@ class ConceptBundleDecision(Strict):
     # Existing responses without this field remain instance-level candidates.
     ontology_level: Literal["type", "instance", "unresolved"] = "unresolved"
     scope: dict[str, str] = Field(default_factory=dict)
-    scope_roles: dict[str, Literal["applicability", "observation", "unrestricted", "parameter", "identity"]] = Field(default_factory=dict)
+    scope_roles: dict[str, Literal["applicability", "observation", "unrestricted", "parameter", "identity", "classification"]] = Field(default_factory=dict)
     alignments: list[RecordAlignmentDecision] = Field(default_factory=list)
     reason: str = ""
 
@@ -543,7 +543,8 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
             if key in exact_scope and exact_scope[key] != value:
                 raise ValueError("Conflicting scopes cannot share an exact concept")
             exact_scope[key] = value
-    exact_units = {str(record.get("unit") or "").strip().casefold()
+    from .unit_identity import unit_identity
+    exact_units = {unit_identity(record.get("unit"))
                    for record in exact_records if str(record.get("unit") or "").strip()}
     if len(exact_units) > 1:
         raise ValueError("Conflicting units cannot share an exact concept")
@@ -551,8 +552,20 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
     effective_scope = {**exact_scope, **decision.scope}
     if not set(decision.scope_roles) <= set(effective_scope):
         raise ValueError("Scope role names a field absent from exact source definitions")
+    from .classification_attributes import source_classifications
+    classifications, classification_evidence = source_classifications(data, exact_records)
+    classifications = {key: value for key, value in classifications.items() if key in effective_scope}
+    proposed_scope_roles = dict(decision.scope_roles)
+    # This normalization follows independently declared source categories; the
+    # model cannot turn an unknown scope or namespace into a classification.
+    decision = decision.model_copy(update={"scope_roles": {
+        **decision.scope_roles, **{key: "classification" for key in classifications}}})
     parameter_evidence = {}
     for key, role in decision.scope_roles.items():
+        if role == "classification":
+            if key not in classifications or effective_scope[key] != classifications[key]:
+                raise ValueError("Classification attribute requires a complete source category declaration")
+            continue
         if role == "identity":
             if not all(any(source_role == "identity" and entry.get("column") == key
                            and not entry.get("truncated")
@@ -626,6 +639,8 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
         identity.append({"definition_parameters": parameters})
     if identity_qualifiers:
         identity.append({"identity_qualifiers": identity_qualifiers})
+    if classifications:
+        identity.append({"classification_attributes": classifications})
     type_id = ("type:" + digest(identity)[:24]
                if decision.ontology_level == "type" else None)
     alignments, all_evidence = [], set()
@@ -654,12 +669,14 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
     property_sources = {}
     for record in exact_records:
         for role, entry in _entries(record):
+            if role == "scope" and entry["column"] in classifications:
+                role = "classification"
             if role == "unknown" and not entry.get("truncated"):
                 from .semantic_cards import _structured_semantic_candidate
                 if _structured_semantic_candidate(entry["value"]):
                     role = "structured_reference"
             if role not in ("name", "alias", "description", "formula", "unit", "scope",
-                            "metadata", "provenance", "identity", "structured_reference"):
+                            "metadata", "provenance", "identity", "structured_reference", "classification"):
                 continue
             column = entry["column"]
             evidence_id = "record:" + digest([data.snapshot_id, record["record_id"], column])[:24]
@@ -695,6 +712,9 @@ def compile_concept(data, profile, bundle, decision, accepted_exact):
                "scope": effective_scope, "applicability_scope": applicability,
                "definition_parameters": parameters, "parameter_evidence": parameter_evidence,
                "identity_qualifiers": identity_qualifiers,
+               "classification_attributes": classifications,
+               "classification_attribute_evidence": classification_evidence,
+               "proposed_scope_roles": proposed_scope_roles,
                "scope_roles": dict(decision.scope_roles),
                "unrestricted_scope": {key: value for key, value in effective_scope.items()
                                       if decision.scope_roles.get(key) == "unrestricted"},
@@ -725,6 +745,7 @@ def _compiled_object_type(concept):
         applicability_scope=concept["applicability_scope"],
         definition_parameters=concept.get("definition_parameters", {}),
         identity_qualifiers=concept.get("identity_qualifiers", {}),
+        classification_attributes=concept.get("classification_attributes", {}),
         unit=concept["unit"], derivation_kind="exact_definition",
         aggregation_operator=concept.get("aggregation_operator"),
         source_concept_ids=[concept["id"]],
@@ -1225,6 +1246,7 @@ def _type_context(core, bundle, limit=12):
              "label": item.label, "applicability_scope": item.applicability_scope,
              "definition_parameters": item.definition_parameters,
              "identity_qualifiers": item.identity_qualifiers,
+             "classification_attributes": item.classification_attributes,
              "unit": item.unit, "category": item.category} for item in chosen]
 
 
@@ -1234,8 +1256,10 @@ def bundle_request_payload(data, profile, core, bundle):
     exact_records = [record for record in bundle.get("records", [])
                      if record.get("context_role") != "related_context"
                      and (not exact_ids or record["record_id"] in exact_ids)]
+    from .classification_attributes import classification_basis
     scope_declarations = [{"record_id": record["record_id"], "column": key, "value": value,
                            "parameter_basis": _parameter_basis(data, record, key, value),
+                           "classification_basis": classification_basis(data, record, key, value),
                            "unrestricted_literal_supported": _explicitly_unrestricted(value)}
                           for record in exact_records for key, value in (record.get("scope") or {}).items()]
     endpoint_declarations = {}
@@ -1248,7 +1272,14 @@ def bundle_request_payload(data, profile, core, bundle):
             endpoint_declarations[endpoint] = {
                 **reference, "table_comment": table.get("table_comment") or "",
                 "column_comment": column.get("column_comment") or ""}
-    return {"bundle": bundle, "canonical_name_choices": _source_names(exact_records),
+    # Scheduling provenance is retained in the saved bundle, not repeated in
+    # model context. All actual source records and quotes remain complete.
+    wire_bundle = dict(bundle)
+    if "source_bundle_ids" in wire_bundle:
+        sources = wire_bundle.pop("source_bundle_ids")
+        wire_bundle["source_group"] = {"count": len(sources), "digest": digest(sources),
+                                      "scope": "scheduling_provenance_not_source_evidence"}
+    return {"bundle": wire_bundle, "canonical_name_choices": _source_names(exact_records),
             "scope_role_evidence": scope_declarations,
             "measure_reuse_assessment": _measure_reuse_assessment(data, exact_records),
             "relation_endpoint_declarations": endpoint_declarations,
@@ -1431,6 +1462,8 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
 
     def state():
         return {"snapshot_id": data.snapshot_id, "plan": core,
+                "repair_attempt_fingerprints": prior.get("repair_attempt_fingerprints", []),
+                "repair_input_blocked_fingerprints": prior.get("repair_input_blocked_fingerprints", []),
                 "source_bundle_ids": sorted(source_bundle_ids),
                 "concepts": list(concepts.values()), "record_alignments": alignments,
                 "template_projections": list(template_projections.values()),
@@ -1454,6 +1487,12 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
     def packet_payload(bundle):
         payload = bundle_request_payload(data, profile, core, bundle)
         if enable_template_projection:
+            from .template_reuse import _class_declaration_candidates
+            payload["class_definition_candidates"] = [
+                {"record_id": record["record_id"], **fragment}
+                for record in bundle.get("records", [])
+                if record.get("context_role") != "related_context"
+                for fragment in _class_declaration_candidates(record)]
             matches = template_reuse_context(template_projections.values(), bundle)
             payload["template_projection"] = {
                 "enabled": True,
@@ -1473,8 +1512,11 @@ async def construct_from_bundles(data, profile, core: BuildPlan, bundles, llm, *
                 # Keep complete repair evidence once. The persisted bundle is
                 # unchanged; only exact duplicate transport context is removed.
                 repair = dict(bundle["template_repair_task"])
-                payload["bundle"] = {key: value for key, value in bundle.items()
+                payload["bundle"] = {key: value for key, value in payload["bundle"].items()
                                      if key != "template_repair_task"}
+                if "source_bundle_ids" in repair:
+                    sources = repair.pop("source_bundle_ids")
+                    repair["source_group"] = {"count": len(sources), "digest": digest(sources)}
                 if repair.get("known_template_matches") == matches:
                     repair.pop("known_template_matches")
                     repair["known_template_matches_location"] = "template_projection"

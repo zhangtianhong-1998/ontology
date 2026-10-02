@@ -16,7 +16,7 @@ from pydantic import Field
 from .column_roles import classify_columns, declared_context_role
 from .fact_type_binding import (FactFieldBindingDecision, _norm, _recall_types,
                                 _source_definition_evidence, _unit_from_comment,
-                                field_unit_evidence)
+                                _matching_source_names, _unit_key, field_unit_evidence)
 from .models import BuildPlan, DerivedType, Strict
 from .llm import BudgetExceeded, InputBudgetExceeded
 from .storage import digest, qi
@@ -268,13 +268,13 @@ def compile_fact_schema(data, core, report, packet, decision):
     if decision.unit_column:
         observed = next((item for item in packet["unit_columns"] if item["column"] == decision.unit_column), None)
         if (observed is None or observed["status"] != "verified_single_unit"
-                or observed["value"] != decision.unit_quote or _norm(observed["value"]) != _norm(decision.unit)):
+                or observed["value"] != decision.unit_quote or _unit_key(observed["value"]) != _unit_key(decision.unit)):
             raise ValueError("Unit must quote a complete current-snapshot unit column")
         unit_evidence_ids.append(observed["evidence_id"])
-        observed_units.add(_norm(observed["value"]))
-    elif decision.unit and (decision.unit_quote != raw or observed_units != {_norm(decision.unit)}):
+        observed_units.add(_unit_key(observed["value"]))
+    elif decision.unit and (decision.unit_quote != raw or observed_units != {_unit_key(decision.unit)}):
         raise ValueError("Unit must appear explicitly in the complete field declaration")
-    if observed_units != ({_norm(decision.unit)} if decision.unit else set()):
+    if observed_units != ({_unit_key(decision.unit)} if decision.unit else set()):
         raise ValueError("Unit is missing or conflicts with source declarations")
     unit = decision.unit.strip() if decision.unit else None
     # The text is deterministic: a model cannot smuggle in an unquoted formula.
@@ -439,7 +439,15 @@ async def induce_fact_schema(data, fact_observations, core, llm, *, association_
                     if omitted or excluded:
                         raise ValueError("existing_type_evidence_incomplete_or_ambiguous")
                     if choices and not omitted and not excluded:
-                        step.update(status="existing_type_candidates", reason="use_existing_type_binding")
+                        # Keep why a differently named type was recalled. This
+                        # is a handoff for field binding, never automatic identity.
+                        step.update(status="existing_type_candidates", reason="use_existing_type_binding",
+                                    existing_type_candidates=[{
+                                        "type_id": item.id, "label": item.label,
+                                        "source_name_matches": _matching_source_names(
+                                            item, data, name + " " + str(column.get("column_comment") or "")),
+                                        "binding_status": "requires_field_semantic_decision"}
+                                        for _, item, _ in choices])
                         steps.append(step)
                         continue
                     if not str(column.get("column_comment") or "").strip() and _ANONYMOUS.fullmatch(name):
