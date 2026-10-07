@@ -11,10 +11,12 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
+from contextlib import nullcontext
 from typing import Literal
 
 from pydantic import Field
 
+from .association_risk import numeric_overlap_requires_evidence, numeric_overlap_state
 from .discovery import _fair_source_order, validate_candidate
 from .llm import BudgetExceeded
 from .models import Strict
@@ -127,6 +129,7 @@ def _technical_status(check):
 
 def _rule(candidate, proposal, check, *, origin, snapshot_id, error=None):
     checks = check.get("checks", {}) if check else {}
+    numeric = numeric_overlap_state(checks)  # Recall samples cannot certify full-input risk.
     return {
         "rule_id": _rule_id(candidate, proposal), "snapshot_id": snapshot_id,
         "source": candidate["source"], "target": candidate["target"],
@@ -139,8 +142,9 @@ def _rule(candidate, proposal, check, *, origin, snapshot_id, error=None):
         "retrieval_channels": candidate.get("retrieval_channels", []),
         "source_declared_pk": candidate.get("source_declared_pk", False),
         "target_declared_pk": candidate.get("target_declared_pk", False),
-        "numeric_overlap_only": candidate.get("numeric_overlap_only", False),
-        "risk_flags": (["numeric_value_coincidence"] if candidate.get("numeric_overlap_only") else []),
+        "numeric_overlap_only": numeric,
+        "risk_flags": (["numeric_overlap_unexamined"] if numeric is None else
+                       ["numeric_value_coincidence"] if numeric else []),
         "verification": {"scan_scope": check.get("scan_scope", "not_checked") if check else "not_checked",
                          "checks": checks,
                          "counterexamples": checks.get("counterexample_rows", []),
@@ -195,8 +199,9 @@ def _candidate_summary(candidate, check, snapshot_id):
     return {"candidate_id": cid, "source": candidate["source"], "target": candidate["target"],
             "suggested_selector": candidate.get("suggested_selector", {}),
             "suggested_scope_bindings": candidate.get("suggested_scope_bindings", {}),
-            "numeric_overlap_only": candidate.get("numeric_overlap_only", False),
+            "numeric_overlap_only": candidate.get("numeric_overlap_only"),
             "retrieval_channels": candidate.get("retrieval_channels", []),
+            "evidence_gap": candidate_evidence_gap(candidate, check),
             "existing_check": _check_summary(check, {
                 "artifact": "association_checks.yaml", "candidate_id": cid,
                 "snapshot_id": snapshot_id})}
@@ -234,8 +239,9 @@ def _ordered_base_candidates(candidates, checked):
     tiers = defaultdict(lambda: defaultdict(list))
     for candidate in candidates.values():
         source, target = candidate["source"], candidate["target"]
+        risk_evidence = (checked.get(candidate["candidate_id"], {}).get("checks") or candidate)
         tier = (candidate["candidate_id"] not in checked,
-                bool(candidate.get("numeric_overlap_only", False)))
+                numeric_overlap_requires_evidence(risk_evidence))
         family = (source["table"], source["field"], target["table"], target["field"],
                   digest(candidate.get("suggested_scope_bindings") or {}))
         tiers[tier][family].append(candidate)
@@ -259,10 +265,69 @@ def _ordered_base_candidates(candidates, checked):
     return ordered
 
 
+def candidate_evidence_gap(candidate, check):
+    """Separate useful unresolved evidence from zero-overlap or already solved pairs."""
+    counts = (check or {}).get("checks", {})
+    channels = set(candidate.get("retrieval_channels", ()))
+    if "declared_fk" in channels and any(counts.get(key, 0) for key in
+            ("missing_in_input", "ambiguous_matches", "missing_scope")):
+        return "declaration_conflict"
+    if counts.get("ambiguous_matches", 0) or counts.get("missing_scope", 0):
+        return "scope_ambiguity"
+    if counts.get("matched_references", counts.get("unique_matches", 0)) and counts.get("missing_in_input", 0):
+        return "partial_match"
+    if not counts or check.get("scan_scope") != "full_input":
+        return "unchecked"
+    if not counts.get("matched_references", counts.get("unique_matches", 0)):
+        return "zero_match"
+    return "fully_matched"
+
+
+def schedule_agent_candidates(candidates, checked, limit, cursor=None):
+    """Round-robin evidence gaps, retaining a content-bound cursor for the next round.
+
+    A changed candidate/check set starts a new queue. This is scheduling state,
+    not a reusable semantic proof or permission to trust a stale snapshot.
+    """
+    cursor = cursor or {}
+    if not isinstance(cursor, dict):
+        raise ValueError("agent_candidate_cursor must be a mapping")
+    priorities = ("scope_ambiguity", "partial_match", "declaration_conflict", "unchecked",
+                  "zero_match", "fully_matched")
+    queues = {gap: [] for gap in priorities}
+    for candidate in _ordered_base_candidates(candidates, checked):
+        queues[candidate_evidence_gap(candidate, checked.get(candidate["candidate_id"]))].append(candidate)
+    signature = digest([[gap, [(item["candidate_id"], checked.get(item["candidate_id"])) for item in queue]]
+                        for gap, queue in queues.items()])
+    offsets = cursor.get("offsets", {}) if cursor.get("signature") == signature else {}
+    if not isinstance(offsets, dict) or any(type(value) is not int or value < 0 for value in offsets.values()):
+        raise ValueError("Invalid agent candidate cursor offsets")
+    positions = {gap: min(offsets.get(gap, 0), len(queue)) for gap, queue in queues.items()}
+    selected = {}
+    # First spend opportunities across unresolved gaps. Zero-match and already
+    # complete pairs receive only the remaining budget, never displace gaps.
+    for lanes in (priorities[:4], priorities[4:]):
+        while len(selected) < limit:
+            progressed = False
+            for gap in lanes:
+                if positions[gap] < len(queues[gap]) and len(selected) < limit:
+                    item = queues[gap][positions[gap]]
+                    selected[item["candidate_id"]] = item
+                    positions[gap] += 1
+                    progressed = True
+            if not progressed:
+                break
+    coverage = {gap: {"available": len(queues[gap]), "visited": positions[gap],
+                      "selected": positions[gap] - min(offsets.get(gap, 0), len(queues[gap])),
+                      "remaining": len(queues[gap])-positions[gap]} for gap in priorities}
+    return selected, {"policy": "evidence_gap_queues_then_source_field_family_round_robin",
+                      "queues": coverage, "next_cursor": {"signature": signature, "offsets": positions},
+                      "selected_candidate_gaps": {cid: candidate_evidence_gap(item, checked.get(cid))
+                                                  for cid, item in selected.items()}}
+
+
 def _select_agent_candidates(candidates, checked, limit):
-    """Spend the small ReAct budget on checked, nonnumeric, diverse field pairs."""
-    return {candidate["candidate_id"]: candidate
-            for candidate in _ordered_base_candidates(candidates, checked)[:limit]}
+    return schedule_agent_candidates(candidates, checked, limit)[0]
 
 
 async def _react_proposals(data, candidates, checked, options, limits, llm):
@@ -278,11 +343,11 @@ async def _react_proposals(data, candidates, checked, options, limits, llm):
     from agentscope.permission import PermissionBehavior, PermissionDecision
     from agentscope.tool import FunctionTool, Toolkit, ToolChoice
 
-    selected = _select_agent_candidates(candidates, checked,
-                                        limits["max_agent_candidates"])
+    selected, scheduling = schedule_agent_candidates(candidates, checked,
+        limits["max_agent_candidates"], options.get("agent_candidate_cursor"))
     if not selected:
         return [], {"mode": "agentscope_react", "model_calls": 0,
-                    "tool_calls": 0, "full_scans": 0, "status": "no_candidates"}
+                    "tool_calls": 0, "full_scans": 0, "status": "no_candidates", "scheduling": scheduling}
     state = {"tool_calls": 0, "full_scans": 0, "model_calls": 0,
              "tested": {}, "status": "completed", "tool_requests": 0,
              "round_tool_calls": 0, "deferred": {}, "tool_result_bytes": 0,
@@ -444,27 +509,38 @@ async def _react_proposals(data, candidates, checked, options, limits, llm):
             llm.trace({"stage": "association_request_budget", "round": state["model_calls"] + 1,
                        "request_bytes": request_bytes, "max_input_bytes": input_limit,
                        "submission_required": final_round})
+            remaining = limits["max_agent_model_calls"] - state["model_calls"]
+            before = getattr(llm, "calls", 0)
+            budget = (nullcontext() if llm.mode == "mock" else
+                      llm.call_budget(remaining, stage="association_agent"))
             try:
-                llm.admit(raw)
-            except BudgetExceeded:
-                state["failed_request_bytes"] = request_bytes
-                raise
-            state["model_calls"] += 1
-            state["round_tool_calls"] = 0
-            llm.trace({"stage": "association_react_request",
-                       "round": state["model_calls"], **visible(raw)})
-            if llm.mode == "mock":
-                script = llm.responses["association_react_script"]
-                actions = script[min(state["model_calls"] - 1, len(script) - 1)]["calls"]
-                result = ChatResponse(content=[
-                    ToolCallBlock(id=f"association-{state['model_calls']}-{i}",
-                                  name=action["name"],
-                                  input=json.dumps(action["input"], ensure_ascii=False))
-                    for i, action in enumerate(actions)], is_last=True)
-            else:
-                result = await llm.complete(messages, task="association_react",
-                                            budget_request=raw, tools=tools,
-                                            tool_choice=tool_choice, **kwargs)
+                # The admission and retries share one stage ceiling. Agent
+                # turns alone cannot bound provider requests made by complete().
+                with budget:
+                    try:
+                        llm.admit(raw)
+                    except BudgetExceeded:
+                        state["failed_request_bytes"] = request_bytes
+                        raise
+                    state["round_tool_calls"] = 0
+                    llm.trace({"stage": "association_react_request",
+                               "round": state["model_calls"] + 1, **visible(raw)})
+                    if llm.mode == "mock":
+                        state["model_calls"] += 1
+                        script = llm.responses["association_react_script"]
+                        actions = script[min(state["model_calls"] - 1, len(script) - 1)]["calls"]
+                        result = ChatResponse(content=[
+                            ToolCallBlock(id=f"association-{state['model_calls']}-{i}",
+                                          name=action["name"],
+                                          input=json.dumps(action["input"], ensure_ascii=False))
+                            for i, action in enumerate(actions)], is_last=True)
+                    else:
+                        result = await llm.complete(messages, task="association_react",
+                                                    budget_request=raw, tools=tools,
+                                                    tool_choice=tool_choice, **kwargs)
+            finally:
+                if llm.mode != "mock":
+                    state["model_calls"] += llm.calls - before
             llm.trace({"stage": "association_react_response",
                        "round": state["model_calls"], "content": visible(result.content)})
             return result
@@ -524,6 +600,7 @@ async def _react_proposals(data, candidates, checked, options, limits, llm):
                        "tool_requests": state["tool_requests"],
                        "pending_tool_requests": list(state["deferred"].values()),
                        "selected_candidates": selected,
+                       "scheduling": scheduling,
                        "tested": state["tested"]}
 
 
@@ -563,7 +640,7 @@ def _order_alias_proposals(proposals, candidates, alias_leads):
         # Splitting JSON documents at commas is weaker alias evidence than a
         # plain lexical list. Keep these leads for later technical verification.
         return (lead['candidate_id'] in payload_leads,
-                bool(stats.get('numeric_overlap_only')), matched > keys,
+                numeric_overlap_requires_evidence(stats), matched > keys,
                 -keys, -stats.get(source_side + '_sample_coverage', 0),
                 candidate['target']['table'], candidate['target']['field'], item[0].candidate_id)
     by_source = defaultdict(lambda: defaultdict(list))
@@ -642,7 +719,7 @@ async def build_association_rules(data, discovery, options=None, llm=None, *, al
                          "nfkc_whitespace_casefold")
             candidates[cid] = {"candidate_id": cid, "source": source, "target": target,
                 "retrieval_channels": lead.get("retrieval_channels", []),
-                "numeric_overlap_only": lead.get("checks", {}).get("numeric_overlap_only", False),
+                "numeric_overlap_only": lead.get("checks", {}).get("numeric_overlap_only"),
                 "alias_recall_candidate_id": lead["candidate_id"]}
             alias_proposals.append((RuleProposal(candidate_id=cid, transform=transform,
                 rationale="Observed value/alias coincidence; full-input transform check required"), "value_alias_recall"))

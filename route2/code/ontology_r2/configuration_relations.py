@@ -14,6 +14,7 @@ import re
 
 from pydantic import Field
 
+from .association_risk import numeric_overlap_requires_evidence
 from .column_roles import is_sensitive_column
 from .models import BuildPlan, Strict
 from .row_semantics import classify_row_purpose
@@ -129,41 +130,55 @@ def _accepted_definition_roots(data, plan, concepts, alignments, memberships=())
     return roots
 
 
-def _relation_text_candidate(data, table_name, reference_columns):
+def _relation_text_candidate(data, table_name, reference_columns, *, coverage=None, sample_cache=None):
+    """Recall from nonempty value strata; never equate an unexamined cell with absence."""
     table = data.tables[table_name]
-    visible = []
-    for column in table["columns"]:
+    scored, columns_report = [], []
+    sample_cache = {} if sample_cache is None else sample_cache
+    for position, column in enumerate(table["columns"]):
         name = column["column_name"]
-        # Identifier names often contain "rule"; that does not make their
-        # numeric IDs a relationship statement.
         if name in reference_columns or name in table.get("pk", []):
             continue
         try:
             _check_column(data, table_name, name)
         except ValueError:
             continue
-        visible.append(name)
-    # Opaque names and absent comments do not erase an explicit source
-    # statement. This is bounded recall only: compilation still checks the
-    # entire positive clause, both endpoint names and the exact witness.
-    if visible:
-        select = ", ".join(f"substr(CAST({qi(name)} AS VARCHAR), 1, 1025)" for name in visible)
-        rows = data.db.execute(f"SELECT {select} FROM {qi(table['sql_name'])} ORDER BY __r2_row LIMIT 16").fetchall()
-        scored = []
-        for position, name in enumerate(visible):
-            values = [row[position] for row in rows if isinstance(row[position], str)
-                      and row[position].strip() and len(row[position]) <= 1024]
-            if not values or all(re.fullmatch(r"[\d\s.+-]+", value) or _structured_document(value)
-                                 for value in values):
-                continue
-            column = next(value for value in table["columns"] if value["column_name"] == name)
+        # Aggregate locally, but expose only bounded complete values. Sampling
+        # distinct values by content hash makes physical row order irrelevant.
+        cache_key = (table_name, name)
+        if cache_key not in sample_cache:
+            cte = (f"WITH values_ AS (SELECT CAST({qi(name)} AS VARCHAR) AS value, count(*) AS n "
+                   f"FROM {qi(table['sql_name'])} WHERE {qi(name)} IS NOT NULL "
+                   f"AND trim(CAST({qi(name)} AS VARCHAR)) <> '' GROUP BY value)")
+            total, rows, oversized = data.db.execute(cte +
+                " SELECT count(*), coalesce(sum(n),0), count(*) FILTER (WHERE length(value)>1024) FROM values_").fetchone()
+            pattern = _RELATION_VALUE.pattern
+            samples = data.db.execute(cte + """, sampled AS (
+                SELECT value,n,row_number() OVER (
+                    PARTITION BY regexp_matches(value, ?, 'i') ORDER BY md5(value), value) AS ordinal
+                FROM values_ WHERE length(value)<=1024)
+                SELECT value,n FROM sampled WHERE ordinal<=8 ORDER BY md5(value),value""", [pattern]).fetchall()
+            sample_cache[cache_key] = (total, rows, oversized, samples)
+        total, rows, oversized, samples = sample_cache[cache_key]
+        values = [value for value, _ in samples if not re.fullmatch(r"[\d\s.+-]+", value)
+                  and not _structured_document(value)]
+        columns_report.append({"column": name, "nonempty_distinct_values": total,
+            "nonempty_rows": rows, "distinct_values_examined": len(samples),
+            "distinct_values_not_examined": total-len(samples),
+            "oversized_values_not_examined": oversized,
+            "sample_rows_represented": sum(n for _, n in samples)})
+        if values:
             declared = bool(_RELATION_TEXT.search(name + " " + str(column.get("column_comment") or "")))
             stated = any(_RELATION_VALUE.search(value) for value in values)
             if declared or stated:
                 scored.append((int(stated), int(declared), -position, name))
-        if scored:
-            return max(scored)[-1]
-    return None
+    if coverage is not None:
+        coverage.update({"table": table_name,
+            "reference_columns": sorted(reference_columns), "columns": columns_report,
+            "method": "nonempty_distinct_relation_keyword_strata_stable_hash_8_per_stratum",
+            "scan_scope": "full_input_value_counts_bounded_text_inspection",
+            "partial": any(item["distinct_values_not_examined"] for item in columns_report)})
+    return max(scored)[-1] if scored else None
 
 
 def declared_reference_evidence(data, rule, *, definition_tables=None):
@@ -271,7 +286,7 @@ def infer_configuration_specs(
             skipped["not_checked_technical"] += 1
             continue
         declaration = declared_reference_evidence(data, rule)
-        if rule.get("numeric_overlap_only") and declaration is None:
+        if numeric_overlap_requires_evidence(rule) and declaration is None:
             skipped["numeric_overlap_without_reference_semantics"] += 1
             continue
         if (rule.get("transform", {}).get("operator") != "identity"
@@ -318,6 +333,7 @@ def infer_configuration_specs(
         by_table[source_table].append((rule, next(iter(roots))))
 
     output, total_pairs = [], 0
+    text_searches, text_sample_cache = {}, {}
     for table_name in sorted(by_table):
         rules = sorted(by_table[table_name], key=lambda pair: str(pair[0].get("rule_id")))
         for (left, left_root), (right, right_root) in combinations(rules, 2):
@@ -330,8 +346,13 @@ def infer_configuration_specs(
             if left_source["field"] == right_source["field"]:
                 skipped["same_configuration_column"] += 1
                 continue
-            text_column = _relation_text_candidate(
-                data, table_name, {left_source["field"], right_source["field"]})
+            search_key = (table_name, *sorted({left_source["field"], right_source["field"]}))
+            if search_key not in text_searches:
+                report = {}
+                text = _relation_text_candidate(data, table_name, set(search_key[1:]),
+                                                coverage=report, sample_cache=text_sample_cache)
+                text_searches[search_key] = (text, report)
+            text_column = text_searches[search_key][0]
             if left_root == right_root and text_column is None:
                 # Two code paths into records of one business root are often
                 # alternate descriptions of the same type, not a predicate.
@@ -392,7 +413,12 @@ def infer_configuration_specs(
                      "rule_pairs_considered": total_pairs, "specs_emitted": len(output),
                      "specs_omitted_limit": skipped["spec_limit"],
                      "skipped_reasons": dict(skipped),
-                     "partial": skipped["spec_limit"] > 0},
+                     "relation_text_searches": [item[1] for item in text_searches.values()],
+                     "relation_text_columns_sampled": len(text_sample_cache),
+                     "relation_text_unexamined_distinct_values": sum(
+                         total - len(samples) for total, _, _, samples in text_sample_cache.values()),
+                     "partial": skipped["spec_limit"] > 0 or any(
+                         item[1]["partial"] for item in text_searches.values())},
     }
 
 

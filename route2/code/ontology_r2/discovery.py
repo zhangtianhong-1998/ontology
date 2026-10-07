@@ -10,16 +10,16 @@ from itertools import combinations
 import json
 import re
 
+from .association_risk import NUMERIC_MATCH_PATTERN, is_numeric_match_value
 from .column_roles import classify_columns
 from .storage import digest, qi
 
 
 _GENERIC = {"id", "key", "code", "name", "ref", "fk", "value", "uuid"}
-_NUMERIC_LITERAL = re.compile(r"[+-]?[0-9]+(?:\.[0-9]+)?\Z")
 
 
 def _numeric_literal(value):
-    return bool(_NUMERIC_LITERAL.fullmatch(value))
+    return is_numeric_match_value(value)
 
 
 def _reference_sql(column_sql, source_path):
@@ -763,7 +763,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
     ranked = _fair_source_order(proposals, lambda pair: pair[0], lambda pair: (
         pair not in declared,
         "metadata" not in proposals[pair]["channels"],
-        proposals[pair].get("numeric_overlap_only", False),
+        proposals[pair].get("numeric_overlap_only") is not False,
         -proposals[pair].get("shared_value_count", 0),
         pair))
     conditional, truncated_conditions = (
@@ -798,10 +798,10 @@ def propose_candidates(data, *, max_candidates_total=2000,
             "retrieval_channels": ["conditioned_structure"],
             "suggested_selector": selector,
             "suggested_scope_bindings": scope,
-            "shared_sample_value_count": shared.get((source, target), (0, False))[0],
+            "shared_sample_value_count": shared.get((source, target), (0, None))[0],
             "shared_value_count_scope": value_index_mode,
-            "numeric_overlap_only": shared.get((source, target), (0, False))[1],
-            "risk_flags": (["numeric_value_coincidence"] if shared.get((source, target), (0, False))[1] else []),
+            "numeric_overlap_only": shared.get((source, target), (0, None))[1],
+            "risk_flags": (["numeric_value_coincidence"] if shared.get((source, target), (0, None))[1] else []),
             "source_declared_pk": source[1] in data.tables[source[0]].get("pk", []),
             "target_declared_pk": target[1] in data.tables[target[0]].get("pk", []),
             "target_role_priority": item["target_role_priority"],
@@ -819,7 +819,7 @@ def propose_candidates(data, *, max_candidates_total=2000,
             "retrieval_channels": sorted(entry["channels"]),
             "shared_sample_value_count": count,
             "shared_value_count_scope": value_index_mode,
-            "numeric_overlap_only": entry.get("numeric_overlap_only", False),
+            "numeric_overlap_only": entry.get("numeric_overlap_only"),
             "risk_flags": (["numeric_value_coincidence"] if entry.get("numeric_overlap_only") else []),
             "source_declared_pk": source[1] in data.tables[source[0]].get("pk", []),
             "target_declared_pk": target[1] in data.tables[target[0]].get("pk", []),
@@ -993,6 +993,26 @@ def association_match_sql(data, candidate, *, selector=None, scope_bindings=None
         WHERE s.selected IS TRUE AND s.multiplicity = 1""", params
 
 
+def _numeric_match_summary(data, ctes, params, *, scope_count=0, transformed=False):
+    """Recompute risk from actual full-input matched keys, including filtered index keys."""
+    if transformed:
+        scope = "".join(f" AND s.scope_{i}=t.scope_{i}" for i in range(scope_count))
+        row_scope = "".join(f" AND s.scope_{i}=r.scope_{i}" for i in range(scope_count))
+        matched = ("SELECT DISTINCT s.key AS value FROM source_tokens s "
+                   "JOIN target_keys t ON s.key=t.key" + scope +
+                   " WHERE EXISTS (SELECT 1 FROM source_rows r WHERE r.ref=s.ref" + row_scope +
+                   " AND r.selected IS TRUE AND r.usable AND r.scope_usable)")
+    else:
+        matched = ("SELECT DISTINCT ref AS value FROM joined WHERE selected IS TRUE "
+                   "AND usable AND scope_usable AND multiplicity > 0")
+    total, numeric = data.db.execute(ctes +
+        "SELECT count(*), count(*) FILTER (WHERE regexp_full_match(trim(value, ?), ?)) FROM (" + matched + ")",
+        [*params, _PYTHON_STRIP_CHARACTERS, NUMERIC_MATCH_PATTERN]).fetchone()
+    return {"numeric_overlap_only": None if not total else numeric == total,
+            "matched_distinct_value_count": total, "numeric_matched_distinct_value_count": numeric,
+            "numeric_evidence_scope": "full_input_selected_matched_keys"}
+
+
 def _validate_transformed_candidate(data, candidate, *, selector, scope_bindings,
                                     sample_limit, transform):
     ctes, params, scope_group = _matching_ctes(data, candidate, selector, scope_bindings, transform)
@@ -1037,6 +1057,8 @@ def _validate_transformed_candidate(data, candidate, *, selector, scope_bindings
     result['distinct_key_inclusion_ratio'] = _ratio(result['distinct_keys_matched'], result['distinct_eligible_keys'])
     result['whole_column_distinct_value_inclusion_ratio'] = _ratio(result['distinct_source_values_in_target'], result['distinct_source_values'])
     result['unique_match_ratio'] = _ratio(result['unique_matches'], result['eligible_references'])
+    result.update(_numeric_match_summary(data, ctes, params,
+        scope_count=len(scope_bindings or {}), transformed=True))
     return {'candidate_id': candidate['candidate_id'], 'snapshot_id': data.snapshot_id,
             'source': candidate['source'], 'target': candidate['target'],
             'selector': selector or {}, 'scope_bindings': scope_bindings or {},
@@ -1142,6 +1164,7 @@ def validate_candidate(data, candidate, *, selector=None, scope_bindings=None,
              "unique_matches", "ambiguous_matches", "missing_in_input",
              "outside_eligible_references", "outside_matched_references")
     result = dict(zip(names, counts))
+    result.update(_numeric_match_summary(data, ctes, params))
     distinct = data.db.execute(ctes + f"""
       SELECT count(*) AS distinct_eligible_keys,
              count(*) FILTER (WHERE multiplicity > 0) AS distinct_keys_matched
@@ -1240,7 +1263,7 @@ def discover_and_check(data, options=None, progress=None):
                                  {"def", "definition", "detail", "common"})
         return ("declared_fk" not in channels,
                 "conditioned_structure" not in channels,
-                candidate["numeric_overlap_only"],
+                candidate.get("numeric_overlap_only") is not False,
                 not {"metadata", "value_overlap"} <= channels,
                 not target_aligned,
                 not target_definition,

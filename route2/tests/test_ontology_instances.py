@@ -118,6 +118,8 @@ def _template_case(tmp_path):
         "field_templates": [{"column": "name", "template": "{region}利润"},
             {"column": "definition", "template": "利润由收入减成本，地区为{region}"},
             {"column": "formula", "template": "收入 - 成本"}, {"column": "measure_ref", "template": "{amount}"}]}
+    template["slots"][1]["target_value_contract"] = _source_target_names(
+        data, next(item for item in types if item.id == "收入"))
     bound = [bind_projection(data, template, record) for record in records]
     semantic = compile_template_relations(data, PROFILE, BuildPlan(object_types=types), [template], bound)
     calculation = compile_calculation_stage(data, PROFILE, semantic["plan"], {

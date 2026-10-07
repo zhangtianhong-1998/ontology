@@ -3,6 +3,7 @@ from copy import deepcopy
 import json
 import re
 
+from .association_risk import numeric_overlap_state
 from .column_roles import classify_columns
 from .models import BuildPlan, TablePlan
 from .record_types import source_record_type
@@ -396,7 +397,7 @@ async def construct(data, profile, config, output, llm, manifest,
                     "candidate_id": candidate["candidate_id"],
                     "source": candidate["source"], "target": candidate["target"],
                     "retrieval_channels": candidate["retrieval_channels"],
-                    "numeric_overlap_only": candidate["numeric_overlap_only"],
+                    "numeric_overlap_only": numeric_overlap_state(check.get("checks", {})),
                     "selector": check.get("selector") or {},
                     "scope_bindings": check.get("scope_bindings") or {},
                     "scan_scope": check.get("scan_scope"),

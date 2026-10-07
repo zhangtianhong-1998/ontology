@@ -261,6 +261,7 @@ def test_generic_same_root_configuration_requires_full_positive_source_statement
             alignments.append({"id": f"alignment:{index}", "mapping_kind": "exact", "concept_id": concept_id,
                 "source_record_id": data.record_id(table, row), "evidence_ids": [key]})
             rules.append({"rule_id": f"rule:{index}", "status": "checked_technical", "snapshot_id": data.snapshot_id,
+                "numeric_overlap_only": False,  # The checked source keys here are S1/T1.
                 "source": {"table": "operations.x3", "field": f"a{index}"}, "target": {"table": table, "field": "c1"},
                 "transform": {"operator": "identity"}, "verification": {"scan_scope": "full_input", "checks": {
                     "eligible_references": 1, "unique_matches": 1, "ambiguous_matches": 0, "missing_in_input": 0}}})

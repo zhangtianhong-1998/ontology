@@ -134,7 +134,8 @@ def test_metadata_view_preserves_numeric_collision_risk_from_rule_or_graph():
         assert all(link['risk_flags'] == ['numeric_value_coincidence'] for link in preview['links'])
         assert all(link['status'] == 'observed_subset' for link in preview['links'])
     html = (Path(__file__).resolve().parents[1] / 'code/ontology_r2/viewer.html').read_text()
-    assert "if(x.numeric_overlap_only)" in html
+    assert "x.numeric_overlap_only===true" in html
+    assert "x.numeric_overlap_only!==false" in html
     assert "数值重合风险" in html and "风险标记" in html
     assert '.risk-warning{' in html
 
@@ -494,8 +495,8 @@ def test_metadata_layout_aggregation_and_focus_execute_against_actual_script():
     script = """
 const assert=require('node:assert/strict');
 const M={tables:Array.from({length:23},(_,i)=>({id:`s.t${i}`,table_name:`fruit_config_table_${i}`,table_comment:`水果定义${i}`})),links:[],details:{}};
-for(let i=0;i<23;i++)for(let j=1;j<=3;j++)M.links.push({id:`link:${i}:${j}`,source:`s.t${i}`,target:`s.t${(i+j)%23}`,source_field:'ref',target_field:'code',status:'verified_technical'});
-M.links.push({id:'reverse',source:'s.t1',target:'s.t0',source_field:'back_ref',target_field:'other',status:'verified_technical'});
+for(let i=0;i<23;i++)for(let j=1;j<=3;j++)M.links.push({id:`link:${i}:${j}`,source:`s.t${i}`,target:`s.t${(i+j)%23}`,source_field:'ref',target_field:'code',status:'verified_technical',numeric_overlap_only:false});
+M.links.push({id:'reverse',source:'s.t1',target:'s.t0',source_field:'back_ref',target_field:'other',status:'verified_technical',numeric_overlap_only:false});
 const TABLE=new Map(M.tables.map(t=>[t.id,t])),expandedTables=new Set(),pinnedPositions={ontology:new Map(),metadata:new Map()};
 let selected=null,tableId=null,drawn=null,showNumericMatches=false;
 const $=id=>({}),name=x=>x.table_comment||x.table_name,node=(id,label,kind,x,y,action,active,subtitle)=>({id,label,kind,x,y,action,active,subtitle}),select=()=>{};
@@ -516,14 +517,17 @@ assert(Math.max(...coords.map(p=>p.x))-Math.min(...coords.map(p=>p.x))<1400);
 // Risk filtering changes visibility, never deletes evidence or hides declared FKs.
 const risk={id:'numeric',source:'s.t0',target:'s.t22',numeric_overlap_only:true,status:'verified_technical'};
 const declared={...risk,id:'declared',status:'declared'};
-M.links.push(risk,declared);
-assert.equal(metadataVisibleLinks(M.links,null,false).length,M.links.length-1);
+const unknown={...risk,id:'unknown',numeric_overlap_only:null};
+M.links.push(risk,declared,unknown);
+assert.equal(metadataVisibleLinks(M.links,null,false).length,M.links.length-2);
 assert(metadataVisibleLinks(M.links,null,false).includes(declared));
 assert(!metadataVisibleLinks(M.links,null,false).includes(risk));
+assert(!metadataVisibleLinks(M.links,null,false).includes(unknown));
+assert(metadataVisibleLinks(M.links,'s.t0',true).includes(unknown));
 assert(metadataVisibleLinks(M.links,'s.t0',true).includes(risk));
 assert(!metadataVisibleLinks(M.links,'s.t1',true).includes(risk));
-assert.equal(M.links.at(-2),risk);
-M.links.splice(-2);
+assert.equal(M.links.at(-3),risk);
+M.links.splice(-3);
 selected={kind:'table',id:'s.t0'};tableId='s.t0';metadataGraph();
 assert(drawn.nodes.length<23);
 assert(drawn.edges.every(e=>e.from==='s.t0'||e.to==='s.t0'));

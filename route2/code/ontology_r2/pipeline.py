@@ -31,7 +31,7 @@ from .record_types import source_record_type
 from .relations import Extractor
 from .repair_stage import repair_settings, run_targeted_repair
 from .semantic_cards import SemanticCardIndex, build_semantic_cards
-from .semantic_state import restore_state, save_state
+from .semantic_state import restore_state, save_state, implementation_fingerprints
 from .storage import Dataset, Sink, digest, read_yaml, write_yaml
 from .type_generalization import GeneralizationDecision
 from .type_generalization_stage import run_generalization
@@ -179,8 +179,9 @@ async def build(config, output):
     (output / "work").mkdir()
     start = time.monotonic()
     data = sink = llm = progress = None
-    code_hash = digest({p.name: p.read_text() for p in sorted(p for p in Path(__file__).parent.iterdir() if p.suffix in (".py", ".html"))})
-    manifest = {"status": "failed", "implementation": "rigor_adapted_incremental_yaml_prototype", "implementation_code_hash": code_hash, "config_hash": digest(config), "data_scope": config.get("data_scope", "sample"), "synthetic": config.get("synthetic", False)}
+    code_hashes = implementation_fingerprints()
+    code_hash = code_hashes["semantic_code_hash"]
+    manifest = {"status": "failed", "implementation": "rigor_adapted_incremental_yaml_prototype", **code_hashes, "config_hash": digest(config), "data_scope": config.get("data_scope", "sample"), "synthetic": config.get("synthetic", False)}
     manifest.update(input_root=config["dataset"], experiment_profile=config.get("experiment_profile"), source_channels={"mcp": config.get("mcp", {}).get("enabled", False), "external": config.get("external", {}).get("enabled", False)}, runtime_limits={"llm": {k: v for k, v in config["llm"].items() if k.startswith("max_") or k in ("mode", "timeout_seconds")}, "processing": config.get("processing", {}), "memory_limit": config.get("memory_limit", "1GB")})
     try:
         progress = ProgressReporter(config.get("progress"))
@@ -775,6 +776,12 @@ async def build(config, output):
         write_yaml(output / "business_fact_field_bindings.yaml", fact_binding["field_bindings"])
         write_yaml(output / "business_fact_instances.yaml", fact_binding["instances"])
         write_yaml(output / "business_fact_binding_coverage.yaml", fact_binding["coverage"])
+        if binding_options.get("enabled", False):
+            from .cross_snapshot_reuse import export_reuse_bundle
+            reuse_bundle = export_reuse_bundle(
+                data, plan, fact_schema["field_templates"], fact_binding["field_bindings"],
+                fact_observations=fact_result, profile=profile)
+            write_yaml(output / "ontology_reuse_bundle.yaml", reuse_bundle)
         manifest["fact_type_binding"] = {
             "status": fact_binding["coverage"]["status"],
             "binding_attempts": fact_binding["coverage"].get("binding_attempts", 0),

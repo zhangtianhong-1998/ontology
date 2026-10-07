@@ -7,6 +7,7 @@ an independent many-to-many join.
 """
 from collections import Counter, defaultdict
 
+from .association_risk import numeric_overlap_requires_evidence
 from .concept_candidates import _field_roles
 from .discovery import association_match_sql
 from .storage import digest, qi
@@ -28,7 +29,7 @@ class JoinedDefinitionContext:
         rules = [rule for rule in association.get('rules', [])
                  if rule.get('status') == 'checked_technical' and
                  (rule['source']['table'] in by_table or rule['target']['table'] in by_table)]
-        rules.sort(key=lambda rule: (rule.get('numeric_overlap_only', False), rule['rule_id']))
+        rules.sort(key=lambda rule: (numeric_overlap_requires_evidence(rule), rule['rule_id']))
         self.stats['relevant_checked_rules'] = len(rules)
         self.stats['rules_not_materialized_due_to_limit'] = max(0, len(rules)-max_rules)
         if not self.limit:

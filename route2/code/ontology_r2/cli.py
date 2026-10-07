@@ -29,7 +29,17 @@ def main():
     export.add_argument("--output", required=True, help="Destination JSON file")
     export.add_argument("--platform", default="postgres", help="DataHub platform key")
     export.add_argument("--environment", default="PROD")
+    reuse = sub.add_parser("reuse-facts", help="Revalidate exported fact mappings on a new snapshot without an LLM")
+    reuse.add_argument("--dataset", required=True)
+    reuse.add_argument("--bundle", required=True, help="Prior ontology_reuse_bundle.yaml")
+    reuse.add_argument("--output", required=True, help="A new directory, never overwritten")
+    reuse.add_argument("--profile", help="Internal ontology YAML; defaults to ontologies/internal_model.yaml")
     args = parser.parse_args()
+    if args.command == "reuse-facts":
+        from .cross_snapshot_reuse import run_reuse
+        result = asyncio.run(run_reuse(args.dataset, args.bundle, args.output, profile=args.profile))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
     if args.command == "export-datahub":
         from .datahub_adapter import export_datahub_metadata
         from .storage import read_yaml

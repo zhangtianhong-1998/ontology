@@ -16,7 +16,8 @@ from pydantic import Field
 from .column_roles import classify_columns, declared_context_role
 from .fact_type_binding import (FactFieldBindingDecision, _norm, _recall_types,
                                 _source_definition_evidence, _unit_from_comment,
-                                _matching_source_names, _unit_key, field_unit_evidence)
+                                _matching_source_names, _unit_key, field_unit_evidence,
+                                existing_field_binding_options)
 from .models import BuildPlan, DerivedType, Strict
 from .llm import BudgetExceeded, InputBudgetExceeded
 from .storage import digest, qi
@@ -436,9 +437,13 @@ async def induce_fact_schema(data, fact_observations, core, llm, *, association_
                     column = next(value for value in table["columns"] if value["column_name"] == name)
                     choices, omitted, excluded = _recall_types(data, plan, table, column,
                                                               max_candidates=8, max_definition_chars=2048)
-                    if omitted or excluded:
+                    if excluded:
                         raise ValueError("existing_type_evidence_incomplete_or_ambiguous")
-                    if choices and not omitted and not excluded:
+                    reuse_options, reuse_pending = existing_field_binding_options(
+                        data, choices, table, column, packet["coordinate_columns"])
+                    if omitted and (reuse_options or reuse_pending):
+                        raise ValueError("existing_type_evidence_incomplete_or_ambiguous")
+                    if reuse_options:
                         # Keep why a differently named type was recalled. This
                         # is a handoff for field binding, never automatic identity.
                         step.update(status="existing_type_candidates", reason="use_existing_type_binding",
@@ -447,9 +452,18 @@ async def induce_fact_schema(data, fact_observations, core, llm, *, association_
                                         "source_name_matches": _matching_source_names(
                                             item, data, name + " " + str(column.get("column_comment") or "")),
                                         "binding_status": "requires_field_semantic_decision"}
-                                        for _, item, _ in choices])
+                                        for _, item, _ in choices
+                                        if item.id in {option.type_id for option in reuse_options}])
                         steps.append(step)
                         continue
+                    if reuse_pending:
+                        # A known matching identity without adequate scope/unit
+                        # is not a licence to synthesize an unrestricted type.
+                        step["existing_type_validation"] = reuse_pending
+                        raise ValueError("existing_type_identity_found_but_binding_unverified")
+                    if choices:
+                        step["rejected_lexical_candidates"] = [item.id for _, item, _ in choices]
+                        step["additional_fragment_candidates_omitted"] = omitted
                     if not str(column.get("column_comment") or "").strip() and _ANONYMOUS.fullmatch(name):
                         raise ValueError("anonymous_numeric_field_has_no_business_identity")
                     pages = _fact_schema_packets(packet, llm, max_packet_bytes)
@@ -463,7 +477,9 @@ async def induce_fact_schema(data, fact_observations, core, llm, *, association_
                             raise ValueError("fact_schema_call_budget_exhausted")
                         before_calls = getattr(llm, "calls", None)
                         reservation = nullcontext()
-                        if type(before_calls) is int and hasattr(llm, "reserve_calls"):
+                        if type(before_calls) is int and hasattr(llm, "call_budget"):
+                            reservation = llm.call_budget(max_calls - calls, stage="fact_schema_induction")
+                        elif type(before_calls) is int and hasattr(llm, "reserve_calls"):
                             total = llm.config.get("max_calls", 100)
                             ceiling = min(total, before_calls + max_calls - calls)
                             reservation = llm.reserve_calls(total - ceiling, stage="fact_schema_induction")

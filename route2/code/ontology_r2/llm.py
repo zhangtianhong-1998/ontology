@@ -38,7 +38,7 @@ TASK_PROMPTS = {
     "relation_bundle": "这是已完成技术匹配检查的跨表行包，但匹配不等于业务关系。请比较源/目标字段说明、正反例及适用条件；用途明确时才提出关系。配置规则、接口参数、服务资源也可以作为关系端点，例如组合取数规则使用维度定义、参数规则引用指标定义。不能因为记录属于配置、没有显式外键或主键，就否认已有原文支持的关系。parent_relation 只能是 contains/depends_on/related_to/points_to；predicate_name 可为空（使用根谓词），或选择注册的 calculation_dependency→depends_on、scope_constraint→related_to、definition_reference→points_to、has_member→contains；label 使用所选英文谓词，不得另写散文名称。semantic_parameters 默认为 {}；只有 calculation_dependency 可填写 operand_role=minuend/subtrahend/numerator/denominator/addend/factor，且必须在可解析来源公式中证明目标的操作数角色；端点的物理类型由程序绑定，你不要输出类型。仅 depends_on/calculation_dependency 要求来源公式实际点名目标；points_to/definition_reference、contains 和 related_to 不要求计算公式，须分别核验定义引用、包含或明确关联的用途。共享编码或名称不能证明计算依赖。contains 的方向必须是包含者到成员，不得沿子记录到父定义的技术连接反向命名。source_quote 与 target_quote 必须分别逐字来自同一条 examples.positive 所指源/目标记录的非关联键 fields[*].value；不能仅引用编码原值、字段注释或拼接文本。字段注释只帮助理解用途，不独立证明业务关系。definition_reference 还必须有 relation_endpoint_declarations 与完整记录支持：源确实引用目标，而目标自己拥有定义；双方字段若都引用第三方定义，不能在两端之间造 definition_reference。已核验的编码连接，加上源记录完整的引用或取数用途、目标自身完整定义，可支持配置对象到定义的 definition_reference；不要另要求算术公式。名称引文和同编码匹配只证明技术候选，不能补定义归属。目标编码注释仅笼统写“对应”时应核对其自身定义正文；明确指向其他定义的字段仍不能被自身名称或无关正文覆盖。缺证时 unresolved，不自动改成其他业务关系。related_context 仅提供技术关联线索；公式必须属于给出的 source 记录，不能从上下文移植，归属冲突须 unresolved。definition 须解释记录所代表对象之间的业务含义，不能只描述物理表或编码的连接；规范谓词名须符合 parent_relation 与 predicate_name 的继承关系。保留关系适用条件；不能将有条件或否定的说明改成无条件肯定关系。当前只判断同一正例中的一对记录，结果范围是 quoted_witness_pairs_only。observed_subset 中其他类型未匹配、包外记录或反例，只限制规则覆盖；不能据此否定已有完整证据的正例，也不能将正例推广到其他行。若反例直接揭示所引正例本身的定义归属、条件或编码作用域冲突，则仍须 unresolved。单例语义支持仍不是整表业务真值；无法辨别时返回 unresolved。",
     "group_review": "复核候选语义增量与证据包。概念候选的 label 必须是 exact 原记录已有名称，不能为区分口径自行加括号；关系候选的 label 使用注册英文谓词，不要求它是记录名称。程序只允许唯一来源原名后附一段括号时去掉显示注记，不改变语义。Metric 的 aggregation_operator 必须为 JSON null。Measure 的 business_object_quote 为空不是通用性证据，必须逐 exact 记录核对 measure_reuse_assessment 及完整定义和标准名；短名称不能抹去更具体标准名与业务限定，缺乏独立通用定义时拒绝。明确通用来源也不能靠预算、排名或不限定声明中的词冒充 Metric 的经营对象。不要把接口/服务/展示记录的查询主题当数量定义，混合服务行不能整体 exact 对齐为其中的数量。核验 identity 角色逐字对应完整 fields.identity；语言、来源和治理属性不得误作计算参数。核验 classification 角色是否有 scope_role_evidence.classification_basis 支持，分类属性须保留且不能冒充业务范围；核验 parameter 角色是否有 scope_role_evidence.parameter_basis 支持；期间粒度和计算参数保留为 definition_parameters，不能当实际观测或删除。逐字引用是否成立、单位/口径/作用域冲突是否被处理、是否把技术匹配冒充业务关系、是否把物理表冒充概念类型。检查 related_context 是否被误作 seed 的定义或公式来源：技术关联不证明身份与公式归属，不得借其证据补齐 seed；归属冲突须拒绝并保留 unresolved。只审查候选实际提出的对齐与关系，不要求包内其余召回记录也必须合并；exact_alignment_record_ids 之外的记录绝不可要求改成 exact。参考 root_hint 是表名弱线索，不可仅凭它推翻有完整定义支持的 Metric/Measure 分类。非 Metric/Measure 的 classification_basis=other 可由 exact 对齐原文支持，不必强行要求不存在的分类字段。引用编码不必成为业务类型的定义属性；经营对象仅在定义中出现也可支持 Metric，不要求它同时出现在名称里。definition_reference 须有源引用意图及目标自身定义的来源证据，双方共同引用第三方不构成彼此的定义引用；不能只接受名称引文和相同编码。配置规则、参数和服务资源可以引用定义，无需算术公式；公式要求只用于计算依赖。完整取数用途、已核验的引用字段和目标自身定义可支持配置引用，不得仅以“配置/技术对象”拒绝。关系只审查被引用的正例对，其他类型未匹配仅影响覆盖；除非暴露当前正例的语义冲突，不得把 observed_subset 当成该正例不存在关系。逐条核对来源公式，禁止同名、同模型定义掩盖计算口径冲突。允许有完整证据的同名不同口径度量分别成类。计算依赖谓词及其操作数角色仍须符合原始公式；其他注册关系按各自用途证据复核。scope_roles=unrestricted 必须逐字对应 exact 来源中完整且无例外的明确不限制声明；全国、公历年、空值或带排除/仅/但的声明均不可视为 unrestricted，原文和角色仍须保留。若含义或范围确有冲突仍须拒绝。证据不足则 accepted=false 并列出具体 errors。复核不是独立业务真值证明。",
     "type_generalization": "候选只用于召回。仅当两个已接受的同根业务类型在完整定义或公式中共享同一语义，并且差异可以由各自来源原文中的明确特化词解释时，才提出共同上位类型；否则返回 no_change 或 unresolved。对每个 child 填写 type_id、逐字来自同一条完整说明/公式的 shared_quote 与 specialization_quote，以及该特化词。parent_scope 只能是两侧共有的适用范围，unit 必须兼容，公式的运算符、口径、否定及条件必须保持一致。父类 label/definition 不得包含任一子类特化词，也不得把观察到的地区/年份坐标提升为类型身份。若父类为 Metric，必须额外填写 business_object_quote，且该经营对象在父类名称、定义及每个子类来源定义中均有原文支持；不能删掉子类的经营对象限定后仍将所得通用量归为 Metric。不能将子类对象关系自动提升到父类；没有可逐字核查的共同定义就不生成上位类。",
-    "type_equivalence": "判断两个已接受的同名、同根、同单位、同适用范围业务类型是否确实等价。同名只是候选，不是合并依据。逐条阅读 source_types 中两侧 complete_source_definitions 的完整原文；本阶段仅允许两侧完整说明在去空白与标点后相同、完整公式相同（赋值等号左侧名称可不同）且无范围冲突时返回 proposed。描述同义改写但原文不同也返回 unresolved，待后续更强的语义核验；相同算式不能覆盖不同经营范围。proposed 必须原样复制两侧完整说明到 source_description_quote/target_description_quote，并填写对应 evidence_id；如果有公式，也原样复制各自完整公式到 source_formula_quote/target_formula_quote 并填写对应 evidence_id。source_type_id/target_type_id 必须与候选一致，semantic_equivalence_explanation 说明具体相同的业务口径。任何冲突返回 no_change，原文不足返回 unresolved；不要从名称或观测值推断身份，也不要把地区、年份观测坐标并进类型。",
+    "type_equivalence": "判断两个已接受的同名、同根、同单位、同适用范围业务类型是否确实等价。同名只是候选，不是合并依据。逐条阅读 source_types 中两侧 complete_source_definitions 的完整原文；本阶段仅允许两侧完整说明在仅归一呈现空白后相同（必须保留数字的小数点、比例、区间、日期及其他语义符号）、完整公式相同（赋值等号左侧名称可不同）且无范围冲突时返回 proposed。描述同义改写但原文不同也返回 unresolved，待后续更强的语义核验；相同算式不能覆盖不同经营范围。proposed 必须原样复制两侧完整说明到 source_description_quote/target_description_quote，并填写对应 evidence_id；如果有公式，也原样复制各自完整公式到 source_formula_quote/target_formula_quote 并填写对应 evidence_id。source_type_id/target_type_id 必须与候选一致，semantic_equivalence_explanation 说明具体相同的业务口径。任何冲突返回 no_change，原文不足返回 unresolved；不要从名称或观测值推断身份，也不要把地区、年份观测坐标并进类型。",
     "configuration_relation": "配置记录只充当业务关系证据，不是关系两端。输入中两端定义记录已通过编码唯一定位，但编码相等不证明业务谓词。仅当配置原文明确同时点名两端及关系方向，并且两端完整定义不冲突时提出关系；否则返回 no_change 或 unresolved。若提出，configuration_quote 必须逐字摘录完整配置原文并包含两端名称或编码与明确关系词；source_definition_quote、target_definition_quote 分别逐字摘录对应定义记录完整说明或公式。direction 为配置文本的明确方向，parent_relation 只能使用给出的对象关系根；predicate_name 可为空或选择注册的 calculation_dependency→depends_on、scope_constraint→related_to、definition_reference→points_to、has_member→contains，label 使用该英文谓词。semantic_parameters 默认 {}；calculation_dependency 的 operand_role 只有在完整可解析原公式中得到支持时才可填写。assertion_status 如实标记 affirmed/negated/conditional/inactive/uncertain，qualifier_quote 保留否定、条件、失效或不确定原文；这些情形当前无法编译约束，必须返回 unresolved，不得裁剪 configuration_quote 来删除限定。只有完整的无条件肯定关系句可以 proposed。不能仅靠字段名、源类型标记、共享编码、推测公式或联想常识生成依赖关系。",
     "fact_type_binding": "这是事实数值列到已接受 Metric 或 Measure 的字段级绑定；Dimension 只作为坐标，不是数值类型。按当前字段、单位与范围判断，不能根据数字分布猜量的含义。无注释时可使用完整字段名声明，必须能够支持候选的具体业务身份；身份不明或候选冲突则 unresolved。source_column_quote 完整复制 source_declaration；type_definition_quote 完整复制候选定义，并从 full_source_definitions 复制同一条 evidence_id/value 到 source_definition_evidence_id/type_source_quote。scope_bindings 将类型的范围键和 identity_qualifiers 身份键显式映射到实际 coordinate_columns；同名坐标可保持原键，不能靠注释出现地名放行。单位必须有字段声明或 source_checked_unit_columns 中已核验的同值单位列支持，可指定 unit_column；无证据不能猜单位。",
     "fact_schema_induction": "这是没有既有业务类型可绑定的事实字段。真实去重样本和已核验列角色只说明数据形态，不能给匿名数字猜指标名称。只有 source_declaration 的完整原文同时明确包含具体经营对象和业务量名称时才能 proposed；identity_evidence_id 引用它的 evidence_id，identity_quote 完整复制 value，business_object_quote 和 quantity_quote 分别逐字引用不同的经营对象与量名称，二者必须出现在 label 中，label 也必须能逐字对应来源声明。不能把 value、amount、指标值等泛称当经营对象。无业务身份则 unresolved。程序将把计算口径标为未知，不得编造公式。scope_bindings 只将逻辑范围键映射到真实 coordinate_columns。逐行变化的租户值保留在观测坐标中，不据此创建类型。identity_qualifiers 默认空；只有完整字段声明包含 key=value 或 key: value 这样的明确身份限定、scope_bindings 将该键映射到实际坐标列、且该列在全输入中只有同一个非空声明值时才可填写。声明中的每个明确身份限定都必须保留，不能省略或返回空对象来取消限制；明确但无法解析的身份限定也须 unresolved。程序会核对全输入；样本一致不能证明该条件，不确定则 unresolved。unit 仅引用声明中的明确单位，或 unit_columns 内 verified_single_unit 的单位列；后者填写 unit_column 与逐字 unit_quote，前者 unit_quote 必须完整复制 declared_unit_quote_contract.required_unit_quote_if_declared，包括对象名称、金额说明和单位，不能只填写“单位元”或“元”等子串；recognized_units 给出程序已识别的声明单位。无单位证据填 null。associated_definitions 是已核验技术邻域的上下文，技术连接不证明字段与该定义等价。",
@@ -127,7 +127,8 @@ def scope_mock_plan(response, unit):
 TEMPLATE_INDUCTION_PROMPT = """当前任务是从记录中提取可复用定义，并把具体记录绑定到定义。已启用模板路径。
 先判断记录描述的是类定义、类的配置/实例，还是无定义的事实。记录是实例并不意味着没有可抽取的类：
 若完整说明中已有类定义，或同表多个见证支持共同含义，优先 action=project_template；
-class_definition_candidates仅标出来源中疑似类声明，需对照完整原文确认。先判定声明的类，再处理记录标题的实例。
+class_definition_candidates仅标出来源中疑似类声明，需对照完整原文确认。
+单项及组合类定义均不得截取共同前句来省略渠道、范围、条件或否定。未写进定义的内容须有明确范围、计算参数或实例属性合同保留；仅把整句存进invariants或evidence不证明限定已保留。先判定声明的类，再处理记录标题的实例。
 单条记录中的明确完整类声明也能支持创建类；不得仅因记录是实例、标题含成员名称或没有第二条记录而否定该声明。
 只有从实例间变化推导通配槽位时，才需要多见证支持；不要把变化槽位的要求扩大为所有新类都必须多条记录。
 只有已经存在且本次没有新的匹配契约/绑定，才使用 no_change。no_change不能表示“建议以后将实例绑定到类”。不要为每个成员或展示主题另建子类。
@@ -164,7 +165,7 @@ B. 从配置/实例的说明或多个相容记录提取共同类：action=projec
 - 具体名称/编号使用record_identity/reference；地区、具体年份等使用dimension；经营对象用business_object。
   一个完整配置JSON可以用source_column约束的reference槽保留，不生成JSON内部路径或复杂正则。
 - components只放共同类的独立语义成分，不能把共同类自身再复制成component。
-  components的label和definition必须分别等于各自的引文quote。Measure成分需要独立的通用定义来源。
+  components的label和definition必须分别等于各自的引文quote，definition须满足同一完整来源校验，不截去限定。Measure成分需要独立的通用定义来源。
   已有相容成分用slots.target_type_id连接；新成分用slots.target_component连接，值精确使用components.name。
   每个component至少有一个同角色slot.target_component指向它；没有连接的component会被编译器拒绝。
   若连接缺少来源依据，删除该component并保留未决槽，不能留下孤立类型。
@@ -266,6 +267,16 @@ class StructuredLLM:
             entry["calls_after"] = self.calls
             self._call_ceilings.pop()
 
+    @contextmanager
+    def call_budget(self, max_calls, *, stage):
+        """Cap all admitted requests in a stage, including repairs and retries."""
+        if type(max_calls) is not int or max_calls < 0:
+            raise ValueError("Stage max_calls must be a nonnegative integer")
+        total = self.config.get("max_calls", 100)
+        ceiling = min(total, self.calls + max_calls)
+        with self.reserve_calls(total - ceiling, stage=stage):
+            yield
+
     def admit(self, request):
         raw = json.dumps(request, ensure_ascii=False, default=str).encode()
         if len(raw) > self.config.get("max_input_bytes", 100000):
@@ -303,7 +314,7 @@ class StructuredLLM:
                 "逐一核对全部变化字段、槽值、固定片段、单位、公式、真实计算参数和作用域；编码不等于中文名称。"
                 "applicability_scope必须是来源定义的适用范围且由不变scope字段支持；不能把实际地区/年份观测升为类约束。"
                 "components是独立成分，不得复制主类型充数；每个成分都须由同角色slot.target_component精确引用其name。"
-                "固定槽quote应为源文中的实际成分短值。相似、技术连接与模型解释均不证明来源身份。"
+                "固定与变量槽均须通过目标完整名称、已验证别名或明确引用路径核验。固定槽quote应为源文中的实际成分短值，不能只因属于Measure就指向任意量。相似、技术连接与模型解释均不证明来源身份。"
                 "只评估本候选实际声明的契约，其他召回记录不必合并。成立则accepted=true，否则errors逐项指出矛盾或缺证。")
         prompt = SYSTEM + "\n" + task_prompt
         if task in ("plan", "final_plan", "review"):
@@ -408,12 +419,15 @@ class StructuredLLM:
         schema_dict, prompt = request["schema"], request["prompt"]
         model_id = os.getenv("ONTOLOGY_LLM_MODEL", "") if self.mode != "mock" else digest(self.responses)
         endpoint_hash = digest(os.getenv("ONTOLOGY_LLM_BASE_URL", "")) if self.mode != "mock" else None
-        # Cache location changes where responses are stored, not what the
-        # model was asked. Permit replay from a prior run's read-only cache.
-        semantic_config = {key: value for key, value in self.config.items()
-                           if key != "cache_dir"}
-        key = digest([request, model_id, endpoint_hash, self.mode,
-                      semantic_config, self.transport])
+        # Operational ceilings, retry policy, pacing and stream framing do not
+        # change the requested generation. Only effective generation settings
+        # participate; cache hits are still decoded against the current schema.
+        temperature = self.config.get("temperature", 0)
+        generation = {"temperature": None if temperature is None else float(temperature),
+                      "max_output_tokens": self.config.get("max_output_tokens", 4096),
+                      "extra_body": thinking_body(self.transport)}
+        key = digest(["generation-cache-v2", request, model_id, endpoint_hash,
+                      self.mode, generation])
         file = self.cache / (key + ".json")
         if file.exists():
             self.cached += 1

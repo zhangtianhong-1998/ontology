@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator
 
+from .association_risk import numeric_overlap_requires_evidence
 from .models import BuildPlan, Condition, DerivedType, RelationPlan, Strict, json_null_placeholder
 from .definition_subject import quantity_subject_assessment
 from .relation_evidence import validate_definition_reference
@@ -813,7 +814,7 @@ def _numeric_join_path_evidence(data, bundle, source_record, target_record, refe
               for record, endpoint in ((source_record, source), (target_record, target))]
     numeric = (all(group and all(re.fullmatch(r"[+-]?\d+(?:\.0+)?", value) for value in group)
                    for group in values)
-               or rule.get("numeric_overlap_only") is True
+               or numeric_overlap_requires_evidence(rule)
                or "numeric_value_coincidence" in rule.get("risk_flags", []))
     if not numeric:
         return []

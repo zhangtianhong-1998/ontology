@@ -1,5 +1,7 @@
 # 路线2：记录关联与企业知识增强原型
 
+V14 正在进行正确性修复和无外部 LLM 的小规模闭环验证，见 [V14 整改与验收](../docs/route2/CORRECTNESS_V14.md)。新快照可以通过 `ontology-r2 reuse-facts` 重验既有事实映射；通用关系重放尚未完成。
+
 V13 的修复范围、验证边界与实验配置见 [V13 修复说明](../docs/route2/ONTOLOGY_REPAIR_V13.md)。全量对照使用 `config/runtime.full-v13.yaml`，保留原输入和旧实验结果。V12 记录见 [关系修复说明](../docs/route2/RELATION_REPAIR_V12.md)。
 
 当前已实现可运行原型：本地扫描先核验技术关联，再从有界跨表记录包抽取业务类型和关系；旧的 RIGOR 式逐表增量模式仍可选。AgentScope ReAct、stdio MCP 和本地结果可视化也保留。具体对象和关联由输入证据决定，不要求真实数据包含任何预设业务例子。
@@ -23,7 +25,7 @@ V13 的修复范围、验证边界与实验配置见 [V13 修复说明](../docs/
 
 `code/RIGOR`、`code/AgentScope` 是未修改上游源码的 Git 子模块指针，查看源码时需在线初始化或提前转移；运行 `code/ontology_r2` 原型不需要它们。此路线没有 SAND、GRAMS 或 Steiner Tree 依赖。`config/example.yaml` 是较完整设计的配置草案，实际运行请用 `runtime.mock.yaml`。
 
-当前 `profiling.py` 已按列组统计 CSV 快照，`discovery.py` 可对合格字段建立完整 distinct 值索引，并在预算内对候选做全输入精确核验。`association_rules.py` 可选用受限 ReAct 探索条件化物理匹配，`semantic_cards.py` 与 `instance_bundles.py` 对记录值做有界检索和组包，再由 `group_incremental.py` 进行证据约束下的增量抽取。技术匹配不自动成为业务关系；候选遗漏、未决结果和预算外范围均单独报告。一般化 JSON 路径、异名值转换和真实数据的语义质量验证仍未完成。`config/profiling.design.yaml` 仍是设计草案，不是运行配置。
+当前 `profiling.py` 已按列组统计 CSV 快照，`discovery.py` 可对合格字段建立完整 distinct 值索引，并在预算内对候选做全输入精确核验。`association_rules.py` 可选用受限 ReAct 探索条件化物理匹配，`semantic_cards.py` 与 `instance_bundles.py` 对记录值做有界检索和组包，再由 `group_incremental.py` 进行证据约束下的增量抽取。技术匹配不自动成为业务关系；候选遗漏、未决结果和预算外范围均单独报告。有限 JSON 同对象引用及异名列的原值/别名变换已有复验；任意路径、复杂转换和真实数据语义质量仍未完成验证。`config/profiling.design.yaml` 仍是设计草案，不是运行配置。
 
 不需要模型密钥即可复现本轮 3 条合成定义的工程检查：`uv run python scripts/run_group_compilation_experiment.py --output runs/measure-metric-demo`。生成的 `runs/measure-metric-demo/viewer.html` 可在本地打开；固定决策只验证分类门禁、关系编译与页面载荷，不代表真实数据上的语义准确率。
 

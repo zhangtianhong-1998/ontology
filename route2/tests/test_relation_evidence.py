@@ -323,6 +323,7 @@ def _compiled_case(tmp_path, *, shared_reference=False, weak_correspondence=Fals
         "source": {"table": source["table"], "field": "metric_ref"},
         "target": {"table": target["table"], "field": "metric_code"},
         "transform": {"operator": "identity"}, "selector": {}, "scope_bindings": {},
+        "numeric_overlap_only": False,  # The observed matched key is K1, not a numeric coincidence.
         "verification": {"scan_scope": "full_input", "checks": {
             "eligible_references": 1, "unique_matches": 1}}},
         "examples": {"positive": [{"source_record_id": source["record_id"],

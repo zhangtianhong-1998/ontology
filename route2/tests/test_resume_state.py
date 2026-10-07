@@ -217,31 +217,6 @@ def test_checkpoint_implementation_hash_is_a_required_argument(checkpoint_case):
     assert not path.exists()
 
 
-def test_pipeline_passes_its_manifest_code_hash_to_every_checkpoint_call():
-    import ast
-    import inspect
-    from ontology_r2 import pipeline
-    tree = ast.parse(inspect.getsource(pipeline.build))
-    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
-             and isinstance(node.func, ast.Name) and node.func.id in {"restore_state", "save_state"}]
-    names = [node.func.id for node in calls]
-    assert names.count("restore_state") == 1
-    # Additional iterative stages may checkpoint too; every save must use
-    # the same implementation hash, rather than fixing the number of stages.
-    assert names.count("save_state") >= 2
-    for node in calls:
-        argument = next(item.value for item in node.keywords if item.arg == "implementation_code_hash")
-        assert isinstance(argument, ast.Name) and argument.id == "code_hash"
-    # The same value is already recorded in the run manifest; no parallel
-    # implementation-fingerprint algorithm is introduced by this patch.
-    manifest = next(node.value for node in ast.walk(tree) if isinstance(node, ast.Assign)
-                    and any(isinstance(target, ast.Name) and target.id == "manifest" for target in node.targets))
-    code_hash = next(value for key, value in zip(manifest.keys, manifest.values)
-                     if isinstance(key, ast.Constant) and key.value == "implementation_code_hash")
-    assert isinstance(code_hash, ast.Name) and code_hash.id == "code_hash"
-
-
-
 def test_mock_pipeline_uses_one_hash_for_restore_progress_and_final_save(tmp_path, monkeypatch):
     import asyncio
     from ontology_r2 import pipeline
@@ -277,8 +252,9 @@ def test_mock_pipeline_uses_one_hash_for_restore_progress_and_final_save(tmp_pat
     assert second["status"] in {"complete", "partial"}, second
     assert second["resumed_from"] == str(tmp_path / "first")
     assert first["llm"]["calls"] == second["llm"]["calls"] == 0
-    expected_hash = first["implementation_code_hash"]
-    assert expected_hash == second["implementation_code_hash"]
+    expected_hash = first["semantic_code_hash"]
+    assert expected_hash == second["semantic_code_hash"]
+    assert first["implementation_code_hash"] == second["implementation_code_hash"]
     assert calls == [("restore", expected_hash), ("save", expected_hash), ("save", expected_hash)] * 2
     for name in ("first", "second"):
         state = json.loads((tmp_path / name / "semantic_state.json").read_text())

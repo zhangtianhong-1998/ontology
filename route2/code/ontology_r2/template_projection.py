@@ -15,6 +15,7 @@ from typing import Literal
 from pydantic import Field
 
 from .models import BuildPlan, DerivedType, Strict
+from .semantic_validation import require_complete_definition
 from .storage import digest
 
 
@@ -102,9 +103,9 @@ def _source_target_names(data, target):
 
 
 def _slot_target_mismatches(slots, captures):
-    """Fail closed for old variable measure contracts without endpoint proof."""
+    """Fixed and variable measure bindings require the same endpoint proof."""
     return [slot["name"] for slot in slots if slot["role"] == "measure"
-            and slot.get("target_type_id") and "fixed_value" not in slot
+            and slot.get("target_type_id")
             and (slot.get("target_value_contract", {}).get("type_id") != slot["target_type_id"]
                  or not slot.get("target_value_contract", {}).get("evidence_ids")
                  or captures.get(slot["name"]) not in slot.get("target_value_contract", {}).get("accepted_values", []))]
@@ -270,6 +271,20 @@ def match_projection(template, record):
         return None
     if _slot_target_mismatches(template["slots"], captures):
         return None
+    declarations = ([template["class_definition"]] if template.get("class_definition") else [])
+    declarations += template.get("class_definition_evidence", [])
+    instance_contracts = {(item["column"], item["quote"]): item["template"]
+                          for item in template.get("definition_instance_contracts", [])}
+    for citation in declarations:
+        try:
+            require_complete_definition(
+                values.get(citation["column"], ""), citation["quote"],
+                retained_values=(*template.get("definition_parameters", {}).values(),
+                                 *template.get("applicability_scope", {}).values()),
+                instance_template=instance_contracts.get((citation["column"], citation["quote"])),
+                instance_values=captures)
+        except ValueError:
+            return None
     return {"record_id": record["record_id"], "source_table": record["table"],
             "row_number": record.get("row_number"), "source_card_id": record.get("card_id"),
             "slot_values": captures,
@@ -342,6 +357,10 @@ def compile_projection(data, profile, core, bundle, decision):
         if component.root_type != expected[component.role]:
             raise ValueError("Projected component role conflicts with its root")
         ceids, properties, component_qualifiers = [], [], {}
+        if component.definition_evidence.record_id in records:
+            source_values, _ = _fields(records[component.definition_evidence.record_id])
+            require_complete_definition(source_values.get(component.definition_evidence.column, ""),
+                                        component.definition_evidence.quote)
         for citation, text in ((component.label_evidence, component.label),
                                (component.definition_evidence, component.definition)):
             if citation.record_id not in records or text != citation.quote:
@@ -404,11 +423,18 @@ def compile_projection(data, profile, core, bundle, decision):
             slot["evidence_ids"] = sorted(set(slot["evidence_ids"] + component["evidence_ids"]))
         if slot["target_type_id"] and slot["target_type_id"] not in known:
             raise ValueError("Slot target must be an existing accepted object type")
-        if slot["role"] == "measure" and slot.get("target_type_id") and "fixed_value" not in slot:
+        if slot["role"] == "measure" and slot.get("target_type_id"):
             target = known[slot["target_type_id"]]
+            parent, seen = target.parent, {target.id}
+            while parent in known and parent not in seen:
+                seen.add(parent)
+                parent = known[parent].parent
+            if parent != "Measure":
+                raise ValueError("A measure slot target must derive from Measure")
             slot["target_value_contract"] = _source_target_names(data, target)
             if not slot["target_value_contract"]["accepted_values"]:
-                raise ValueError("A variable measure target requires complete source name or alias evidence")
+                kind = "fixed" if "fixed_value" in slot else "variable"
+                raise ValueError(f"A {kind} measure target requires complete source name or alias evidence")
     orphan_components = sorted(set(components) - {slot["target_component"] for slot in slots
                                                    if slot["target_component"]})
     if orphan_components:
@@ -525,6 +551,29 @@ def compile_projection(data, profile, core, bundle, decision):
     # A new generalized matcher must be witnessed by variation. A separately
     # accepted type can instead supply a structural instantiation contract.
     declared_class = False
+    retained_definitions = (*decision.definition_parameters.values(), *decision.applicability_scope.values())
+
+    def check_definition_cell(citation):
+        """Check all witnesses so one instance section cannot hide a limit."""
+        pattern = next((item["template"] for item in field_templates if item["column"] == citation.column), None)
+        names = _SLOT.findall(pattern or "")
+        eligible_slots = {slot["name"]: slot for slot in slots
+                          if slot["role"] in {"record_identity", "dimension"}
+                          and slot.get("source_column") in instance_columns}
+        if (len(witnesses) < 2 or not set(names) <= set(eligible_slots)
+                or not any(len({binding["slot_values"].get(name) for binding in bindings}) > 1
+                           for name in names)):
+            pattern = None
+        for record in witnesses:
+            raw_values, _ = _fields(record)
+            if citation.column not in raw_values:
+                raise ValueError("Definition source column is absent from a witness")
+            require_complete_definition(
+                raw_values[citation.column], citation.quote, retained_values=retained_definitions,
+                instance_template=pattern,
+                instance_values=bindings_by_record[record["record_id"]]["slot_values"] if pattern else None)
+        return pattern
+
     if decision.class_definition is not None:
         citation = decision.class_definition
         same_row_name = any(item.record_id == citation.record_id
@@ -536,6 +585,10 @@ def compile_projection(data, profile, core, bundle, decision):
                 or "description" not in _fields(records[citation.record_id])[1].get(citation.column, set())
                 or not (decision.label in citation.quote or same_row_name)):
             raise ValueError("Class definition requires a source description and its same-record class label")
+        pattern = check_definition_cell(citation)
+        if pattern:
+            template.setdefault("definition_instance_contracts", []).append({
+                "column": citation.column, "quote": citation.quote, "template": pattern})
         evidence_ids.append(_evidence(data, records[citation.record_id], citation.column, citation.quote))
         template["evidence_ids"] = sorted(set(evidence_ids))
         template["class_definition"] = citation.model_dump()
@@ -554,20 +607,34 @@ def compile_projection(data, profile, core, bundle, decision):
                            for item in decision.label_evidence)):
             raise ValueError("Composed definition must retain quoted name, description and source constraint cells")
         for item in citations:
-            if (raw_values.get(item.column) != item.quote
-                    or not raw_roles.get(item.column, set()) & {"name", "alias", "description", "formula", "scope", "identity", "unit"}
+            if (not raw_roles.get(item.column, set()) & {"name", "alias", "description", "formula", "scope", "identity", "unit"}
                     or item.column in instance_columns):
                 raise ValueError("Composed definition cannot use partial or instance-only source cells")
+            pattern = check_definition_cell(item)
+            if pattern:
+                template.setdefault("definition_instance_contracts", []).append({
+                    "column": item.column, "quote": item.quote, "template": pattern})
             evidence_ids.append(_evidence(data, rec, item.column, item.quote))
         template["class_definition_evidence"] = [item.model_dump() for item in citations]
         template["evidence_ids"] = sorted(set(evidence_ids))
         declared_class = True
+    if not declared_class and decision.root_type not in {"Metric", "GeneralObject"}:
+        # Measure/Dimension/Term have the same source completeness contract;
+        # omitting the explicit class citation must not open a weaker path.
+        for record in witnesses:
+            descriptions = [str(entry["value"]) for entry in record.get("fields", {}).get("description", [])]
+            matches = [raw for raw in descriptions if decision.definition in raw]
+            if not matches:
+                raise ValueError("Projected definition requires a complete source description")
+            if not any(raw == decision.definition or raw in retained_definitions for raw in matches):
+                require_complete_definition(matches[0], decision.definition,
+                                            retained_values=retained_definitions)
     if any("fixed_value" not in slot for slot in slots) and not decision.existing_type_id and not declared_class:
         if len(witnesses) < 2 or not any(len({item["slot_values"][slot["name"]] for item in bindings}) > 1 for slot in slots):
             raise ValueError("A new template requires observed variation, not one invented generalization")
     if decision.root_type in {"Metric", "GeneralObject"} and not decision.existing_type_id and not declared_class:
         shared_definition = decision.label in decision.definition and all(
-            any(decision.definition in str(entry["value"])
+            any(decision.definition == str(entry["value"])
                 for entry in record.get("fields", {}).get("description", []))
             for record in witnesses)
         varying = any(len({item["slot_values"][slot["name"]] for item in bindings}) > 1 for slot in slots)
@@ -654,7 +721,7 @@ def compile_projection(data, profile, core, bundle, decision):
     candidate.object_types[candidate.object_types.index(current)] = updated
     template["contract_hash"] = digest([template["source_table"], template["object_type_id"],
                                         template["semantic_columns"], template["invariants"], field_templates, slots,
-                                        instance_columns])
+                                        instance_columns, template.get("definition_instance_contracts", [])])
     template["template_id"] = "projection:" + template["contract_hash"][:24]
     return candidate, template, [bind_projection(data, template, record) for record in witnesses]
 

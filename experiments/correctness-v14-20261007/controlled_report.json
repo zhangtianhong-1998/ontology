@@ -1,0 +1,102 @@
+{
+  "validation_kind": "offline_mock_decisions_and_real_source_compilers",
+  "external_llm_calls": 0,
+  "initial": {
+    "types": 4,
+    "relations": 2,
+    "facts": 2,
+    "mock_field_decisions": 1
+  },
+  "source_snapshot": "08f3bd56cd48b4064e018b43d18ce1a6395ed4a74155cda591665067ebfb6478",
+  "scenarios": {
+    "append": {
+      "facts": 3,
+      "external_llm_calls": 0,
+      "revalidated_types": 4,
+      "pending_count": 2,
+      "pending_reasons": [
+        "relation_contract_requires_separate_compiler_replay"
+      ],
+      "snapshot": "56d0f0cf03fee54668022631e9c8cbe547ea0bf3cf21638b95d8f110f53152a7",
+      "partial": true,
+      "omitted_observed_tuples": 0,
+      "partial_reasons": [
+        "new_or_invalidated_contracts",
+        "unresolved_input_table_purpose"
+      ]
+    },
+    "bounded_append": {
+      "facts": 1,
+      "external_llm_calls": 0,
+      "revalidated_types": 4,
+      "pending_count": 2,
+      "pending_reasons": [
+        "relation_contract_requires_separate_compiler_replay"
+      ],
+      "snapshot": "56d0f0cf03fee54668022631e9c8cbe547ea0bf3cf21638b95d8f110f53152a7",
+      "partial": true,
+      "omitted_observed_tuples": 2,
+      "partial_reasons": [
+        "new_or_invalidated_contracts",
+        "fact_observation_coverage_partial",
+        "unresolved_input_table_purpose"
+      ]
+    },
+    "scope_change": {
+      "facts": 0,
+      "external_llm_calls": 0,
+      "revalidated_types": 4,
+      "pending_count": 3,
+      "pending_reasons": [
+        "relation_contract_requires_separate_compiler_replay",
+        "scope_constant_missing_or_conflicting"
+      ],
+      "snapshot": "7c2cf4a6ee3d85354b18dfda0440d7e6862ce4309f3652124efb0fb5101c5b8a",
+      "partial": true,
+      "omitted_observed_tuples": 0,
+      "partial_reasons": [
+        "new_or_invalidated_contracts",
+        "uninstantiated_observation_candidates",
+        "unresolved_input_table_purpose"
+      ]
+    },
+    "definition_change": {
+      "facts": 0,
+      "external_llm_calls": 0,
+      "revalidated_types": 3,
+      "pending_count": 6,
+      "pending_reasons": [
+        "field_or_type_contract_changed",
+        "no_revalidated_mapping",
+        "relation_contract_requires_separate_compiler_replay",
+        "type_source_contract_not_revalidated"
+      ],
+      "snapshot": "bdfe9f1d7fde8e64062e82b4b5d6e28ee5cfaae9a285f44142174cb4a5591d7b",
+      "partial": true,
+      "omitted_observed_tuples": 0,
+      "partial_reasons": [
+        "new_or_invalidated_contracts",
+        "uninstantiated_observation_candidates",
+        "unresolved_input_table_purpose"
+      ]
+    },
+    "empty_core": {
+      "facts": 2,
+      "mock_schema_decisions": 1,
+      "external_llm_calls": 0
+    },
+    "nearby_existing_type": {
+      "facts": 2,
+      "mock_schema_decisions": 1,
+      "external_llm_calls": 0
+    }
+  },
+  "status": "engineering_acceptance_passed",
+  "limits": [
+    "No external LLM or embedding model was invoked; this does not validate model extraction quality.",
+    "Reused relation schemas require separate compiler replay and remain pending, not executable.",
+    "Fact coordinates retain observed source values; this does not resolve durable object identities.",
+    "Observed values are source values; no numerical formula evaluation was performed.",
+    "Unannotated or arbitrary enterprise schemas remain a separate generalization evaluation."
+  ]
+}

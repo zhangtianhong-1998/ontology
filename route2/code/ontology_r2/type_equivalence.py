@@ -14,13 +14,12 @@ from itertools import combinations
 from typing import Literal
 
 from .models import BuildPlan, DerivedType, Strict
+from .semantic_validation import semantic_text_key
 from .storage import digest
 from .unit_identity import unit_identity
 
 
 ROOTS = frozenset(("GeneralObject", "Measure", "Metric", "Dimension", "Term"))
-_SPACE = re.compile(r"\s+")
-_PROSE_PUNCT = re.compile(r"[\s，,。.;；:：、]+")
 
 
 class EquivalenceDecision(Strict):
@@ -46,11 +45,11 @@ def _norm(value):
 
 
 def _description_key(value):
-    return _PROSE_PUNCT.sub("", _norm(value))
+    return semantic_text_key(value)
 
 
 def _formula_key(value):
-    expression = _SPACE.sub("", _norm(value))
+    expression = semantic_text_key(value)
     # The written name left of an assignment is not a calculation operand.
     assignment = re.fullmatch(r"[\w\u3400-\u9fff.]+=([^=].*)", expression)
     return assignment.group(1) if assignment else expression

@@ -115,7 +115,7 @@ def test_packet_keeps_declared_partial_and_numeric_risk_as_distinct_evidence(dat
     assert numeric['meaning'] == 'checked_field_association_only'
     partial = next(link for link in links if link['status'] == 'observed_subset')
     assert partial['verification']['checks'] == partial_counts
-    assert partial['numeric_overlap_only'] is False
+    assert partial['numeric_overlap_only'] is None
     numeric['risk_flags'].clear()
     assert next(link for link in data.metadata_graph.field_links()
                 if link.get('numeric_overlap_only'))['risk_flags'] == ['numeric_value_coincidence']

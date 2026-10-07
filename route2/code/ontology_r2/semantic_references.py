@@ -22,9 +22,7 @@ _MEMBER_CODE = re.compile(r"成员(?:编码|标识)|member\s+(?:code|identifier|
 _LEXICAL = re.compile(r"名称|别名|同义词|\b(?:name|label|alias|aliases|synonym|synonyms|term|word)\b", re.I)
 _ALIAS = re.compile(r"别名|同义词|\b(?:alias|aliases|synonym|synonyms)\b", re.I)
 _CODE = re.compile(r"编码|标识|\b(?:code|identifier|key)\b", re.I)
-_MEMBER = re.compile(r"成员|\bmember\b", re.I)
 _SCOPE = re.compile(r"所属|内解释|作用域|within|scoped|namespace", re.I)
-_NEGATION = re.compile(r"不是|并非|不属于|非成员|not\s+(?:a\s+)?member|does\s+not\s+belong", re.I)
 
 
 def _normal(value):
@@ -121,14 +119,54 @@ def _lexical_match(data, term, member_table, member):
     return None
 
 
+def membership_declaration(value, dimension_label, member_labels):
+    """Recognize complete affirmative source declarations, never keyword cooccurrence.
+
+    This deliberately narrow grammar is replayable. Other prose (negation,
+    modality, conditions, or extra clauses) needs semantic review rather than
+    accumulating a blacklist of a few negative words.
+    """
+    if not isinstance(value, str) or not dimension_label:
+        return False
+    sentence = _normal(value).rstrip(".。")
+    axis = re.escape(_normal(dimension_label))
+    for label in member_labels:
+        if not isinstance(label, str) or not label.strip():
+            continue
+        name = re.escape(_normal(label))
+        patterns = (rf"{axis}\s*成员\s*[:：]\s*{name}",
+                    rf"{axis}\s+member\s*:\s*{name}",
+                    rf"{name}\s*(?:是|属于)\s*{axis}\s*(?:的)?成员",
+                    rf"{name}\s+is\s+(?:a\s+)?member\s+of\s+{axis}")
+        if any(re.fullmatch(pattern, sentence) for pattern in patterns):
+            return True
+    return False
+
+
 def _membership_text(data, member_table, member, dimension_label):
-    """Require an affirmative statement naming the accepted Dimension itself."""
-    for column in _columns(data, member_table):
+    labels = []
+    for column in _lexical_columns(data, member_table):
         value = member.get(column["column_name"])
-        if (isinstance(value, str) and dimension_label and dimension_label in value
-                and _MEMBER.search(value) and not _NEGATION.search(value)):
+        declaration = str(column.get("column_comment") or "") + " " + column["column_name"]
+        if isinstance(value, str):
+            labels.extend(re.split(r"[,;，；、|]", value) if _ALIAS.search(declaration) else [value])
+    for column in _columns(data, member_table):
+        if membership_declaration(member.get(column["column_name"]), dimension_label, labels):
             return column["column_name"]
     return None
+
+
+def json_member_scope(leaves, source_path, scope_column):
+    """Only a sibling field in the exact reference object can qualify its key.
+
+    A same-named leaf in an audit branch, ancestor, or another array/object
+    does not establish a scope mapping. Preserve the full path for replay.
+    """
+    path = (*tuple(source_path)[:-1], scope_column)
+    if path == tuple(source_path) or path not in leaves:
+        return None
+    return {"source_path": list(path), "target_column": scope_column,
+            "value": leaves[path], "structural_contract": "same_json_reference_object"}
 
 
 def _node(data, table, row, *, kind, label, type_id, evidence_ids):
@@ -214,12 +252,9 @@ def build_semantic_references(data, plan, concepts=(), alignments=(), *, members
             # No source namespace is invented. A code ambiguous anywhere in
             # the target table needs an explicit namespace in the source JSON.
             bindings = [(target["field"], code)]
-            namespace_values = [value for path, value in leaves.items() if path[-1] == spec["scope_column"]]
-            if namespace_values:
-                if len(set(namespace_values)) != 1:
-                    failure = "conflicting_source_member_namespaces"
-                    continue
-                bindings.append((spec["scope_column"], namespace_values[0]))
+            namespace = json_member_scope(leaves, source["source_path"], spec["scope_column"])
+            if namespace:
+                bindings.append((spec["scope_column"], namespace["value"]))
             targets = _lookup(data, target["table"], bindings)
             if len(targets) != 1:
                 failure = "member_code_missing_or_ambiguous_in_namespace"
@@ -287,6 +322,9 @@ def build_semantic_references(data, plan, concepts=(), alignments=(), *, members
                  "member_spec": spec, "source_lexical_column": lexical_fields[0],
                  "member_lexical_column": lexical, "membership_text_column": membership_text,
                  "dimension_key_column": dimension_key, "member_lookup_bindings": bindings,
+                 "member_namespace_binding": json_member_scope(
+                     {tuple(path): value for path, value in json_scalar_paths(row.get(source["field"]))},
+                     source["source_path"], spec["scope_column"]),
                  "term_type_id": term_type.id, "dimension_type_id": dimension.id,
                  "term_node": term_node["id"], "member_node": member_node["id"],
                  "dimension_node": dimension_node["id"], "evidence_ids": evidence}
@@ -415,11 +453,11 @@ def verify_semantic_reference_assertion(data, assertion, instances, plan):
     if spec not in _member_specs(data):
         raise ValueError("Semantic reference member namespace declaration changed")
     bindings = [[spec["field"], leaves[tuple(source["source_path"])]]]
-    namespaces = {value for path, value in leaves.items() if path[-1] == spec["scope_column"]}
-    if namespaces:
-        if len(namespaces) != 1:
-            raise ValueError("Semantic reference namespace is ambiguous")
-        bindings.append([spec["scope_column"], next(iter(namespaces))])
+    namespace = json_member_scope(leaves, source["source_path"], spec["scope_column"])
+    if namespace:
+        bindings.append([spec["scope_column"], namespace["value"]])
+    if namespace != proof.get("member_namespace_binding"):
+        raise ValueError("Semantic reference namespace path lacks same-object evidence")
     if bindings != [list(item) for item in proof["member_lookup_bindings"]]:
         raise ValueError("Semantic reference scope binding lacks original JSON evidence")
     matched = _lookup(data, spec["table"], proof["member_lookup_bindings"])

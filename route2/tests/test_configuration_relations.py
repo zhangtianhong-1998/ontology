@@ -173,6 +173,7 @@ def test_invalid_or_sensitive_spec_is_rejected(tmp_path):
 def _rule(rule_id, spec, source_field, target_table, target_field):
     return {
         "rule_id": rule_id, "status": "checked_technical",
+        "numeric_overlap_only": False,  # Fixture keys are I*/M*, not unknown numeric overlaps.
         "source": {"table": spec["configuration_table"], "field": source_field},
         "target": {"table": target_table, "field": target_field},
         "transform": {"operator": "identity"}, "selector": {}, "scope_bindings": {},

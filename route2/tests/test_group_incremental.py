@@ -611,6 +611,7 @@ def test_relation_quotes_must_come_from_one_validated_positive_pair(tmp_path):
             "source": {"table": source, "field": "metric_ref"},
             "target": {"table": target, "field": "metric_code"},
             "status": "checked_technical", "transform": {"operator": "identity"},
+            "numeric_overlap_only": False,  # Full test source uses K1/K2.
             "selector": {}, "scope_bindings": {},
             "verification": {"scan_scope": "full_input",
                              "checks": {"eligible_references": 2, "unique_matches": 2}},
@@ -957,6 +958,7 @@ def test_relation_batch_keeps_per_rule_compilation_and_reviews(tmp_path):
                     "source": {"table": source, "field": "metric_ref"},
                     "target": {"table": target, "field": "metric_code"},
                     "status": "checked_technical", "transform": {"operator": "identity"},
+                    "numeric_overlap_only": False,  # Full test source uses K1/K2.
                     "verification": {"scan_scope": "full_input", "checks": {
                         "eligible_references": 2, "unique_matches": 2}}},
                 "records": [left, right], "examples": {"positive": [{

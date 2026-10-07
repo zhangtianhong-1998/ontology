@@ -12,8 +12,18 @@ from .storage import digest
 from .validation import validate_plan
 
 
+def implementation_fingerprints(package=None):
+    """Separate build provenance from code that can alter accepted semantics."""
+    package = Path(package or Path(__file__).parent)
+    sources = {p.relative_to(package).as_posix(): p.read_text()
+               for p in sorted(package.rglob("*")) if p.suffix in (".py", ".html")}
+    semantic = {name: source for name, source in sources.items()
+                if name.endswith(".py") and name not in {"visualization.py", "progress.py"}}
+    return {"implementation_code_hash": digest(sources), "semantic_code_hash": digest(semantic)}
+
+
 def state_contract(data, profile, *, implementation_code_hash):
-    # Use the exact package hash recorded by pipeline.build, not a second hash.
+    # Use pipeline's semantic code hash; full build provenance stays in manifest.
     if (not isinstance(implementation_code_hash, str)
             or len(implementation_code_hash) != 64
             or any(char not in "0123456789abcdef" for char in implementation_code_hash)):
@@ -21,7 +31,8 @@ def state_contract(data, profile, *, implementation_code_hash):
     from .llm import SYSTEM, TASK_PROMPTS, TEMPLATE_INDUCTION_PROMPT
     # Definition parameters now participate in type identity and relation
     # compatibility; pre-contract checkpoints must not bypass these checks.
-    return {"version": 4, "snapshot_id": data.snapshot_id,
+    return {"version": 5, "snapshot_id": data.snapshot_id,
+            "implementation_hash_scope": "python_except_visualization_and_progress_v1",
             "implementation_code_hash": implementation_code_hash,
             "retrieval_contract": getattr(data, "semantic_retrieval_contract", {}),
             "profile_hash": digest(profile), "prompts_hash": digest([SYSTEM, TASK_PROMPTS, TEMPLATE_INDUCTION_PROMPT]),

@@ -14,13 +14,15 @@
 
 `storage.py/profiling.py` 导入并统计；`discovery.py` 召回和核验字段候选；`row_semantics.py` 区分表用途并统计有限列组的联合 distinct，`fact_observations.py/fact_type_binding.py` 分别产生实际观测元组和保守的字段级类型绑定；`semantic_cards.py/instance_bundles.py` 建定义模式索引及证据包；`configuration_relations.py/configuration_relation_stage.py` 处理双编码配置见证，`type_generalization.py/type_generalization_stage.py` 处理有据可查的上位类候选，`type_equivalence.py/type_equivalence_stage.py` 核验已接受业务类型的快照内等价。`column_roles.py` 分流列角色，`concept_candidates.py`、`value_aliases.py` 做有界召回，`row_bundles.py` 提取少量已核验的原值相等记录对；`pipeline.py` 调度、校验与输出。其余模块职责沿用前版；`datahub_adapter.py` 仅用于离线 DataHub metadata-file 互操作。下文未落地的 `r2/*` 接口仍为职责草案。
 
-2026-09-23 新增[字段统计与关联发现详细设计](FIELD_PROFILING_DESIGN.md)及[字段关联方案评估](FIELD_ASSOCIATION_EVALUATION.md)。P01、P03、P04 已实现首版，包含实际出现的 `business_type/source_type` 条件分支与全输入核验；分层取样、一般化 JSON 路径、异名值转换和复合键仍未实现。准确范围见[状态表](STATUS.md)。
+2026-09-23 新增[字段统计与关联发现详细设计](FIELD_PROFILING_DESIGN.md)及[字段关联方案评估](FIELD_ASSOCIATION_EVALUATION.md)。P01、P03、P04 已实现首版，包含实际出现的 `business_type/source_type` 条件分支与全输入核验；目前已有有限条件分支、非空 distinct 分层关系文本样本、同对象 JSON 路径和别名/规范化变换的复验；任意 JSON 路径、复合键推断和统一频次取样体系仍不完整。准确范围见[状态表](STATUS.md)。
 
-2026-09-24 根据数据机反馈与组包需求，新增[实例检索与增量组包设计](INSTANCE_BUNDLE_DESIGN.md)。当前已有有界语义卡、中文 n-gram BM25、可选本地向量、概念包和关系包的一轮组级抽取，以及条件严格的单表观测值实例化。尚缺分层选例、同义值转换的全量核验、跨表事实实例化和真实数据 Gold 评估。2026-09-25 的代码与合成实验对照见[优化与验证记录](OPTIMIZATION_AND_VALIDATION_20260925.md)。
+2026-09-24 根据数据机反馈与组包需求，新增[实例检索与增量组包设计](INSTANCE_BUNDLE_DESIGN.md)。当前已有有界语义卡、中文 n-gram BM25、可选本地向量、概念包和关系包的一轮组级抽取，以及条件严格的单表观测值实例化。有界样本和受支持转换的全输入核验已有代码；跨表事实计算 JOIN、任意同义规则和真实数据 Gold 评估仍未完成。2026-09-25 的代码与合成实验对照见[优化与验证记录](OPTIMIZATION_AND_VALIDATION_20260925.md)。
 
 配置定义行和业务事实行必须使用不同的身份、去重及组包口径。表级 `source_record_type` 是物理行结构，统一挂在 `GeneralObject` 下；表注释提及指标/度量只保存为被描述业务根的弱线索。业务 `Metric/Measure` 类型须由定义记录和分类依据支持，实际经营事实只实例化已经观察到的坐标，不枚举维度组合。设计契约、用户故事和验收场景见[配置定义与业务事实设计](FACT_CONFIG_ONTOLOGY_DESIGN.md)。
 
 当前实现先以表级启发式区分定义、配置、事实与未决表，并对有限候选列组计算完整输入的联合 distinct。定义卡在磁盘索引中同时保留每条原始编码记录与完整语义内容模式；模式用于选代表证据包，不能当作业务对象等价关系。业务事实表输出已出现坐标和值的有限候选；在绑定数值字段前，另对已接受类型作有界、逐对来源核验，只把完整等价组映射到同快照规范类型。随后回查来源行，生成有证据的观测实例；未证实等价的同名类型仍阻断多义绑定。配置行的双编码引用另走“技术匹配→两端定义唯一定位→配置原文语义裁决”，不把配置行当对象关系端点。接受的业务类型可进入独立的上位类归纳阶段；模型决策仍受完整定义、公式、单位和适用范围的程序校验。各阶段的未处理范围单独导出。
+
+V14 公共校验、证据缺口调度、跨快照事实复用和阶段预算的增量设计见 [CORRECTNESS_V14.md](CORRECTNESS_V14.md)。同快照恢复与新快照映射重验是两个入口；两者不能通过放宽同一快照检查混用。
 
 ## 1. 总体执行
 
@@ -55,7 +57,7 @@ CSV → 分批导入、快照定位、全字段基础统计
 | `r2/ingest.py` | `ingest_csv(snapshot, config) -> ImportManifest` | CSV 流式导入、源行定位、类型辅助列、DuckDB 索引 |
 | `r2/meta_graph.py` | `build_graph(snapshot) -> MetaGraph` | 技术节点、声明边、来源与邻居查询 |
 | `ontology_r2/profiling.py`（首版） | `profile_fields` | 分组 SQL 聚合、空值/格式计数及有限取值样本；精确频次和分层取样待做 |
-| `ontology_r2/discovery.py`（首版） | `propose_candidates`、`validate_candidate`、`discover_and_check` | 元数据/名称/原值候选、已出现类型值的条件分支和单列全输入核验；一般化 JSON 路径、复合键与异名转换待做 |
+| `ontology_r2/discovery.py`（首版） | `propose_candidates`、`validate_candidate`、`discover_and_check` | 元数据/名称/原值候选、已出现类型值的条件分支和单列、条件和受支持别名变换的全输入核验；任意 JSON 路径与复合键自动推断待做 |
 | `ontology_r2/datahub_adapter.py`（可选） | `export_datahub_metadata` | 将表、列、声明主键和来源写入 DataHub metadata-file；不替代本地图或实现血缘 |
 | `r2/plans.py` | `propose_plans(schema, summaries) -> list[ExtractionPlan]` | LLM 有界角色判别、计划验证、条件覆盖检查 |
 | `r2/relations.py` | `discover(plans, store) -> CandidateIterator` | 标识匹配、候选召回、公式/条件解析和关联统计 |
@@ -68,15 +70,15 @@ CSV → 分批导入、快照定位、全字段基础统计
 
 当前技术节点：`DatasetSnapshot`、`Table`、`Column`、`Constraint`、`Source`。当前技术边包括 `table_has_column`、`has_declared_constraint`、`declared_fk`、`documented_by`、`sample_from`、`includes_source`。这些名字属于元数据层，不是新增内部一级业务关系。
 
-`declared_fk` 只能来自声明外键。字段候选、核验结果和技术关联规则分别写入独立产物；`meta_graph.yaml` 不再保存推断字段边。无外键时仍可按值域与上下文搜索关联，但候选不是图中的声明关系。
+`declared_fk` 只能来自声明外键。字段候选、核验结果和技术关联规则分别写入独立产物；`meta_graph.yaml` 可纳入已核验规则的 `technical_link`，保存条件、作用域、来源和三态数字风险。无外键时仍可按值域与上下文搜索关联，但候选不是图中的声明关系。
 
 CSV 记录不全部变成内存图节点。元数据图引用 DuckDB 中的记录集合、统计和候选边；仅选定证据包取少量完整相关记录。
 
-本地 `meta_graph.yaml` 由 YAML/CSV 构建，DataHub 没有参与这一步。图中保存表、列、声明主键、来源和明确标记的本地 `source_record_type` 映射；DataHub URN 仅用于离线 metadata-file 导出。页面的关联发现结果另读独立规则文件，不能把字段重叠画成业务对象属性。
+本地 `meta_graph.yaml` 由 YAML/CSV 构建，DataHub 没有参与这一步。图中保存表、列、声明主键、来源和明确标记的本地 `source_record_type` 映射；DataHub URN 用于标准标识和离线 metadata-file 导出。页面可读图内技术边及独立规则文件，但不能把字段重叠画成业务对象属性。
 
 目标电脑为无 Docker 的 Windows 11，因此运行时保留本地技术图与 DuckDB。DataHub 仅作为可选互操作格式：导出表/列 metadata-file，另用隔离环境中的 Lite 做本地存储和读回。Lite 不支持关系图遍历或血缘；完整 DataHub 服务不属于此离线原型的运行依赖。安装与验证命令见[离线说明](DATAHUB_OFFLINE.md)。
 
-字段候选、核验与规则分别写入 `field_candidates.yaml`、`association_checks.yaml` 和 `association_rules.yaml`。`checked_technical` 与 `observed_subset` 保留 selector、作用域和状态，但不进入原始元数据图；`observed_subset` 不能生成全局业务关系，也不能自动升级为 `points_to`。
+字段候选、核验与规则分别写入 `field_candidates.yaml`、`association_checks.yaml` 和 `association_rules.yaml`。`checked_technical` 与 `observed_subset` 保留 selector、作用域和状态，可作为独立 `technical_link` 进入本地图，不改变声明外键；`observed_subset` 不能生成全局业务关系，也不能自动升级为 `points_to`。
 
 ### 3.1 字段统计路径
 

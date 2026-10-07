@@ -1,0 +1,17 @@
+{
+  "baseline_commit": "1be2ff59",
+  "branch": "codex/ontology-correctness-v14",
+  "checked_at": "2026-10-07T09:17:55.298368+08:00",
+  "pytest": {
+    "command": "PYTHONPATH=code:. .venv/bin/python -m pytest -q",
+    "cwd": "route2",
+    "passed": 1385,
+    "failed": 0,
+    "seconds": 90.53
+  },
+  "semantic_code_hash": "6ff14dae1e12bb1f6020bd1a5dae2baea2cb76a9472cabdf8a6e5c83841f5eb2",
+  "external_llm_calls": 0,
+  "new_full_extraction_started": false,
+  "browser_interaction_verified": false,
+  "facts_reuse_scope": "source-revalidated literal definitions and accepted field mappings; relation replay pending"
+}

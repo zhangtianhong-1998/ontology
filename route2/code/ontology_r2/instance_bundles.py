@@ -7,6 +7,7 @@ import re
 from math import sqrt
 from collections import defaultdict, deque
 
+from .association_risk import numeric_overlap_requires_evidence, numeric_overlap_state
 from .concept_candidates import _field_roles
 from .embedding import top_cosine
 from .row_bundles import joint_examples
@@ -567,7 +568,7 @@ def _rule_quality_tier(rule, data=None):
         re.search(r"(?<![A-Za-z0-9_.])" + re.escape(name) + r"(?![A-Za-z0-9_.])", comment, re.I)
         for name in qualified_targets))
     source_pk = field in source_info.get("pk", ()) or bool(rule.get("source_declared_pk"))
-    numeric = bool(rule.get("numeric_overlap_only"))
+    numeric = numeric_overlap_requires_evidence(rule)
     if ordinal or (numeric and source_pk and not reference):
         return "risk_exploration"
     checks = (rule.get("verification") or {}).get("checks") or {}
@@ -626,7 +627,7 @@ def _reference_priority(rule):
                   and checks.get("selector_true", 0) > 0
                   and checks.get("selector_false", 0) > 0
                   and checks.get("selector_unknown", 0) == 0)
-    score -= 0.25 * bool(rule.get("numeric_overlap_only"))
+    score -= 0.25 * numeric_overlap_requires_evidence(rule)
     return score
 
 
@@ -657,7 +658,11 @@ def _rule_selection_coverage(available, inspected, packaged, limit, exploration_
             "table_pairs_available": len(table_pairs[0]), "table_pairs_inspected": len(table_pairs[1]),
             "table_pairs_packaged": len(table_pairs[2]),
             "numeric_overlap_rules": {
-                name: sum(bool(rule.get("numeric_overlap_only")) for rule in population)
+                name: sum(numeric_overlap_state(rule) is True for rule in population)
+                for name, population in (("available", available), ("inspected", inspected),
+                                         ("packaged", packaged))},
+            "numeric_risk_unknown_rules": {
+                name: sum(numeric_overlap_state(rule) is None for rule in population)
                 for name, population in (("available", available), ("inspected", inspected),
                                          ("packaged", packaged))},
             "semantic_acceptance": "not_assessed_by_packet_selection"}

@@ -10,6 +10,7 @@ from collections import defaultdict, deque
 from copy import deepcopy
 from pathlib import Path
 
+from .association_risk import numeric_overlap_state
 from .datahub_adapter import dataset_urn, schema_field_urn
 from .record_types import source_record_type
 from .storage import digest, write_yaml
@@ -140,7 +141,7 @@ def build_metadata_graph(data, association=None, *, platform="postgres", environ
                       **{key: deepcopy(rule.get(key) or {}) for key in
                          ("selector", "scope_bindings", "transform", "verification")},
                       "evidence_ids": evidence_ids,
-                      "numeric_overlap_only": bool(rule.get("numeric_overlap_only", False)),
+                      "numeric_overlap_only": numeric_overlap_state(rule),
                       "risk_flags": deepcopy(rule.get("risk_flags") or []),
                       "semantic_relation": rule.get("semantic_relation", "unresolved"),
                       "meaning": "checked_field_association_only", "lineage_inferred": False})

@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from .association_risk import numeric_overlap_requires_evidence
 from .configuration_relations import declared_reference_evidence
 from .models import BuildPlan, Condition, DerivedType, Strict
 from .relation_contract import (canonical_relation_definition, canonical_relation_id,
@@ -329,7 +330,7 @@ def configuration_purpose_packet(data, candidate, witness, plan, checked_rules):
                 or rule.get("snapshot_id") != data.snapshot_id
                 or rule.get("verification", {}).get("scan_scope") != "full_input"):
             return None
-        if ((rule.get("numeric_overlap_only") or rule.get("source", {}).get("field")
+        if ((numeric_overlap_requires_evidence(rule) or rule.get("source", {}).get("field")
                 in data.tables[candidate["configuration_table"]].get("pk", []))
                 and declared_reference_evidence(data, rule) is None):
             return None
@@ -474,7 +475,7 @@ def compile_structured_configuration_binding(data, profile, core, candidate, wit
                 or rule.get("target") != {"table": expected["table"], "field": expected["code_column"]}):
             raise ValueError("Structured purpose and execution reference paths differ")
         declaration = declared_reference_evidence(data, rule)
-        if rule.get("numeric_overlap_only") and declaration is None:
+        if numeric_overlap_requires_evidence(rule) and declaration is None:
             raise ValueError("Numeric overlap lacks a declared reference path")
         if (rule["source"]["field"] in data.tables[candidate["configuration_table"]].get("pk", [])
                 and declaration is None):

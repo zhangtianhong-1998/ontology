@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import Counter
+from contextlib import nullcontext
 from decimal import Decimal, InvalidOperation
 from itertools import combinations
 from typing import Literal
@@ -503,6 +504,57 @@ def _validate_binding(decision, choices, data, table, column_comment,
     return item, None
 
 
+def existing_field_binding_options(data, choices, table, column, coordinate_columns):
+    """Separate lexical recall from a source-verifiable reuse option.
+
+    This uses the final binding validator, so adding a lexically nearby old
+    type cannot suppress induction. A matching identity with missing scope or
+    unit remains unresolved; it must not create a new unrestricted type.
+    """
+    name = column["column_name"]
+    comment = str(column.get("column_comment") or "").strip()
+    units = [value for entry in table["columns"]
+             if (value := field_unit_evidence(data, table, entry["column_name"])) is not None]
+    result, pending = [], []
+    for _, item, evidence in choices:
+        local = item.evidence_scope == "source_schema" and any(
+            source.source_table == table["name"] and source.source_column == name
+            for source in item.source_properties)
+        if not local and not _business_name_in_comment(item, name + " " + comment, data):
+            continue
+        mappings = field_scope_mapping_candidates(data, table, item, coordinate_columns)
+        constants = field_scope_constants(data, table,
+            {*item.applicability_scope, *item.identity_qualifiers},
+            candidate_columns={value["column"] for value in mappings})
+        scope, fixed = {}, {}
+        for key, expected in {**item.applicability_scope, **item.identity_qualifiers}.items():
+            options = {value["column"] for value in mappings if value["scope_key"] == key}
+            matching_constants = {value["column"] for value in constants
+                                  if value["column"] in options and str(value["value"]) == str(expected)}
+            if len(options & set(coordinate_columns)) == 1:
+                scope[key] = next(iter(options & set(coordinate_columns)))
+            elif len(matching_constants) == 1:
+                fixed[key] = next(iter(matching_constants))
+        unit_columns = [value["column"] for value in units
+                        if value.get("status") == "verified_single_unit"
+                        and _unit_key(value["value"]) == _unit_key(item.unit)]
+        decision = FactFieldBindingDecision(status="bind", type_id=item.id,
+            source_column_quote=comment or name, type_definition_quote=item.definition,
+            source_definition_evidence_id=evidence[0]["evidence_id"],
+            type_source_quote=evidence[0]["value"], scope_bindings=scope,
+            constant_scope_bindings=fixed,
+            unit_column=(unit_columns[0] if not _unit_consistent(item, comment or name)
+                         and len(unit_columns) == 1 else None))
+        accepted, reason = _validate_binding(decision, choices, data, table, comment, {}, set(),
+            column_name=name, coordinate_columns=coordinate_columns,
+            unit_sources=units, scope_constants=constants)
+        if accepted is not None:
+            result.append(decision)
+        else:
+            pending.append({"type_id": item.id, "reason": reason})
+    return result, pending
+
+
 def _source_rows(data, table, candidate, coordinate_columns, *, limit):
     bindings = [(field, candidate["coordinate_values"][field])
                 for field in coordinate_columns]
@@ -691,6 +743,27 @@ async def bind_fact_observations(
     instances = []
     skipped = Counter()
     attempts = accepted_fields = candidate_tuples = 0
+
+    async def ask_binding(payload):
+        nonlocal attempts
+        before = getattr(llm, "calls", None)
+        remaining = max_binding_calls - attempts
+        if remaining <= 0:
+            raise ValueError("binding_call_budget_exhausted")
+        budget = nullcontext()
+        if type(before) is int:
+            if hasattr(llm, "call_budget"):
+                budget = llm.call_budget(remaining, stage="fact_type_binding")
+            elif hasattr(llm, "reserve_calls"):
+                total = llm.config.get("max_calls", 100)
+                budget = llm.reserve_calls(max(0, total - before - remaining),
+                                           stage="fact_type_binding")
+        try:
+            with budget:
+                return await llm.ask("fact_type_binding", payload, FactFieldBindingDecision)
+        finally:
+            after = getattr(llm, "calls", None)
+            attempts += after - before if type(before) is int and type(after) is int else 1
     template_by_field = {}
     for template in field_templates or ():
         key = (template.get("table"), template.get("value_column"))
@@ -807,9 +880,7 @@ async def bind_fact_observations(
                     decision = template_binding_decision(template, data, table, name, coordinate_columns, core)
                     reused_templates += 1
                 else:
-                    attempts += 1
-                    decision = await llm.ask("fact_type_binding", payload,
-                                             FactFieldBindingDecision)
+                    decision = await ask_binding(payload)
                 item, reason = _validate_binding(
                     decision, choices, data, table, comment, canonical_type_map,
                     verified_equivalence_pairs, column_name=name,
@@ -823,12 +894,11 @@ async def bind_fact_observations(
                         'scope_constant_missing_or_conflicting', 'unit_missing_or_conflicting',
                         'binding_call_failed:JSONDecodeError', 'binding_call_failed:ValidationError'}:
                     break
-                attempts += 1
                 payload['binding_validation'] = {
                     'error': reason, 'repair': repair + 1,
                     'instruction': 'Correct only the invalid field mapping or JSON. All evidence checks still apply. Mapping values and unit_column are COLUMN NAMES, not codes or unit literals. A unit in the column declaration needs unit_column=null. Return unresolved if scope cannot be proved.'}
                 try:
-                    decision = await llm.ask('fact_type_binding', payload, FactFieldBindingDecision)
+                    decision = await ask_binding(payload)
                     item, reason = _validate_binding(decision, choices, data, table, comment,
                         canonical_type_map, verified_equivalence_pairs, column_name=name,
                         coordinate_columns=coordinate_columns, unit_sources=unit_sources,

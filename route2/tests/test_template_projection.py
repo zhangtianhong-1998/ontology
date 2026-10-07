@@ -51,8 +51,8 @@ def decision():
              "root_type": "GeneralObject", "definition": "水果是一类经营对象。",
              "label_evidence": quote("x5", "水果"), "definition_evidence": quote("x5", "水果是一类经营对象。")},
             {"name": "quantity", "role": "measure", "label": "合格率", "root_type": "Measure",
-             "definition": "合格率是合格数量与检验数量之比。",
-             "label_evidence": quote("x2", "合格率"), "definition_evidence": quote("x6", "合格率是合格数量与检验数量之比。")},
+             "definition": "合格率是合格数量与检验数量之比。可用于不同经营对象。",
+             "label_evidence": quote("x2", "合格率"), "definition_evidence": quote("x6", "合格率是合格数量与检验数量之比。可用于不同经营对象。")},
         ],
         "slots": [
             {"name": "product", "role": "business_object", "label": "经营对象", "source_column": "x8",

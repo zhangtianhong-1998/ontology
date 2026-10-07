@@ -12,6 +12,7 @@ from itertools import combinations
 import re
 import unicodedata
 
+from .association_risk import is_numeric_match_value
 from .column_roles import classify_columns
 from .storage import digest, qi
 
@@ -245,7 +246,8 @@ def propose_value_alias_candidates(
                 "target_sample_coverage": len(bucket["right_values"]) / right_count if right_count else None,
                 "normalization_collision_keys": len(bucket["collision_keys"]),
                 "repeated_record_keys": len(bucket["repeated_record_keys"]),
-                "numeric_overlap_only": all(key.isdecimal() for key in bucket["keys"]),
+                "numeric_overlap_only": (all(is_numeric_match_value(key) for key in bucket["keys"])
+                                         if bucket["keys"] else None),
             },
             "examples": bucket["examples"],
             "counterexamples": counterexamples,
