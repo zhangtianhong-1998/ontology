@@ -1,0 +1,78 @@
+# 本体自动构建原型：三条实现路线
+
+本仓库保存三条路线的代码、需求、SDD、配置示例、测试代码和路线2运行所需的少量合成夹具。路线2的实现与运行状态见其 README；路线1、3的改造引擎仍按设计任务推进。更新日期：2026-09-28。
+
+路线2本轮改动与限制见[需求核对](docs/route2/ASSOCIATION_REBUILD_ACCEPTANCE.md)，模型调用、完整输入范围和失败记录见[实验报告](docs/route2/FRUIT_FULL_EXPERIMENT.md)。实验状态与代码回归分别报告，不能将工程测试通过视为本体抽取质量达标。
+
+本实验分支提供 [v10 的 HTML、完整导出结果和模拟数据](experiments/fruit-full-v10-20260929/README.md)，并保留 [v8 归档](experiments/fruit-full-v8-20260928/README.md)。v10 已结束，状态为 `partial`；全量运行共 491 次 API 请求尝试，另有 3 次启动前预检。详细调用口径、未决项和恢复方法见归档说明。
+
+上游代码用 9 个 Git 子模块固定版本。内部 YAML 模型作为代码契约保留；gist、Valueflows 和精选 Microsoft CDM 模型连同许可一并提供。KPIOnto 可从上游取得，但未发现明确再分发许可，因此只保留来源与校验信息。真实数据和论文不打包；运行产物仅包含本次明确授权的合成实验归档。路线2另提供合成夹具，用于无数据电脑上的离线自检。获取方法见 [Git 管理](docs/GIT_GUIDE.md)。
+
+本分支从实现提交 `fdf82b9a` 导出，有独立提交历史。原研究资料保留在仓库的 `main` 分支。
+
+## 1. 已确定的需求
+
+- 输入来自 GaussDB 导出文件。当前有 23 张表，包含表列、约束、外键三个目录的 YAML；路线2、3另读 CSV。23 是当前规模，不写死在代码中。
+- 路线1只处理元数据；1A 不用外部本体和企业文档，1B 按配置接入外部本体，两者都不接企业 MCP。
+- 内部一级对象为 `GeneralObject`、`Measure`、`Metric`、`Dimension`、`Term`。一级对象关系为 `contains`、`depends_on`、`related_to`、`points_to`；一级数据关系为 `has`。其他对象类型和关系类型必须从这些根派生。
+- 本体及其语义产物使用 YAML。OWL 仅可能出现在外部模型导入端，不作为内部模型和校验的前提。
+- 重点发现实际输入中的记录关联及条件。指标、度量引用、地区限制、公式等仅是举例，不代表真实数据中存在相应表、字段或规则。
+- 不设计人工确认、人工修订和发布审批流程。自动流程可以输出未决项，不允许用猜测补齐结果。
+- 百万条记录由程序批处理；LLM 用于有限的语义判断、计划生成和疑难关联。
+
+已知信息足以设计输入契约、可选提取器和实验流程。具体对象与关系模式必须由输入发现；不硬编码示例表名，不要求真实数据具备公式、维度或条件规则，也不为填满五类根对象而生成实例。
+
+## 2. 路线比较
+
+| 路线 | 实际要回答的问题 | 新增实现 | 主要产物 | 适用边界 |
+|---|---|---|---|---|
+| [1：RIGOR YAML](route1/README.md) | 仅凭元数据能形成怎样的本体？外部模型是否有帮助？ | YAML 输入、内部模型、受约束生成和合并；1B 增加外部术语对齐 | 本体类型、关系类型、源字段映射候选 | 无 CSV，不能发现某个指标记录具体引用哪些度量 |
+| [2：记录关联与知识增强](route2/README.md) | 哪些具体记录有关联，条件是什么，企业文档能补充什么？ | 元数据图、记录级关联算法、批处理、MCP Agentic RAG | 本体、定义对象、带条件的记录关系、证据 | 主要推荐路线；未匹配或缺证据时保留未决 |
+| [3：映射复用与全局融合](route3/README.md) | 已发现的语义如何稳定映射到全量记录，并在跨表、跨批次中复用？ | 固定本体版本、条件映射规则、受约束融合、增量失效；SAND 可选实验 | 可执行映射、对象关联结果、融合记录、变更影响 | 建立在路线2有效的基础上，不能补回输入中不存在的事实 |
+
+建议实现顺序：1A → 1B → 2 的通用发现与适用提取器 → 外部模型与 MCP → 3 的映射和融合。所有业务例子仅用于可选合成测试，不作为真实数据的前置要求。
+
+“直接运行 RIGOR”在路线1中具体指**保留其按表迭代、生成增量、Judge 复核的流程，做必要的 YAML 与内部模型移植**。上游生成和校验围绕 OWL，无法只换输出后缀就满足本项目；所以不把路线1称为未经修改的论文复现。修改点见[源码核对](docs/shared/sources.md)。
+
+## 3. 阅读入口
+
+完整分类见 [文档目录](docs/README.md)。
+
+| 工程 | 需求与 US | 详细设计 | 开发任务 |
+|---|---|---|---|
+| 路线1 | [requirements.md](docs/route1/requirements.md) | [SDD.md](docs/route1/SDD.md) | [implementation.md](docs/route1/implementation.md) |
+| 路线2 | [requirements.md](docs/route2/requirements.md) | [SDD.md](docs/route2/SDD.md) | [implementation.md](docs/route2/implementation.md) |
+| 路线3 | [requirements.md](docs/route3/requirements.md) | [SDD.md](docs/route3/SDD.md) | [implementation.md](docs/route3/implementation.md) |
+
+共同设计资料：[模型与数据契约](docs/shared/contracts.md)、[内部一级模型](shared/internal_model.yaml)、[合成示例](shared/example_result.yaml)、[实验设计](docs/shared/evaluation.md)、[报告及上游依据](docs/shared/sources.md)。
+
+## 4. 原型代码要求
+
+**代码必须简洁，以跑通和验证算法为优先。** 每个原型以 Python 环境、CLI 和本地文件运行；优先普通函数、少量类型定义和清晰的数据流。路线预留独立入口，复用必要的模型、输入适配和校验代码。路线3的可选 SAND/GRAMS 插件按依赖版本隔离环境。
+
+不为本原型建设 Web 管理台、微服务、消息队列、通用多 Agent 平台或图数据库集群。元数据图使用本地节点表、边表和邻接索引；批量数据使用 DuckDB。可选的关联 Agent 通过有界只读工具提出规则，程序核验后才能进入组包；企业 MCP 检索另有有轮数上限的 Agent 循环，两者均可关闭。
+
+验收要分别回答：格式是否正确、证据是否可追溯、关系是否正确、处理范围多大、成本多少。LLM Judge 通过、YAML 能加载、图连通或节点增加，都不能替代语义质量评价。
+
+## 5. 资源布局
+
+```text
+docs/        # 需求、SDD、开发任务、运行说明与公共设计
+  route1/
+  route2/
+  route3/
+  shared/
+route1/
+  metadata_only/  # RIGOR、内部模型；不提供外部本体
+  metadata_with_ontology/  # RIGOR、内部模型、精选外部参考模型
+route2/      # RIGOR、AgentScope、原型代码、内部模型、精选外部参考模型
+route3/      # RIGOR、AgentScope、SAND、GRAMS、steiner-tree、内部模型、精选外部参考模型
+```
+
+上游代码位于各路线的 `code/`，克隆后初始化子模块即可取得固定版本。路线1B、2、3的 `ontologies/` 含内部契约，以及带许可的 gist、Valueflows 和 7 个 CDM 实体文件；`resources.yaml` 记录来源及版本。CDM 只是实验所需子集，不是完整模型。KPIOnto 的本体文件需由使用者从上游获取并校验，见[公开本体说明](docs/PUBLIC_ONTOLOGIES.md)。
+
+三个路线的需求、SDD 和开发任务集中在 `docs/`；路线1的两个子路线保留独立配置与资源。路线1、路线2不配置 SAND。RIGOR 自带的演示文档、本体和输出留在上游源码中，但不会自动进入本项目实验。
+
+设计文件、资源下载与算法运行分别验证；源码齐全不表示已适配内部模型。具体运行结果见路线2说明。
+
+路线2的安装、模拟运行和代码包测试见 [运行说明](docs/route2/IMPLEMENTED.md)、[Windows 无 Docker 离线说明](docs/route2/DATAHUB_OFFLINE.md)与[测试说明](docs/route2/TESTING.md)。本轮迭代复用与实例化的验证边界见[整改记录](docs/route2/ITERATIVE_REUSE_REPAIR.md)；日常运行产物保存在本机忽略目录 `route2/runs/`，本次授权归档位于 `experiments/fruit-full-v10-20260929/`。

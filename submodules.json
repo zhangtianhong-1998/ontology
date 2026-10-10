@@ -1,0 +1,56 @@
+[
+  {
+    "path": "route1/metadata_only/code/RIGOR",
+    "commit_sha": "623eedf3e68b3774f36d20215caff4319a0b988a",
+    "upstream_url": "https://github.com/NadeenAhmad/RIGOR",
+    "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4"
+  },
+  {
+    "path": "route1/metadata_with_ontology/code/RIGOR",
+    "commit_sha": "623eedf3e68b3774f36d20215caff4319a0b988a",
+    "upstream_url": "https://github.com/NadeenAhmad/RIGOR",
+    "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4"
+  },
+  {
+    "path": "route2/code/AgentScope",
+    "commit_sha": "c7d8e31bfd0a2f85e67b6235bd44c09fce259106",
+    "upstream_url": "https://github.com/agentscope-ai/agentscope",
+    "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4"
+  },
+  {
+    "path": "route2/code/RIGOR",
+    "commit_sha": "623eedf3e68b3774f36d20215caff4319a0b988a",
+    "upstream_url": "https://github.com/NadeenAhmad/RIGOR",
+    "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4"
+  },
+  {
+    "path": "route3/code/AgentScope",
+    "commit_sha": "c7d8e31bfd0a2f85e67b6235bd44c09fce259106",
+    "upstream_url": "https://github.com/agentscope-ai/agentscope",
+    "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4"
+  },
+  {
+    "path": "route3/code/GRAMS",
+    "commit_sha": "5d8db73a1f5011a14c9a60702ee58534ba14e563",
+    "upstream_url": "https://github.com/usc-isi-i2/GRAMS",
+    "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4"
+  },
+  {
+    "path": "route3/code/RIGOR",
+    "commit_sha": "623eedf3e68b3774f36d20215caff4319a0b988a",
+    "upstream_url": "https://github.com/NadeenAhmad/RIGOR",
+    "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4"
+  },
+  {
+    "path": "route3/code/SAND",
+    "commit_sha": "64af21af23202d7b4fe374f82996edb367f7e9b8",
+    "upstream_url": "https://github.com/usc-isi-i2/sand",
+    "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4"
+  },
+  {
+    "path": "route3/code/steiner-tree",
+    "commit_sha": "871ad8c8242634866796dddc973d33d0961bfdac",
+    "upstream_url": "https://github.com/binh-vu/steiner-tree",
+    "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4"
+  }
+]

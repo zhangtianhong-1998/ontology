@@ -1,0 +1,47 @@
+{
+  "source_snapshot_sha": "819391f5bf10e2e44b9133c61533825ce6a78ae4",
+  "file_count": 495,
+  "source_file_bytes": 401953093,
+  "submodule_pointer_count": 9,
+  "binary_file_count": 5,
+  "page_source_byte_limit": 24576,
+  "site_size_limit_bytes": 1000000000,
+  "checks": {
+    "downloads_verified": 495,
+    "utf8_files_verified": 490,
+    "reading_pages_verified": 11064,
+    "max_page_source_bytes": 24576,
+    "static_links_verified": 135404,
+    "script_tags": 0,
+    "total_site_bytes": 886034874
+  },
+  "sample_urls": {
+    "home": "https://zhangtianhong-1998.github.io/ontology/index.html",
+    "all_files": "https://zhangtianhong-1998.github.io/ontology/all-files.html",
+    "directory": "https://zhangtianhong-1998.github.io/ontology/browse/index.html",
+    "submodules": "https://zhangtianhong-1998.github.io/ontology/submodules.html",
+    "manifest": "https://zhangtianhong-1998.github.io/ontology/files.json",
+    "python": {
+      "overview": "https://zhangtianhong-1998.github.io/ontology/read/b244fb0f7ee49d6a2d256cfe6a41f7d6e3310f0f772e1971b683743bb3bcec9f/index.html",
+      "first_page": "https://zhangtianhong-1998.github.io/ontology/read/b244fb0f7ee49d6a2d256cfe6a41f7d6e3310f0f772e1971b683743bb3bcec9f/page-00001.html",
+      "download": "https://zhangtianhong-1998.github.io/ontology/download/b244fb0f7ee49d6a2d256cfe6a41f7d6e3310f0f772e1971b683743bb3bcec9f.py"
+    },
+    "csv": {
+      "overview": "https://zhangtianhong-1998.github.io/ontology/read/78c0fe77d32ce6bdfc3789151ed9b692a46205b9964ca72b21da7ab0c09a078a/index.html",
+      "first_page": "https://zhangtianhong-1998.github.io/ontology/read/78c0fe77d32ce6bdfc3789151ed9b692a46205b9964ca72b21da7ab0c09a078a/page-00001.html",
+      "download": "https://zhangtianhong-1998.github.io/ontology/download/78c0fe77d32ce6bdfc3789151ed9b692a46205b9964ca72b21da7ab0c09a078a.csv"
+    },
+    "large_csv": {
+      "overview": "https://zhangtianhong-1998.github.io/ontology/read/f28cff7aa7d19e3c4ae680b2b49b878aed400b5d98f6a547fa27e19cad807b02/index.html",
+      "first_page": "https://zhangtianhong-1998.github.io/ontology/read/f28cff7aa7d19e3c4ae680b2b49b878aed400b5d98f6a547fa27e19cad807b02/page-00001.html",
+      "download": "https://zhangtianhong-1998.github.io/ontology/download/f28cff7aa7d19e3c4ae680b2b49b878aed400b5d98f6a547fa27e19cad807b02.csv"
+    },
+    "binary": {
+      "overview": "https://zhangtianhong-1998.github.io/ontology/read/b10befd02f8db93d62dcadeaceaa3318450160a36981de6dc77e376c6f70d2fc/index.html",
+      "first_page": null,
+      "download": "https://zhangtianhong-1998.github.io/ontology/download/b10befd02f8db93d62dcadeaceaa3318450160a36981de6dc77e376c6f70d2fc.gz"
+    }
+  },
+  "validation_scope": "Local generation only; deployment and Claude browsing have not been verified.",
+  "status": "passed"
+}
