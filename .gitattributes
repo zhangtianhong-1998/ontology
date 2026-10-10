@@ -2,3 +2,4 @@
 **/ontologies/** -text
 **/fixtures/** -text
 *.csv whitespace=cr-at-eol
+route2/local_data/fruit_data_v3/** -text

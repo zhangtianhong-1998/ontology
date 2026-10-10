@@ -1,0 +1,152 @@
+schema: fruit_market
+table_name: fruit_measure_def
+table_comment: 水果经营度量定义与期间标记
+relkind: r
+estimated_rows: 5000
+total_size: null
+data_size: null
+columns:
+- column_name: fruit_measure_id
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: true
+  default_value: null
+  column_comment: fruit measure id，合成业务字段
+- column_name: measure_code
+  ordinal_position: 2
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 度量编码，对应度量定义
+- column_name: measure_name
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 度量中文业务名称
+- column_name: standard_name
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 不绑定具体经营对象的可复用度量标准名称
+- column_name: parameter_name
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 度量英文别名，也是计算公式中的变量名；不同版本可重复使用
+- column_name: measure_description
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 度量的业务含义、聚合口径和适用范围
+- column_name: unit
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 计量单位；不同单位不可直接合并
+- column_name: budget_flag
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: budget flag，合成业务字段
+- column_name: forecast_flag
+  ordinal_position: 9
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: forecast flag，合成业务字段
+- column_name: actual_flag
+  ordinal_position: 10
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: actual flag，合成业务字段
+- column_name: target_flag
+  ordinal_position: 11
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: target flag，合成业务字段
+- column_name: remain_flag
+  ordinal_position: 12
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: remain flag，合成业务字段
+- column_name: estimate_flag
+  ordinal_position: 13
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: estimate flag，合成业务字段
+- column_name: rank_flag
+  ordinal_position: 14
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: rank flag，合成业务字段
+- column_name: period
+  ordinal_position: 15
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 口径明确限定的期间粒度；空值表示由指标的期间绑定决定
+- column_name: inference_type
+  ordinal_position: 16
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 计算方法，例如 SUM、AVG、RATIO；是计算属性，不是单独本体类型
+- column_name: domain_code
+  ordinal_position: 17
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: domain code，合成业务字段
+- column_name: source_field
+  ordinal_position: 18
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 量的计算来源；表达式表示该度量的计算公式，空值表示基础聚合量
+- column_name: metric_code
+  ordinal_position: 19
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 指标编码，对应指标详情和公共属性
+- column_name: delete_flag
+  ordinal_position: 20
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 21
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 22
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 23
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 24
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性

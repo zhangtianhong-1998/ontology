@@ -1,0 +1,7 @@
+schema: fruit_market
+table_name: fruit_wide_table_def
+constraints:
+- constraint_name: fruit_wide_table_def_pkey
+  constraint_type: p
+  constraint_type_name: PRIMARY KEY
+  definition: PRIMARY KEY (fruit_wide_table_id)

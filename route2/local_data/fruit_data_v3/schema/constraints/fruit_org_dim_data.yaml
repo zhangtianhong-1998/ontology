@@ -1,0 +1,3 @@
+schema: fruit_market
+table_name: fruit_org_dim_data
+constraints: []

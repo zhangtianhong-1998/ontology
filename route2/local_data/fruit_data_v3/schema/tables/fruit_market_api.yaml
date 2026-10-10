@@ -1,0 +1,152 @@
+schema: fruit_market
+table_name: fruit_market_api
+table_comment: 水果经营数据服务 API 定义
+relkind: r
+estimated_rows: 2500
+total_size: null
+data_size: null
+columns:
+- column_name: fruit_api_id
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: true
+  default_value: null
+  column_comment: fruit api id，合成业务字段
+- column_name: api_code
+  ordinal_position: 2
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: api code，合成业务字段
+- column_name: api_name
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 对外数据服务接口名称
+- column_name: api_description
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 接口提供的水果经营数据说明
+- column_name: api_url
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 接口访问路径，仅合成示例
+- column_name: http_method
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: http method，合成业务字段
+- column_name: protocol
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: protocol，合成业务字段
+- column_name: auth_method
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: auth method，合成业务字段
+- column_name: request_example
+  ordinal_position: 9
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 请求参数 JSON 示例
+- column_name: response_example
+  ordinal_position: 10
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 响应结果 JSON 示例
+- column_name: business_domain
+  ordinal_position: 11
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: business domain，合成业务字段
+- column_name: version
+  ordinal_position: 12
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: version，合成业务字段
+- column_name: status
+  ordinal_position: 13
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: status，合成业务字段
+- column_name: fruit_category_code
+  ordinal_position: 14
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: fruit category code，合成业务字段
+- column_name: region_code
+  ordinal_position: 15
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: region code，合成业务字段
+- column_name: market_name
+  ordinal_position: 16
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: market name，合成业务字段
+- column_name: data_source_code
+  ordinal_position: 17
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: data source code，合成业务字段
+- column_name: wide_table_id
+  ordinal_position: 18
+  data_type: bigint
+  is_not_null: false
+  default_value: null
+  column_comment: wide table id，合成业务字段
+- column_name: owner_team
+  ordinal_position: 19
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: owner team，合成业务字段
+- column_name: delete_flag
+  ordinal_position: 20
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 21
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 22
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 23
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 24
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性

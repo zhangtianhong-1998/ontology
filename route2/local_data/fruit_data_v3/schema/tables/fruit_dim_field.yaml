@@ -1,0 +1,122 @@
+schema: fruit_market
+table_name: fruit_dim_field
+table_comment: 维度物理字段及输出名
+relkind: r
+estimated_rows: 3000
+total_size: null
+data_size: null
+columns:
+- column_name: fruit_field_id
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: true
+  default_value: null
+  column_comment: fruit field id，合成业务字段
+- column_name: dim_code
+  ordinal_position: 2
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 维度头编码，对应维度定义表的 dim_code
+- column_name: physical_field_name
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: physical field name，合成业务字段
+- column_name: field_cn_name
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: field cn name，合成业务字段
+- column_name: field_en_name
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: field en name，合成业务字段
+- column_name: field_type
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: field type，合成业务字段
+- column_name: level_no
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: level no，合成业务字段
+- column_name: synonym_text
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 同义词和别名，用于候选召回
+- column_name: output_name
+  ordinal_position: 9
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: output name，合成业务字段
+- column_name: filter_sql
+  ordinal_position: 10
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: filter sql，合成业务字段
+- column_name: is_key
+  ordinal_position: 11
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: is key，合成业务字段
+- column_name: is_display
+  ordinal_position: 12
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: is display，合成业务字段
+- column_name: domain_code
+  ordinal_position: 13
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: domain code，合成业务字段
+- column_name: field_description
+  ordinal_position: 14
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: field description，合成业务字段
+- column_name: delete_flag
+  ordinal_position: 15
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 16
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 17
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 18
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 19
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性

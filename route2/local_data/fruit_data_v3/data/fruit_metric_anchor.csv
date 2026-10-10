@@ -1,0 +1,10 @@
+fruit_metric_anchor_id,metric_code,anchor_code,anchor_name,synonym_text,domain_code,anchor_description,applicable_scenario,owner_team,delete_flag,created_by,creation_date,last_updated_by,last_update_date
+1,MET000001,MANCH001,水果销售总额业务锚点,水果销售总额,FRUIT,水果经营指标的业务适用语境,全球水果经营分析,fruit_analytics,0,fixture_generator,2025-01-01T08:00:00,fixture_generator,2025-02-01T08:00:00
+2,MET000002,MANCH002,出口量同比增长业务锚点,出口量同比增长,FRUIT,水果经营指标的业务适用语境,全球水果经营分析,fruit_analytics,0,fixture_generator,2025-01-02T08:00:00,fixture_generator,2025-02-02T08:00:00
+3,MET000003,MANCH003,进口均价波动业务锚点,进口均价波动,FRUIT,水果经营指标的业务适用语境,全球水果经营分析,fruit_analytics,0,fixture_generator,2025-01-03T08:00:00,fixture_generator,2025-02-03T08:00:00
+4,MET000004,MANCH004,库存周转率业务锚点,库存周转率,FRUIT,水果经营指标的业务适用语境,全球水果经营分析,fruit_analytics,0,fixture_generator,2025-01-04T08:00:00,fixture_generator,2025-02-04T08:00:00
+5,MET000005,MANCH005,损耗率趋势业务锚点,损耗率趋势,FRUIT,水果经营指标的业务适用语境,全球水果经营分析,fruit_analytics,0,fixture_generator,2025-01-05T08:00:00,fixture_generator,2025-02-05T08:00:00
+6,MET000006,MANCH006,区域均价差异业务锚点,区域均价差异,FRUIT,水果经营指标的业务适用语境,全球水果经营分析,fruit_analytics,0,fixture_generator,2025-01-06T08:00:00,fixture_generator,2025-02-06T08:00:00
+7,MET000007,MANCH007,水果销售总额业务锚点,水果销售总额,FRUIT,水果经营指标的业务适用语境,全球水果经营分析,fruit_analytics,0,fixture_generator,2025-01-07T08:00:00,fixture_generator,2025-02-07T08:00:00
+8,MET000008,MANCH008,出口量同比增长业务锚点,出口量同比增长,FRUIT,水果经营指标的业务适用语境,全球水果经营分析,fruit_analytics,0,fixture_generator,2025-01-08T08:00:00,fixture_generator,2025-02-08T08:00:00
+9,MET000009,MANCH009,进口均价波动业务锚点,进口均价波动,FRUIT,水果经营指标的业务适用语境,全球水果经营分析,fruit_analytics,0,fixture_generator,2025-01-09T08:00:00,fixture_generator,2025-02-09T08:00:00

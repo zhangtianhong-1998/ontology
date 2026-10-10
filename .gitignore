@@ -52,3 +52,21 @@ data/
 
 # Authorized v11 in-progress synthetic result snapshot.
 !experiments/generalized-full-v11-20260930/extraction-checkpoint.tar.gz
+
+# Authorized V13 synthetic v3 inputs; other local datasets remain ignored.
+!route2/local_data/
+route2/local_data/*
+!route2/local_data/fruit_data_v3/
+route2/local_data/fruit_data_v3/**
+!route2/local_data/fruit_data_v3/synthetic_manifest.yaml
+!route2/local_data/fruit_data_v3/README.md
+!route2/local_data/fruit_data_v3/SHA256SUMS
+!route2/local_data/fruit_data_v3/data/
+!route2/local_data/fruit_data_v3/data/*.csv
+!route2/local_data/fruit_data_v3/schema/
+!route2/local_data/fruit_data_v3/schema/tables/
+!route2/local_data/fruit_data_v3/schema/tables/*.yaml
+!route2/local_data/fruit_data_v3/schema/constraints/
+!route2/local_data/fruit_data_v3/schema/constraints/*.yaml
+!route2/local_data/fruit_data_v3/schema/foreign_keys/
+!route2/local_data/fruit_data_v3/schema/foreign_keys/*.yaml

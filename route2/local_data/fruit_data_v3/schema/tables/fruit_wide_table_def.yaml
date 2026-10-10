@@ -1,0 +1,110 @@
+schema: fruit_market
+table_name: fruit_wide_table_def
+table_comment: 水果销售、进出口宽表定义
+relkind: r
+estimated_rows: 200
+total_size: null
+data_size: null
+columns:
+- column_name: fruit_wide_table_id
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: true
+  default_value: null
+  column_comment: fruit wide table id，合成业务字段
+- column_name: physical_table_name
+  ordinal_position: 2
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: physical table name，合成业务字段
+- column_name: data_source_code
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: data source code，合成业务字段
+- column_name: schema_name
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: schema name，合成业务字段
+- column_name: table_cn_name
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: table cn name，合成业务字段
+- column_name: table_en_name
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: table en name，合成业务字段
+- column_name: table_description
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: table description，合成业务字段
+- column_name: domain_code
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: domain code，合成业务字段
+- column_name: grain
+  ordinal_position: 9
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: grain，合成业务字段
+- column_name: refresh_cycle
+  ordinal_position: 10
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: refresh cycle，合成业务字段
+- column_name: owner_team
+  ordinal_position: 11
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: owner team，合成业务字段
+- column_name: status
+  ordinal_position: 12
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: status，合成业务字段
+- column_name: delete_flag
+  ordinal_position: 13
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 14
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 15
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 16
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 17
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性
