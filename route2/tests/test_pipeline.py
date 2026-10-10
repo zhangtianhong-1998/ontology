@@ -31,6 +31,19 @@ def items(output, kind):
     return [item for file in sorted((output / kind).glob("part-*.yaml")) for item in read_yaml(file)]
 
 
+def test_invalid_packet_budget_fails_before_import_or_llm(tmp_path, monkeypatch):
+    config = setup(tmp_path, 'unrelated', mcp=False)
+    config['instance_bundles'] = {'enabled': True, 'max_concept_bundles': 10001}
+    def forbidden(*args, **kwargs):
+        pytest.fail('Invalid configuration must not import data or initialize a model')
+    monkeypatch.setattr('ontology_r2.pipeline.Dataset', forbidden)
+    monkeypatch.setattr('ontology_r2.pipeline.StructuredLLM', forbidden)
+    manifest = asyncio.run(build(config, tmp_path / 'run'))
+    assert manifest['status'] == 'failed'
+    assert manifest['error']['type'] == 'ValueError'
+    assert 'max_concept_bundles' in manifest['error']['message']
+
+
 def link_rows(output):
     objects = {x["id"]: x for x in items(output, "objects")}
     return {(objects[a["subject"]]["source_ref"]["row"], objects[a["object"]]["source_ref"]["row"]) for a in items(output, "assertions") if "object" in a}
@@ -380,6 +393,7 @@ def test_optional_embedding_wires_external_and_core_retrieval(tmp_path, monkeypa
             return {"enabled": True, "model_sha256": self.model_sha256}
 
     monkeypatch.setattr("ontology_r2.embedding.LocalEmbedder", FakeEmbedder)
+    monkeypatch.setattr("ontology_r2.pipeline.model_digest", lambda _path: "test-model")
     config = setup(tmp_path, "unrelated", mcp=False)
     config["embedding"] = {"enabled": True, "model_path": str(tmp_path), "max_cards": 1000,
                            "core_top_k": 2}
@@ -637,10 +651,12 @@ def test_optional_datahub_identity_does_not_block_local_graph(tmp_path, monkeypa
     work.mkdir()
     data = Dataset(config["dataset"], work)
     try:
-        def invalid_urn(_):
+        def invalid_urn(name, *args):
+            if name == "metadata_identity_check":
+                return "urn:validation"
             raise ValueError("unsupported quoted identifier")
 
-        monkeypatch.setattr("ontology_r2.pipeline.dataset_urn", invalid_urn)
+        monkeypatch.setattr("ontology_r2.metadata_graph.dataset_urn", invalid_urn)
         graph = technical_graph(data)
         tables = [node for node in graph["nodes"] if node["kind"] == "Table"]
         assert tables and all(node["datahub_urn"] is None for node in tables)

@@ -1,0 +1,428 @@
+schema: fruit_market
+table_name: fruit_import_staging_temp
+table_comment: 合成导入暂存表；为满足23表要求额外假设
+relkind: r
+estimated_rows: 14900
+total_size: null
+data_size: null
+columns:
+- column_name: staging_batch
+  ordinal_position: 1
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: staging batch，合成业务字段
+- column_name: staging_row_no
+  ordinal_position: 2
+  data_type: bigint
+  is_not_null: false
+  default_value: null
+  column_comment: staging row no，合成业务字段
+- column_name: fruit_code
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: fruit code，合成业务字段
+- column_name: fruit_cn_name
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: fruit cn name，合成业务字段
+- column_name: origin_region_code
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: origin region code，合成业务字段
+- column_name: origin_region_name
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: origin region name，合成业务字段
+- column_name: channel_code
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: channel code，合成业务字段
+- column_name: channel_name
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: channel name，合成业务字段
+- column_name: customer_type
+  ordinal_position: 9
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: customer type，合成业务字段
+- column_name: port_code
+  ordinal_position: 10
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: port code，合成业务字段
+- column_name: period
+  ordinal_position: 11
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: period，合成业务字段
+- column_name: sales_volume_ton
+  ordinal_position: 12
+  data_type: numeric(18,2)
+  is_not_null: false
+  default_value: null
+  column_comment: 销售量，吨
+- column_name: avg_price_cny_per_kg
+  ordinal_position: 13
+  data_type: numeric(18,2)
+  is_not_null: false
+  default_value: null
+  column_comment: 水果均价，元每千克
+- column_name: sales_amount_cny
+  ordinal_position: 14
+  data_type: numeric(18,2)
+  is_not_null: false
+  default_value: null
+  column_comment: sales amount cny，合成业务字段
+- column_name: import_volume_ton
+  ordinal_position: 15
+  data_type: numeric(18,2)
+  is_not_null: false
+  default_value: null
+  column_comment: 进口量，吨
+- column_name: export_volume_ton
+  ordinal_position: 16
+  data_type: numeric(18,2)
+  is_not_null: false
+  default_value: null
+  column_comment: 出口量，吨
+- column_name: inventory_ton
+  ordinal_position: 17
+  data_type: numeric(18,2)
+  is_not_null: false
+  default_value: null
+  column_comment: inventory ton，合成业务字段
+- column_name: damaged_volume_ton
+  ordinal_position: 18
+  data_type: numeric(18,2)
+  is_not_null: false
+  default_value: null
+  column_comment: damaged volume ton，合成业务字段
+- column_name: quality_pass_rate
+  ordinal_position: 19
+  data_type: numeric(18,2)
+  is_not_null: false
+  default_value: null
+  column_comment: quality pass rate，合成业务字段
+- column_name: turnover_rate
+  ordinal_position: 20
+  data_type: numeric(18,2)
+  is_not_null: false
+  default_value: null
+  column_comment: turnover rate，合成业务字段
+- column_name: stage_attr_01
+  ordinal_position: 21
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 01，合成业务字段
+- column_name: stage_attr_02
+  ordinal_position: 22
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 02，合成业务字段
+- column_name: stage_attr_03
+  ordinal_position: 23
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 03，合成业务字段
+- column_name: stage_attr_04
+  ordinal_position: 24
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 04，合成业务字段
+- column_name: stage_attr_05
+  ordinal_position: 25
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 05，合成业务字段
+- column_name: stage_attr_06
+  ordinal_position: 26
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 06，合成业务字段
+- column_name: stage_attr_07
+  ordinal_position: 27
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 07，合成业务字段
+- column_name: stage_attr_08
+  ordinal_position: 28
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 08，合成业务字段
+- column_name: stage_attr_09
+  ordinal_position: 29
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 09，合成业务字段
+- column_name: stage_attr_10
+  ordinal_position: 30
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 10，合成业务字段
+- column_name: stage_attr_11
+  ordinal_position: 31
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 11，合成业务字段
+- column_name: stage_attr_12
+  ordinal_position: 32
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 12，合成业务字段
+- column_name: stage_attr_13
+  ordinal_position: 33
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 13，合成业务字段
+- column_name: stage_attr_14
+  ordinal_position: 34
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 14，合成业务字段
+- column_name: stage_attr_15
+  ordinal_position: 35
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 15，合成业务字段
+- column_name: stage_attr_16
+  ordinal_position: 36
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 16，合成业务字段
+- column_name: stage_attr_17
+  ordinal_position: 37
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 17，合成业务字段
+- column_name: stage_attr_18
+  ordinal_position: 38
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 18，合成业务字段
+- column_name: stage_attr_19
+  ordinal_position: 39
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 19，合成业务字段
+- column_name: stage_attr_20
+  ordinal_position: 40
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 20，合成业务字段
+- column_name: stage_attr_21
+  ordinal_position: 41
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 21，合成业务字段
+- column_name: stage_attr_22
+  ordinal_position: 42
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 22，合成业务字段
+- column_name: stage_attr_23
+  ordinal_position: 43
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 23，合成业务字段
+- column_name: stage_attr_24
+  ordinal_position: 44
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 24，合成业务字段
+- column_name: stage_attr_25
+  ordinal_position: 45
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 25，合成业务字段
+- column_name: stage_attr_26
+  ordinal_position: 46
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 26，合成业务字段
+- column_name: stage_attr_27
+  ordinal_position: 47
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 27，合成业务字段
+- column_name: stage_attr_28
+  ordinal_position: 48
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 28，合成业务字段
+- column_name: stage_attr_29
+  ordinal_position: 49
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 29，合成业务字段
+- column_name: stage_attr_30
+  ordinal_position: 50
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 30，合成业务字段
+- column_name: stage_attr_31
+  ordinal_position: 51
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 31，合成业务字段
+- column_name: stage_attr_32
+  ordinal_position: 52
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 32，合成业务字段
+- column_name: stage_attr_33
+  ordinal_position: 53
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 33，合成业务字段
+- column_name: stage_attr_34
+  ordinal_position: 54
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 34，合成业务字段
+- column_name: stage_attr_35
+  ordinal_position: 55
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 35，合成业务字段
+- column_name: stage_attr_36
+  ordinal_position: 56
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 36，合成业务字段
+- column_name: stage_attr_37
+  ordinal_position: 57
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 37，合成业务字段
+- column_name: stage_attr_38
+  ordinal_position: 58
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 38，合成业务字段
+- column_name: stage_attr_39
+  ordinal_position: 59
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 39，合成业务字段
+- column_name: stage_attr_40
+  ordinal_position: 60
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 40，合成业务字段
+- column_name: stage_attr_41
+  ordinal_position: 61
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 41，合成业务字段
+- column_name: stage_attr_42
+  ordinal_position: 62
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 42，合成业务字段
+- column_name: stage_attr_43
+  ordinal_position: 63
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 43，合成业务字段
+- column_name: stage_attr_44
+  ordinal_position: 64
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 44，合成业务字段
+- column_name: stage_attr_45
+  ordinal_position: 65
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: stage attr 45，合成业务字段
+- column_name: delete_flag
+  ordinal_position: 66
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 67
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 68
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 69
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 70
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性

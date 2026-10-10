@@ -41,23 +41,38 @@ def validate_plan(plan: BuildPlan, data, profile):
         if not set(item.domain + item.range) <= set(types):
             errors.append("relation domain/range names an unknown object type: " + item.id)
         if item.category == "business_relation_type":
+            from .relation_contract import predicate_endpoint_errors
+            errors.extend(reason + ": " + item.id for reason in
+                          predicate_endpoint_errors(item, plan.object_types))
             business_ids = {t.id for t in plan.object_types if t.category == "business_type"}
             valid_basis = (
                 (item.endpoint_basis == "record_alignment"
-                 and item.evidence_scope == "one_positive_pair_with_exact_type_alignments")
+                 and item.evidence_scope in ("one_positive_pair_with_exact_type_alignments",
+                                             "one_positive_pair_with_type_bindings"))
                 or (item.endpoint_basis == "configuration_reference"
-                    and item.evidence_scope == "one_configuration_witness_with_exact_type_alignments")
+                    and item.evidence_scope in ("one_configuration_witness_with_exact_type_alignments",
+                                                "one_configuration_witness_with_type_bindings"))
+                or (item.endpoint_basis == "calculation_binding"
+                    and item.evidence_scope == "complete_calculation_definition"
+                    and item.parent == "depends_on"
+                    and item.predicate_name == "calculation_dependency")
+                or (item.endpoint_basis == "semantic_binding"
+                    and item.evidence_scope == "checked_structured_binding")
+                or (item.endpoint_basis == "semantic_reference"
+                    and item.evidence_scope == "verified_lexical_member_path")
             )
             if (not item.domain or not item.range
                     or not set(item.domain + item.range) <= business_ids
                     or not valid_basis):
-                errors.append("business relation requires exact business type endpoints: " + item.id)
+                errors.append("business relation requires accepted business type endpoints: " + item.id)
             if len(item.domain) != 1 or len(item.range) != 1:
                 errors.append("business relation requires one directed endpoint type per side: " + item.id)
             else:
                 try:
-                    expected_id = canonical_relation_id(item.parent, item.domain[0], item.range[0])
-                    expected_label = canonical_relation_label(item.parent)
+                    expected_id = canonical_relation_id(item.parent, item.domain[0], item.range[0],
+                                                        predicate_name=item.predicate_name,
+                                                        semantic_parameters=item.semantic_parameters)
+                    expected_label = canonical_relation_label(item.parent, item.predicate_name)
                 except ValueError:
                     errors.append("business relation requires a supported object root: " + item.id)
                 else:
@@ -65,17 +80,32 @@ def validate_plan(plan: BuildPlan, data, profile):
                         errors.append("business relation requires canonical predicate name and ID: " + item.id)
             if any(relation.predicate == item.id for relation in plan.relations):
                 errors.append("one-pair business relation cannot execute as a table plan: " + item.id)
+            if item.endpoint_basis == "calculation_binding":
+                from .calculation_contracts import calculation_relation_errors
+                errors.extend(reason + ": " + item.id for reason in
+                              calculation_relation_errors(data, item, plan.object_types))
+            if item.endpoint_basis == "semantic_binding":
+                from .semantic_bindings import binding_relation_errors
+                errors.extend(reason + ": " + item.id for reason in
+                              binding_relation_errors(data, item, plan.object_types))
+            if item.endpoint_basis == "semantic_reference":
+                from .semantic_references import verify_semantic_reference_relation
+                try:
+                    verify_semantic_reference_relation(data, item, plan)
+                except (ValueError, KeyError) as exc:
+                    errors.append("semantic reference proof failed: " + str(exc) + ": " + item.id)
         if item.endpoint_basis == "table_binding":
             bindings = [relation for relation in plan.relations if relation.predicate == item.id]
             if len(item.domain) != 1 or len(item.range) != 1 or not bindings:
                 errors.append("source-record relation requires a directed plan and endpoint signature: " + item.id)
             else:
                 try:
-                    expected_label = canonical_relation_label(item.parent)
+                    expected_label = canonical_relation_label(item.parent, item.predicate_name)
                     expected_ids = {
                         canonical_relation_id(
                             item.parent, item.domain[0], item.range[0],
-                            namespace="relation", qualifier=[
+                            namespace="relation", predicate_name=item.predicate_name,
+                            semantic_parameters=item.semantic_parameters, qualifier=[
                                 binding.source_table, binding.source_column,
                                 binding.target_table, binding.target_column])
                         for binding in bindings
@@ -94,6 +124,17 @@ def validate_plan(plan: BuildPlan, data, profile):
             seen.add(actual)
             actual = object_parents.get(actual)
         return False
+
+    # A derived predicate may narrow inherited endpoint types, never widen them.
+    relation_by_id = {item.id: item for item in plan.relation_types}
+    for relation in plan.relation_types:
+        parent = relation_by_id.get(relation.parent)
+        if parent and profile.get("derivation_policy", {}).get("allow_domain_range_widening") is False:
+            for side in ("domain", "range"):
+                inherited, actual = getattr(parent, side), getattr(relation, side)
+                if inherited and (not actual or any(not any(is_subtype(value, base)
+                        for base in inherited) for value in actual)):
+                    errors.append("relation widens inherited " + side + ": " + relation.id)
 
     table_plans = {t.table: t for t in plan.tables}
     if len(table_plans) != len(plan.tables):

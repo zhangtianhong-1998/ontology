@@ -47,7 +47,8 @@ def _concept_decision(record_ids, *, scope=None, kinds=None, quotes=None):
     quotes = quotes or ["水果收入"] * len(record_ids)
     return ConceptBundleDecision(
         status="proposed", label="水果收入", definition="水果业务收入",
-        root_type="Metric", scope=scope or {},
+        root_type="Metric", scope=scope or {}, classification_basis="business_driven_metric",
+        classification_quote="华东水果收入", business_object_quote="水果",
         alignments=[RecordAlignmentDecision(record_id=record_id,
                                             mapping_kind=kind, quote=quote)
                     for record_id, kind, quote in zip(record_ids, kinds, quotes)],
@@ -134,7 +135,7 @@ def test_dimension_member_is_not_exactly_the_dimension():
                         _concept_decision(["member"]), {})
 
 
-def test_related_dashboard_mention_cannot_create_a_measure_concept():
+def test_related_record_cannot_create_concept_but_weak_root_hint_does_not_block():
     data = SimpleNamespace(snapshot_id="snap", evidence={})
     record = _record("dashboard")
     record["table"] = "fruit.dashboard_card"
@@ -142,6 +143,9 @@ def test_related_dashboard_mention_cannot_create_a_measure_concept():
         compile_concept(data, PROFILE, {"records": [record]},
                         _concept_decision(["dashboard"], kinds=["related"]), {})
     record["root_hint"] = "GeneralObject"
+    assert compile_concept(data, PROFILE, {"records": [record]},
+                           _concept_decision(["dashboard"]), {})[0]["type"] == "Metric"
+    record["root_hint_authoritative"] = True
     with pytest.raises(ValueError, match="root differs"):
         compile_concept(data, PROFILE, {"records": [record]},
                         _concept_decision(["dashboard"]), {})
@@ -195,6 +199,52 @@ def test_group_repair_rechecks_one_invalid_model_alignment_without_inventing_it(
     assert result["steps"][0]["status"] == "accepted"
     assert result["steps"][0]["repair_calls"] == 1
     assert [item["source_record_id"] for item in result["record_alignments"]] == ["seed"]
+
+
+def test_oversized_group_does_not_stop_other_complete_bundles():
+    from ontology_r2.llm import InputBudgetExceeded
+
+    class SizedLLM:
+        async def ask(self, task, payload, schema):
+            record_id = payload['bundle']['records'][0]['record_id']
+            if record_id == 'large':
+                raise InputBudgetExceeded(2000, 1000)
+            return _concept_decision([record_id])
+
+    bundles = [{'bundle_id': name, 'task_kind': 'concept_induction', 'records': [_record(name)]}
+               for name in ('large', 'small')]
+    result = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id='snap', evidence={}), PROFILE, BuildPlan(), bundles,
+        SizedLLM(), review=False, max_bundles=2))
+    assert [step['status'] for step in result['steps']] == ['input_over_budget', 'accepted']
+    assert result['coverage']['bundles_not_attempted'] == 0
+    assert result['coverage']['statuses']['input_over_budget'] == 1
+    assert result['partial']
+    assert [item['source_record_id'] for item in result['record_alignments']] == ['small']
+
+
+def test_repair_request_interns_duplicate_context_without_mutating_saved_bundle():
+    import copy
+
+    class CaptureLLM:
+        async def ask(self, task, payload, schema):
+            assert 'template_repair_task' not in payload['bundle']
+            repair = payload['targeted_repair']
+            assert 'known_template_matches' not in repair
+            assert repair['known_template_matches_location'] == 'template_projection'
+            assert repair['component_type_candidates_location'] == 'component_type_candidates'
+            assert payload['bundle']['records'][0]['fields'] == original['records'][0]['fields']
+            return ConceptBundleDecision(status='unresolved')
+
+    bundle = {'bundle_id': 'repair', 'task_kind': 'concept_induction', 'records': [_record('seed')],
+              'template_repair_task': {'scope': 'unresolved_source_definition',
+                  'known_template_matches': [], 'component_type_candidates': []}}
+    original = copy.deepcopy(bundle)
+    result = asyncio.run(construct_from_bundles(SimpleNamespace(snapshot_id='snap', evidence={}),
+        PROFILE, BuildPlan(), [bundle], CaptureLLM(), review=False, enable_template_projection=True))
+    assert bundle == original
+    assert result['steps'][0]['status'] == 'unresolved'
+    assert 'error_type' not in result['steps'][0]
 
 
 def test_incremental_reuses_concept_without_losing_second_source():
@@ -335,7 +385,8 @@ def test_measure_operator_is_an_optional_evidenced_property_not_type_name():
         "row_number": 1, "root_hint": "Measure", "scope": {}, "unit": "元",
         "fields": {
             "name": [{"column": "name", "value": "收入"}],
-            "description": [{"column": "definition", "value": "收入按 SUM(x) 汇总各期间金额"}],
+            "description": [{"column": "definition", "value": "收入按 SUM(x) 汇总各期间金额"},
+                            {"column": "reuse_policy", "value": "不限定经营对象。"}],
             "unit": [{"column": "unit", "value": "元"}],
         },
     }
@@ -354,7 +405,8 @@ def test_measure_operator_is_an_optional_evidenced_property_not_type_name():
                         decision.model_copy(update={"aggregation_operator": "avg"}), {})
     distinct_record = {**record, "fields": {
         **record["fields"], "description": [
-            {"column": "definition", "value": "收入按 COUNT(DISTINCT x) 去重计数"}]}}
+            {"column": "definition", "value": "收入按 COUNT(DISTINCT x) 去重计数"},
+            {"column": "reuse_policy", "value": "不限定经营对象。"}]}}
     with pytest.raises(ValueError, match="operator lacks exact source evidence"):
         compile_concept(data, PROFILE, {"records": [distinct_record]},
                         decision.model_copy(update={
@@ -394,7 +446,8 @@ def test_measure_definition_may_have_time_applicability_but_not_observation_iden
                         decision.model_copy(update={"scope_roles": {"month": "observation"}}), {})
     rank = {**record, "record_id": "rank", "scope": {}, "unit": "", "fields": {
         "name": [{"column": "name", "value": "当年预算排名"}],
-        "description": [{"column": "definition", "value": "当年预算排名按预算值降序给出序位"}],
+        "description": [{"column": "definition", "value": "当年预算排名按预算值降序给出序位"},
+                        {"column": "reuse_policy", "value": "不限定经营对象。"}],
     }}
     rank_decision = decision.model_copy(update={
         "label": "当年预算排名", "definition": "通用预算序位",
@@ -405,7 +458,7 @@ def test_measure_definition_may_have_time_applicability_but_not_observation_iden
     assert compile_concept(data, PROFILE, {"records": [rank]}, rank_decision, {})[0]["unit"] is None
 
 
-def test_same_name_measure_merges_equal_definitions_but_holds_conflicting_meanings():
+def test_same_name_measure_merges_equal_definitions_and_separates_distinct_meanings():
     class MeasureLLM:
         async def ask(self, task, payload, schema):
             record = payload["bundle"]["records"][0]
@@ -423,7 +476,8 @@ def test_same_name_measure_merges_equal_definitions_but_holds_conflicting_meanin
                   "kind": "definition", "root_hint": "Measure", "row_number": 1,
                   "scope": {}, "unit": "元", "fields": {
                       "name": [{"column": "name", "value": "收入"}],
-                      "description": [{"column": "definition", "value": meaning}],
+                      "description": [{"column": "definition", "value": meaning},
+                                      {"column": "reuse_policy", "value": "不限定经营对象。"}],
                       "unit": [{"column": "unit", "value": "元"}],
                   }}
         return {"bundle_id": f"b{index}", "task_kind": "concept_induction",
@@ -440,8 +494,8 @@ def test_same_name_measure_merges_equal_definitions_but_holds_conflicting_meanin
         SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
         [packet(1, "收入为含税营业所得金额"), packet(2, "收入为不含税营业所得金额")],
         MeasureLLM(), review=False))
-    assert [step["status"] for step in different["steps"]] == ["accepted", "unresolved"]
-    assert len([item for item in different["plan"].object_types if item.parent == "Measure"]) == 1
+    assert [step["status"] for step in different["steps"]] == ["accepted", "accepted"]
+    assert len([item for item in different["plan"].object_types if item.parent == "Measure"]) == 2
 
 
 def test_no_change_is_complete_but_unresolved_remains_partial():
@@ -511,7 +565,8 @@ def test_same_label_with_different_exact_unit_or_scope_keeps_distinct_identity()
                                  _concept_decision(["r2"]), {})[0]
     south_yuan = compile_concept(data, PROFILE,
                                  {"records": [_record("r3", region="华南")]},
-                                 _concept_decision(["r3"]), {})[0]
+                                 _concept_decision(["r3"]).model_copy(update={
+                                     "classification_quote": "华南水果收入"}), {})[0]
     assert len({east_yuan["id"], east_tonne["id"], south_yuan["id"]}) == 3
 
 
@@ -649,7 +704,7 @@ def test_relation_quotes_must_come_from_one_validated_positive_pair(tmp_path):
         lifted, assertion, reason = compile_business_relation(
             data, PROFILE, typed, bundle, decision, plan, concepts, only_one_exact)
         assert lifted is assertion is None
-        assert reason == "both_positive_records_require_exact_type_alignment"
+        assert reason == "positive_record_requires_unambiguous_accepted_type_binding"
         mistyped = compiled.model_copy(deep=True)
         mistyped.relation_types[0].domain = ["Metric"]
         assert any("violates domain" in error
@@ -709,3 +764,248 @@ def test_relation_quotes_must_come_from_one_validated_positive_pair(tmp_path):
                    if e.startswith("record:"))
     finally:
         data.close()
+
+
+def test_formula_identity_and_source_definition_cannot_be_overwritten_by_model():
+    data = SimpleNamespace(snapshot_id="snap", evidence={})
+    first, second = _record("r1"), _record("r2")
+    for record, expression in ((first, "收入 - 成本"), (second, "收入 + 成本")):
+        record["fields"]["formula"] = [{"column": "formula", "value": expression}]
+    generated = _concept_decision(["r1"]).model_copy(update={
+        "definition": "模型无依据地声称此指标符合外部会计法规"})
+    a, _ = compile_concept(data, PROFILE, {"records": [first]}, generated, {})
+    b, _ = compile_concept(data, PROFILE, {"records": [second]},
+                           _concept_decision(["r2"]), {})
+    assert a["id"] != b["id"]
+    assert a["definition"] == "华东水果收入"
+    assert a["proposed_definition"] == generated.definition
+    assert a["source_formulas"] == ["收入 - 成本"]
+    with pytest.raises(ValueError, match="Conflicting source formulas"):
+        compile_concept(data, PROFILE, {"records": [first, second]},
+                        _concept_decision(["r1", "r2"]), {})
+
+
+def test_metric_business_object_can_be_in_definition_without_repeating_in_label():
+    data = SimpleNamespace(snapshot_id="snap", evidence={})
+    record = _record("profit", name="利润")
+    record.update(kind="definition", root_hint="GeneralObject")
+    record["fields"]["description"][0]["value"] = "水果经营利润按收入减成本计算"
+    decision = _concept_decision(["profit"], quotes=["利润"]).model_copy(update={
+        "label": "利润", "ontology_level": "type",
+        "classification_basis": "business_driven_metric",
+        "classification_quote": "水果经营利润按收入减成本计算",
+        "business_object_quote": "水果", "scope_roles": {"region": "applicability"}})
+    result, _ = compile_concept(data, PROFILE, {"records": [record]}, decision, {})
+    assert result["type"] == "Metric" and result["ontology_type_id"]
+    with pytest.raises(ValueError, match="source-quoted business object"):
+        compile_concept(data, PROFILE, {"records": [record]},
+                        decision.model_copy(update={"business_object_quote": "互联网"}), {})
+
+
+def test_incremental_checkpoint_skips_accepted_bundles_and_accumulates_sources():
+    data = SimpleNamespace(snapshot_id="snap", evidence={})
+    first = {"bundle_id": "a", "task_kind": "concept_induction", "records": [_record("a")]}
+    second = {"bundle_id": "b", "task_kind": "concept_induction", "records": [_record("b")]}
+    checkpoints = []
+    prior = asyncio.run(construct_from_bundles(
+        data, PROFILE, BuildPlan(), [first], _ConceptLLM(), review=False,
+        on_checkpoint=lambda state: checkpoints.append(len(state["steps"]))))
+    assert checkpoints == [1, 1]
+    class NewOnly(_ConceptLLM):
+        async def ask(self, task, payload, schema):
+            assert payload["bundle"]["bundle_id"] == "b"
+            return await super().ask(task, payload, schema)
+    resumed = asyncio.run(construct_from_bundles(
+        data, PROFILE, prior["plan"], [first, second], NewOnly(), review=False,
+        prior_result=prior))
+    assert resumed["coverage"]["bundles_reused"] == 1
+    assert resumed["coverage"]["steps_this_run"] == 1
+    assert len(resumed["concepts"]) == 1 and len(resumed["record_alignments"]) == 2
+    assert {item["record_id"] for item in resumed["concepts"][0]["source_refs"]} == {"a", "b"}
+    with pytest.raises(ValueError, match="snapshot differs"):
+        asyncio.run(construct_from_bundles(
+            SimpleNamespace(snapshot_id="changed", evidence={}), PROFILE, prior["plan"],
+            [first], NewOnly(), prior_result=prior))
+
+
+def test_type_context_recalls_matching_old_type_instead_of_only_recent_types():
+    from ontology_r2.group_incremental import _type_context
+    types = [DerivedType(id="old-income", parent="Measure", definition="收入汇总金额",
+                         label="收入", category="business_type", evidence_ids=[])]
+    types.extend(DerivedType(id=f"new-{i}", parent="GeneralObject", definition=f"其它业务对象{i}",
+                             label=f"其它对象{i}", category="business_type", evidence_ids=[])
+                 for i in range(20))
+    selected = _type_context(BuildPlan(object_types=types), {"records": [_record("r", name="收入")]})
+    assert len(selected) == 12
+    assert selected[0]["id"] == "old-income"
+
+
+class _BatchConceptLLM:
+    def __init__(self, *, corrupt_first=False, fail_batch_review=False):
+        self.calls = []
+        self.corrupt_first = corrupt_first
+        self.fail_batch_review = fail_batch_review
+        self.config = {"max_input_bytes": 100000}
+
+    async def ask(self, task, payload, schema):
+        self.calls.append(task)
+        if task == "concept_batch":
+            decisions = []
+            for i, packet in enumerate(payload["packets"]):
+                record_id = packet["bundle"]["records"][0]["record_id"]
+                if self.corrupt_first and i == 0:
+                    record_id = payload["packets"][1]["bundle"]["records"][0]["record_id"]
+                decisions.append({"bundle_id": packet["bundle"]["bundle_id"],
+                                  "decision": _concept_decision([record_id]).model_dump()})
+            return schema.model_validate({"decisions": decisions})
+        if task == "group_review_batch":
+            if self.fail_batch_review:
+                from ontology_r2.llm import BudgetExceeded
+                raise BudgetExceeded("budget")
+            return schema.model_validate({"reviews": [
+                {"bundle_id": packet["bundle"]["bundle_id"], "review": {"accepted": True}}
+                for packet in payload["packets"]]})
+        if task == "concept_bundle":
+            return _concept_decision([payload["bundle"]["records"][0]["record_id"]])
+        if task == "group_review":
+            return BundleReview(accepted=True)
+        raise AssertionError(task)
+
+
+def _batch_packets(size):
+    return [{"bundle_id": f"b{i}", "task_kind": "concept_induction",
+             "records": [_record(f"r{i}")], "exact_alignment_record_ids": [f"r{i}"]}
+            for i in range(size)]
+
+
+def test_batching_reduces_requests_without_dropping_independent_decisions():
+    llm = _BatchConceptLLM()
+    result = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
+        _batch_packets(6), llm, concept_batch_size=3))
+    assert llm.calls == ["concept_batch", "group_review_batch"] * 2
+    assert result["coverage"]["statuses"]["accepted"] == 6
+    assert len(result["record_alignments"]) == 6
+    assert not result["partial"]
+    assert all(step["proposal_batch_size"] == 3 for step in result["steps"])
+
+
+def test_batch_cross_packet_alignment_is_repaired_only_with_its_own_source():
+    llm = _BatchConceptLLM(corrupt_first=True)
+    result = asyncio.run(construct_from_bundles(
+        SimpleNamespace(snapshot_id="snap", evidence={}), PROFILE, BuildPlan(),
+        _batch_packets(3), llm, concept_batch_size=3, max_repairs_per_bundle=1))
+    assert llm.calls == ["concept_batch", "group_review_batch", "concept_bundle", "group_review"]
+    assert result["steps"][0]["repair_calls"] == 1
+    assert len(result["record_alignments"]) == 3
+    assert not result["partial"]
+
+
+def test_resume_preserves_paid_batch_decisions_when_review_budget_stops_run():
+    data = SimpleNamespace(snapshot_id="snap", evidence={})
+    packets = _batch_packets(3)
+    failed_llm = _BatchConceptLLM(fail_batch_review=True)
+    prior = asyncio.run(construct_from_bundles(
+        data, PROFILE, BuildPlan(), packets, failed_llm, concept_batch_size=3))
+    assert len(prior["pending_concept_decisions"]) == 3
+    assert prior["coverage"]["statuses"]["budget_exhausted"] == 1
+    resumed_llm = _BatchConceptLLM()
+    result = asyncio.run(construct_from_bundles(
+        data, PROFILE, prior["plan"], packets, resumed_llm,
+        concept_batch_size=3, prior_result=prior))
+    assert resumed_llm.calls == ["group_review"] * 3
+    assert result["coverage"]["statuses"]["accepted"] == 3
+    assert result["coverage"]["statuses"]["budget_exhausted"] == 0
+    assert not result["partial"] and result["pending_concept_decisions"] == {}
+
+
+def test_oversized_batch_review_retains_paid_proposal_and_continues_queue():
+    from ontology_r2.llm import InputBudgetExceeded
+
+    class LargeBatchReview(_BatchConceptLLM):
+        async def ask(self, task, payload, schema):
+            if task == 'group_review_batch':
+                self.calls.append(task)
+                raise InputBudgetExceeded(2000, 1000)
+            return await super().ask(task, payload, schema)
+
+    data = SimpleNamespace(snapshot_id='snap', evidence={})
+    packets = _batch_packets(3)
+    prior = asyncio.run(construct_from_bundles(
+        data, PROFILE, BuildPlan(), packets, LargeBatchReview(), concept_batch_size=3))
+    assert [step['status'] for step in prior['steps']] == ['input_over_budget', 'accepted', 'accepted']
+    assert len(prior['pending_concept_decisions']) == 1
+    assert prior['coverage']['bundles_not_attempted'] == 0
+    llm = _BatchConceptLLM()
+    result = asyncio.run(construct_from_bundles(
+        data, PROFILE, prior['plan'], packets, llm, concept_batch_size=3, prior_result=prior))
+    assert llm.calls == ['group_review']
+    assert not result['partial'] and result['pending_concept_decisions'] == {}
+
+
+def test_relation_batch_keeps_per_rule_compilation_and_reviews(tmp_path):
+    data = _relation_dataset(tmp_path)
+    try:
+        source, target = "fruit.source", "fruit.target"
+        left = _relation_record(data, source, next(data.rows(source)), "metric_ref", "param_name")
+        right = _relation_record(data, target, next(data.rows(target)), "metric_code", "metric_name")
+        packets = []
+        for i in range(2):
+            packets.append({"bundle_id": f"rel{i}", "task_kind": "relation_meaning",
+                "snapshot_id": data.snapshot_id, "rule": {
+                    "rule_id": f"rule-{i}", "snapshot_id": data.snapshot_id,
+                    "source": {"table": source, "field": "metric_ref"},
+                    "target": {"table": target, "field": "metric_code"},
+                    "status": "checked_technical", "transform": {"operator": "identity"},
+                    "verification": {"scan_scope": "full_input", "checks": {
+                        "eligible_references": 2, "unique_matches": 2}}},
+                "records": [left, right], "examples": {"positive": [{
+                    "source_record_id": left["record_id"], "target_record_id": right["record_id"],
+                    "matching_raw_value": "K1"}]}})
+        class RelationBatchLLM:
+            def __init__(self):
+                self.calls = []
+            async def ask(self, task, payload, schema):
+                self.calls.append(task)
+                if task == "relation_batch":
+                    return schema.model_validate({"decisions": [{
+                        "bundle_id": packet["bundle"]["bundle_id"], "decision": {
+                            "status": "proposed", "parent_relation": "points_to", "label": "points_to",
+                            "definition": "参数引用指标定义", "source_quote": "水果销售收入",
+                            "target_quote": "水果销售收入"}}
+                        for packet in payload["packets"]]})
+                assert task == "group_review_batch"
+                return schema.model_validate({"reviews": [{"bundle_id": packet["bundle"]["bundle_id"],
+                                                          "review": {"accepted": True}}
+                                                         for packet in payload["packets"]]})
+        core, _ = direct_mapping(data)
+        llm = RelationBatchLLM()
+        result = asyncio.run(construct_from_bundles(
+            data, PROFILE, core, packets, llm, relation_batch_size=3))
+        assert llm.calls == ["relation_batch", "group_review_batch"]
+        assert result["coverage"]["statuses"]["accepted"] == 2
+        assert len(result["plan"].relations) == 2
+        assert all(step["proposal_batch_size"] == 2 for step in result["steps"])
+        assert result["pending_relation_decisions"] == {}
+    finally:
+        data.close()
+
+
+def test_related_context_does_not_supply_exact_identity_or_seed_formula():
+    data = SimpleNamespace(snapshot_id="snap", evidence={})
+    seed = _record("seed")
+    context = _record("context")
+    context["context_role"] = "related_context"
+    context["fields"]["formula"] = [{"column": "formula", "value": "收入 - 成本"}]
+    bundle = {"records": [seed, context], "exact_alignment_record_ids": ["seed", "context"]}
+    # The explicit technical-context role remains binding even with a bad allowlist.
+    with pytest.raises(ValueError, match="related_context cannot be an exact"):
+        compile_concept(data, PROFILE, bundle, _concept_decision(["context"]), {})
+    decision = _concept_decision(["seed"]).model_copy(update={"definition": "收入 - 成本"})
+    concept, _ = compile_concept(data, PROFILE, bundle, decision, {})
+    assert concept["definition"] == "华东水果收入"
+    assert concept["source_formulas"] == []
+    typed = decision.model_copy(update={"ontology_level": "type", "classification_basis": "business_driven_metric",
+                                       "classification_quote": "收入 - 成本", "business_object_quote": "水果"})
+    with pytest.raises(ValueError, match="classification quote"):
+        compile_concept(data, PROFILE, bundle, typed, {})

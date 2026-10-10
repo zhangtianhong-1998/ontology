@@ -188,6 +188,36 @@ class Dataset:
         finally:
             cursor.close()
 
+    def rows_at(self, table, row_numbers, *, on_fetch=None):
+        """Read row locators in source order; on_fetch counts actual batch rows."""
+        numbers = list(row_numbers)
+        if any(type(number) is not int or number < 1 for number in numbers):
+            raise ValueError("Row locators must be positive integers")
+        if any(number > self.tables[table]["rows"] for number in numbers):
+            raise ValueError("Row locators exceed the source table row count")
+        numbers = sorted(set(numbers))
+        if not numbers:
+            return
+        sql_table = qi(self.tables[table]["sql_name"])
+        index = "row_idx_" + digest(table)[:20]
+        if index not in self.indexes:
+            self.db.execute(f"CREATE INDEX {qi(index)} ON {sql_table} (__r2_row)")
+            self.indexes.add(index)
+        for offset in range(0, len(numbers), 1000):
+            batch = numbers[offset:offset + 1000]
+            placeholders = ",".join("?" for _ in batch)
+            cursor = self.db.cursor().execute(
+                f"SELECT * FROM {sql_table} WHERE __r2_row IN ({placeholders}) ORDER BY __r2_row", batch)
+            names = [column[0] for column in cursor.description]
+            try:
+                fetched = cursor.fetchall()
+                if on_fetch is not None:
+                    on_fetch(len(fetched))
+                for row in fetched:
+                    yield dict(zip(names, row))
+            finally:
+                cursor.close()
+
     @lru_cache(maxsize=4096)
     def lookup(self, table, bindings):
         info = self.tables[table]

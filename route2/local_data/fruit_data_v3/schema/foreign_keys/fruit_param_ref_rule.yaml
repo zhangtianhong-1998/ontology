@@ -1,0 +1,3 @@
+schema: fruit_market
+table_name: fruit_param_ref_rule
+foreign_keys: []

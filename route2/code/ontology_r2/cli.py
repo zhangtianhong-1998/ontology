@@ -13,6 +13,7 @@ def main():
     run.add_argument("--config", required=True)
     run.add_argument("--output", required=True, help="A new directory, never overwritten")
     run.add_argument("--dataset")
+    run.add_argument("--resume-from", help="Prior semantic state for the same verified snapshot")
     run.add_argument("--llm-mode", choices=["mock", "agentscope"])
     run.add_argument("--profile", choices=["E2L", "E2O", "E2K", "E2F"], help="Explicit knowledge-source switches")
     run.add_argument("--no-progress", action="store_true", help="Disable stderr progress output")
@@ -59,6 +60,8 @@ def main():
     config = load_config(args.config)
     if args.dataset:
         config["dataset"] = str(Path(args.dataset).resolve())
+    if args.resume_from:
+        config["resume_from"] = str(Path(args.resume_from).resolve())
     if args.llm_mode:
         config["llm"]["mode"] = args.llm_mode
     if args.profile:

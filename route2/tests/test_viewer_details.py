@@ -1,7 +1,12 @@
 import asyncio
 import json
 import sqlite3
+import shutil
+import subprocess
 import sys
+from pathlib import Path
+
+import pytest
 
 from ontology_r2.cli import main as cli_main
 from ontology_r2.pipeline import build
@@ -108,6 +113,32 @@ def test_metadata_graph_fallback_preserves_subset_without_duplicate_candidate():
     assert fallback["links"][0]["status"] == "observed_subset"
 
 
+def test_metadata_view_preserves_numeric_collision_risk_from_rule_or_graph():
+    graph = {"nodes": [
+        {"id": "s.a", "kind": "Table"}, {"id": "s.b", "kind": "Table"},
+        {"id": "s.a.code", "kind": "Column", "column_name": "code"},
+        {"id": "s.b.number", "kind": "Column", "column_name": "number"}],
+        "edges": [
+            {"source": "s.a", "target": "s.a.code", "type": "table_has_column"},
+            {"source": "s.b", "target": "s.b.number", "type": "table_has_column"},
+            {"id": "technical:test", "source": "s.a.code", "target": "s.b.number",
+             "type": "technical_link", "status": "observed_subset", "rule_id": "r1",
+             "numeric_overlap_only": True, "risk_flags": ["numeric_value_coincidence"]}]}
+    rule = {"rule_id": "r1", "source": {"table": "s.a", "field": "code"},
+            "target": {"table": "s.b", "field": "number"}, "status": "observed_subset",
+            "numeric_overlap_only": True, "risk_flags": ["numeric_value_coincidence"]}
+    for rules in ({"rules": [rule]}, {"rules": []}):
+        preview = _metadata_preview(graph, [], rules, 10)
+        assert preview['links']
+        assert all(link['numeric_overlap_only'] is True for link in preview['links'])
+        assert all(link['risk_flags'] == ['numeric_value_coincidence'] for link in preview['links'])
+        assert all(link['status'] == 'observed_subset' for link in preview['links'])
+    html = (Path(__file__).resolve().parents[1] / 'code/ontology_r2/viewer.html').read_text()
+    assert "if(x.numeric_overlap_only)" in html
+    assert "数值重合风险" in html and "风险标记" in html
+    assert '.risk-warning{' in html
+
+
 def test_metadata_graph_exposes_table_to_source_record_type_mapping():
     graph = {"nodes": [
         {"id": "demo.metric", "kind": "Table", "table_name": "metric"},
@@ -143,10 +174,10 @@ def test_viewer_payload_keeps_local_match_candidates_outside_metadata_graph(tmp_
         "target": {"table": "demo.b", "field": "word"},
     }])
     data = payload(render_viewer(run, 10).read_text())
-    assert {item["status"] for item in data["metadata"]["links"]} == {"declared"}
-    assert {item["status"] for item in data["association_preview"]["links"]} == {
-        "verified_technical", "candidate"}
-    assert data["metadata"]["link_counts"] == {"declared": 1}
+    assert {item["status"] for item in data["metadata"]["links"]} == {"declared", "verified_technical"}
+    assert {item["status"] for item in data["association_preview"]["links"]} == {"candidate"}
+    assert data["metadata"]["link_counts"] == {"declared": 1, "verified_technical": 1, "observed_subset": 0}
+    assert {item["edge_type"] for item in data["metadata"]["links"]} == {"declared_fk", "technical_link"}
 
 
 def test_ontology_overview_keeps_business_structure_without_source_fields_or_cartesian_edges():
@@ -171,7 +202,7 @@ def test_ontology_overview_keeps_business_structure_without_source_fields_or_car
     assert {item["id"] for item in overview["nodes"]} == {
         "GeneralObject", "Metric", "Measure", "FruitRevenue", "FruitCost", "Income"}
     assert {tuple(item.values()) for item in overview["inheritance"]} == {
-        ("Metric", "FruitRevenue"), ("Metric", "FruitCost"), ("Measure", "Income")}
+        ("FruitRevenue", "Metric"), ("FruitCost", "Metric"), ("Income", "Measure")}
     assert overview["relations"] == [{"id": "depends", "source": "FruitRevenue",
                                        "target": "FruitCost", "label": "depends_on", "parent": None}]
     assert overview["omitted_relation_type_ids"] == ["ambiguous", "record_link"]
@@ -208,13 +239,13 @@ def test_viewer_counts_business_and_source_record_types_separately(tmp_path):
     assert '<section class="metrics"' not in html
     assert {item["id"] for item in data["ontology_overview"]["nodes"]} == {
         "GeneralObject", "Metric", "Measure", "FruitRevenue", "Income"}
-    assert {item["target"] for item in data["ontology_overview"]["inheritance"]} == {
+    assert {item["source"] for item in data["ontology_overview"]["inheritance"]} == {
         "FruitRevenue", "Income"}
     assert "search-panel\" class=\"search-panel\" hidden" in html
     assert "Measure:'度量'" in html and "整体本体结构" in html
     assert "聚合度量" not in html
     assert "cols.slice(0,6)" not in html
-    assert "(M.links||[]).filter(x=>x.status==='declared'" in html
+    assert "kind:link.status==='declared'?'declared':'technical_link'" in html
     assert "业务类型" not in html
 
 
@@ -383,6 +414,153 @@ def test_viewer_shows_type_definition_and_bounded_record_attributes(tmp_path):
     assert "数据值" in html
 
 
+def test_viewer_literal_values_keep_their_own_source_evidence(tmp_path):
+    config = setup(tmp_path, scenario="unrelated", mcp=False, rows=2)
+    output = tmp_path / "run"
+    assert asyncio.run(build(config, output))["status"] == "complete"
+    result = payload(render_viewer(output, 10).read_text())
+    attributes = [value for node in result["objects"] for value in node.get("preview_attributes", [])]
+    assert attributes and all(value["id"] and value["attribute_id"] for value in attributes)
+    assert all(value["evidence_ids"] for value in attributes)
+    assert all(eid in result["evidence"] for value in attributes for eid in value["evidence_ids"])
+
+
+def test_viewer_inherited_properties_execute_against_actual_script():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required to execute viewer helpers")
+    page = (Path(__file__).parents[1] / "code/ontology_r2/viewer.html").read_text()
+    start = page.index("function typeAncestors(")
+    end = page.index("function verifiedEquivalentTypes(", start)
+    script = """
+const T=new Map([{id:'Root'},{id:'Parent',parent:'Root'},{id:'Child',parent:'Parent'},
+{id:'Other',parent:'Root'},{id:'Cycle',parent:'Cycle'}].map(item=>[item.id,item]));
+const attrs=[{id:'shared',domain:['Parent']},{id:'own',domain:['Child']},{id:'unrelated',domain:['Other']}];
+const O={relation_types:[{id:'rel',category:'business_relation_type',domain:['Parent'],range:['Other']}]};
+const D={objects:[{id:'one',type:'Child'},{id:'two',type:'Other'}],concepts:[{id:'one',ontology_type_id:'Child'}]};
+const INSTANCE=new Map();for(const x of [...D.concepts,...D.objects])INSTANCE.set(x.id,{...(INSTANCE.get(x.id)||{}),...x});
+const name=item=>item.id;
+""" + page[start:end] + """
+const assert=require('node:assert/strict');
+assert.deepEqual(objectAttrs('Child').map(item=>item.id),['shared','own']);
+assert.deepEqual(objectAttrs('Other').map(item=>item.id),['unrelated']);
+assert.deepEqual(objectRels('Child').map(item=>item.id),['rel']);
+assert.deepEqual(objectInstances('Parent').map(item=>item.id),['one']);
+assert.equal(inheritedFrom(attrs[0],'Child'),'Parent');
+assert.deepEqual([...typeAncestors('Cycle')],['Cycle']);
+"""
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_viewer_fit_and_zoom_execute_against_actual_script():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required to execute viewer helpers")
+    page = (Path(__file__).parents[1] / "code/ontology_r2/viewer.html").read_text()
+    helpers = page[page.index('function fittedView('):page.index('function zoomAtCenter(')]
+    script = """
+const assert=require('node:assert/strict');
+let size={width:830,height:490};
+const elements={graph:{setAttribute(key,value){this[key]=value},getBoundingClientRect(){return {left:0,top:0,...size}}},'zoom-level':{}};
+const $=id=>elements[id],viewportSize=()=>size,graphState={};
+""" + helpers + """
+const bounds={x:-410,y:-330,width:940,height:760};
+for(const dimensions of [{width:830,height:490},{width:400,height:700},{width:1800,height:520}]){
+  size=dimensions;graphState.bounds=bounds;graphState.userViewChanged=true;fitGraph();
+  const v=graphState.view;
+  assert(v.x<=bounds.x && v.y<=bounds.y);
+  assert(v.x+v.width>=bounds.x+bounds.width-1e-8);
+  assert(v.y+v.height>=bounds.y+bounds.height-1e-8);
+  assert.equal(elements['zoom-level'].textContent,'100%');
+  const center=[v.x+v.width/2,v.y+v.height/2];
+  zoomGraph(1.25,size.width/2,size.height/2);
+  assert.equal(elements['zoom-level'].textContent,'125%');
+  assert(Math.abs(graphState.view.x+graphState.view.width/2-center[0])<1e-8);
+  assert(Math.abs(graphState.view.y+graphState.view.height/2-center[1])<1e-8);
+  fitGraph();assert.equal(elements['zoom-level'].textContent,'100%');assert.equal(graphState.userViewChanged,false);
+}
+"""
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    assert '.graph-viewport svg{display:block;position:absolute;inset:0' in page
+    assert 'graphState.key===key&&graphState.view&&graphState.userViewChanged' in page
+
+
+def test_metadata_layout_aggregation_and_focus_execute_against_actual_script():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required to execute viewer helpers")
+    page = (Path(__file__).parents[1] / "code/ontology_r2/viewer.html").read_text()
+    helpers = page[page.index('function tableLabelLines('):page.index('function renderGraph(')]
+    script = """
+const assert=require('node:assert/strict');
+const M={tables:Array.from({length:23},(_,i)=>({id:`s.t${i}`,table_name:`fruit_config_table_${i}`,table_comment:`水果定义${i}`})),links:[],details:{}};
+for(let i=0;i<23;i++)for(let j=1;j<=3;j++)M.links.push({id:`link:${i}:${j}`,source:`s.t${i}`,target:`s.t${(i+j)%23}`,source_field:'ref',target_field:'code',status:'verified_technical'});
+M.links.push({id:'reverse',source:'s.t1',target:'s.t0',source_field:'back_ref',target_field:'other',status:'verified_technical'});
+const TABLE=new Map(M.tables.map(t=>[t.id,t])),expandedTables=new Set(),pinnedPositions={ontology:new Map(),metadata:new Map()};
+let selected=null,tableId=null,drawn=null,showNumericMatches=false;
+const $=id=>({}),name=x=>x.table_comment||x.table_name,node=(id,label,kind,x,y,action,active,subtitle)=>({id,label,kind,x,y,action,active,subtitle}),select=()=>{};
+const viewportSize=()=>({width:1200,height:800}),drawGraph=(nodes,edges)=>{drawn={nodes,edges}};
+""" + helpers + """
+metadataGraph();
+assert.equal(drawn.nodes.length,23);
+assert.equal([...metadataLinkGroups.values()].reduce((n,g)=>n+g.links.length,0),M.links.length);
+assert([...metadataLinkGroups.values()].some(g=>g.bidirectional));
+assert(drawn.edges.filter(e=>e.showLabel).length<=4);
+assert(drawn.edges.every(e=>typeof e.action==='function'));
+assert(drawn.nodes.every(n=>n.label.startsWith('fruit_config')&&n.subtitle.startsWith('水果定义')));
+const first=metadataPositions(M.tables,M.links),again=metadataPositions([...M.tables].reverse(),M.links);
+assert.deepEqual([...first],[...again]);
+const coords=[...first.values()];
+for(let i=0;i<coords.length;i++)for(let j=i+1;j<coords.length;j++)assert(Math.hypot(coords[i].x-coords[j].x,coords[i].y-coords[j].y)>100);
+assert(Math.max(...coords.map(p=>p.x))-Math.min(...coords.map(p=>p.x))<1400);
+// Risk filtering changes visibility, never deletes evidence or hides declared FKs.
+const risk={id:'numeric',source:'s.t0',target:'s.t22',numeric_overlap_only:true,status:'verified_technical'};
+const declared={...risk,id:'declared',status:'declared'};
+M.links.push(risk,declared);
+assert.equal(metadataVisibleLinks(M.links,null,false).length,M.links.length-1);
+assert(metadataVisibleLinks(M.links,null,false).includes(declared));
+assert(!metadataVisibleLinks(M.links,null,false).includes(risk));
+assert(metadataVisibleLinks(M.links,'s.t0',true).includes(risk));
+assert(!metadataVisibleLinks(M.links,'s.t1',true).includes(risk));
+assert.equal(M.links.at(-2),risk);
+M.links.splice(-2);
+selected={kind:'table',id:'s.t0'};tableId='s.t0';metadataGraph();
+assert(drawn.nodes.length<23);
+assert(drawn.edges.every(e=>e.from==='s.t0'||e.to==='s.t0'));
+assert(drawn.edges.every(e=>e.showLabel));
+assert.deepEqual(tableLabelLines('水果接口入参定义'),['水果接口入参','定义']);
+"""
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    assert "(OV.inheritance||[]).forEach" in page and "(OV.relations||[]).forEach" in page
+
+
+def test_metadata_graph_edges_keep_conditional_branches_and_source_details():
+    from ontology_r2.metadata_graph import technical_link_id
+
+    source, target = {"table": "demo.a", "field": "code"}, {"table": "demo.b", "field": "code"}
+    rules = [{"rule_id": "same", "source": source, "target": target,
+              "status": "checked_technical", "selector": {"kind": kind},
+              "transform": {"operator": operator}, "evidence_ids": ["quote:" + kind]}
+             for kind, operator in (("one", "identity"), ("two", "source_alias_items"))]
+    graph = {"nodes": [
+        {"id": "demo.a", "kind": "Table"}, {"id": "demo.b", "kind": "Table"},
+        {"id": "demo.a.code", "kind": "Column", "column_name": "code"},
+        {"id": "demo.b.code", "kind": "Column", "column_name": "code"},
+    ], "edges": [
+        {"source": "demo.a", "target": "demo.a.code", "type": "table_has_column"},
+        {"source": "demo.b", "target": "demo.b.code", "type": "table_has_column"},
+        *[{**rule, "id": technical_link_id(rule), "type": "technical_link",
+           "source": "demo.a.code", "target": "demo.b.code"} for rule in rules],
+    ]}
+    preview = _metadata_preview(graph, [], {"rules": rules}, 10)
+    assert len(preview["links"]) == 2
+    assert len({edge["id"] for edge in preview["links"]}) == 2
+    assert {edge["transform"]["operator"] for edge in preview["links"]} == {"identity", "source_alias_items"}
+    fallback = _metadata_preview(graph, [], {"rules": []}, 10)
+    assert {edge["id"] for edge in fallback["links"]} == {edge["id"] for edge in preview["links"]}
+    assert all(edge["evidence_ids"] for edge in fallback["links"])
+
+
 def test_viewer_previews_concepts_and_record_alignments_with_source_evidence(tmp_path):
     config = setup(tmp_path, scenario="unrelated", mcp=False, rows=2)
     output = tmp_path / "run"
@@ -456,3 +634,108 @@ def test_group_replay_viewer_distinguishes_unrun_stage_and_registers_cli_output(
     metrics = {item["label"]: item["value"] for item in data["preview"]["metrics"]}
     assert metrics["已抽取对象"] is None
     assert metrics["已接受对象关系"] is None
+
+
+def test_template_preview_bounds_large_yaml_and_keeps_instances_off_canvas(tmp_path):
+    from ontology_r2.visualization import _sequence_preview
+
+    run = tmp_path / "template-preview"
+    run.mkdir()
+    write_yaml(run / "manifest.yaml", {"status": "complete"})
+    write_yaml(run / "ontology.yaml", {
+        "object_roots": [{"id": "Metric"}, {"id": "Measure"}],
+        "object_types": [{"id": "QualityRate", "label": "合格率", "parent": "Metric",
+                          "category": "business_type"},
+                         {"id": "PassCount", "label": "合格数量", "parent": "Measure",
+                          "category": "business_type"}],
+        "relation_types": [],
+    })
+    write_yaml(run / "template_projections.yaml", [{
+        "template_id": "projection:quality", "object_type_id": "QualityRate",
+        "source_table": "demo.metrics", "slots": [{"name": "fruit", "role": "dimension"}],
+    }])
+    write_yaml(run / "template_bindings.yaml", [{
+        "id": f"binding:{i}", "template_id": "projection:quality", "object_type_id": "QualityRate",
+        "source_table": "demo.metrics", "record_id": f"record:{i}", "slot_values": {"fruit": str(i)},
+    } for i in range(500)])
+    write_yaml(run / "ontology_bindings.yaml", {
+        "bindings": [{"id": "semantic:quality", "source_type_id": "QualityRate",
+                      "target_type_id": "PassCount", "slot": {"role": "measure"}}],
+        "pending": [{"template_id": "projection:quality", "reason": "missing dimension definition"}],
+        "coverage": {"accepted": 1, "pending": 1},
+    })
+    data = payload(render_viewer(run, 10).read_text())
+    preview = data["templates"]
+    assert preview["truncated"] is True
+    assert len(preview["bindings"]) == 3
+    assert preview["binding_prefix_counts"]["QualityRate"] == 150
+    assert len(preview["projections"]) == len(preview["ontology_bindings"]) == len(preview["pending"]) == 1
+    assert {item["id"] for item in data["ontology_overview"]["nodes"]} == {
+        "Metric", "Measure", "QualityRate", "PassCount"}
+    # Cutting an input byte prefix retains only fully parsed records, never a partial instance.
+    rows, summary = _sequence_preview(run / "template_bindings.yaml", 500, byte_limit=900)
+    assert summary["truncated"] and summary["read_bytes"] == 900
+    assert 0 < len(rows) < 10
+    assert all("slot_values" in row for row in rows)
+
+
+def test_template_preview_collects_source_evidence_for_bindings(tmp_path):
+    run = tmp_path / "template-evidence"
+    (run / "work").mkdir(parents=True)
+    write_yaml(run / "template_projections.yaml", [{
+        "template_id": "p", "object_type_id": "QualityRate", "evidence_ids": ["proof:template"]}])
+    write_yaml(run / "template_bindings.yaml", [{
+        "id": "b", "object_type_id": "QualityRate", "evidence_ids": ["proof:binding"]}])
+    with sqlite3.connect(run / "work/results.sqlite") as db:
+        db.execute("CREATE TABLE items(kind TEXT,id TEXT,body TEXT)")
+        for key in ("proof:template", "proof:binding"):
+            db.execute("INSERT INTO items VALUES(?,?,?)", ("evidence", key, json.dumps({
+                "id": key, "raw_fragment": "合格率", "source_ref": {"table": "demo.metrics"}})))
+    data = payload(render_viewer(run, 10).read_text())
+    assert {"proof:template", "proof:binding"} <= data["evidence"].keys()
+    html = (Path(__file__).parents[1] / "code/ontology_r2/viewer.html").read_text()
+    assert "templateDetails(origins,x)" in html and "成分关系依据" in html
+
+
+def test_typed_instance_preview_balances_types_and_keeps_values_and_evidence(tmp_path):
+    run = tmp_path / "instance-preview"
+    (run / "work").mkdir(parents=True)
+    write_yaml(run / "ontology.yaml", {
+        "object_roots": [{"id": "Metric"}, {"id": "GeneralObject"}],
+        "object_types": [{"id": "Revenue", "label": "收入", "parent": "Metric", "category": "business_type"},
+                         {"id": "Fruit", "label": "水果", "parent": "GeneralObject", "category": "business_type"}],
+        "relation_types": [],
+    })
+    with sqlite3.connect(run / "work/results.sqlite") as db:
+        db.execute("CREATE TABLE items(kind TEXT,id TEXT,body TEXT)")
+        values = [("objects", {"id": f"a:raw:{i}", "type": "PhysicalRow"}) for i in range(100)]
+        values += [("objects", {"id": f"ontology_instance:{i}", "type": "Revenue", "label": "苹果收入",
+                     "instance_kind": "definition_record_instance", "business_observation_claim": False,
+                     "source_ref": {"table": "demo.definitions", "row": i + 1},
+                     "properties": [{"column": "name", "value": "苹果收入", "evidence_ids": ["proof:name"]}]})
+                   for i in range(8)]
+        values += [("objects", {"id": "ontology_slot_instance:apple", "type": "Fruit", "label": "苹果",
+                     "instance_kind": "definition_slot_occurrence", "bound_value": "苹果"}),
+                   ("assertions", {"id": "edge:1", "subject": "ontology_instance:0", "object": "ontology_slot_instance:apple",
+                      "predicate": "binds", "instance_scope": "definition_graph_not_observed_business_values"}),
+                   ("evidence", {"id": "proof:name", "raw_fragment": "苹果收入", "source_ref": {"table": "demo.definitions"}})]
+        db.executemany("INSERT INTO items VALUES(?,?,?)", [(kind, item["id"], json.dumps(item)) for kind, item in values])
+    data = payload(render_viewer(run, 10).read_text())
+    previews = data["instance_preview"]
+    assert len(previews) == 4
+    assert {item["type"] for item in previews} == {"Revenue", "Fruit"}
+    assert next(item for item in previews if item["type"] == "Revenue")["properties"][0]["value"] == "苹果收入"
+    assert data["instance_relations"][0]["id"] == "edge:1"
+    assert "proof:name" in data["evidence"]
+    assert sum(item["count"] for item in data["instance_counts"] if item["type_id"] == "Revenue") == 8
+    assert {item["id"] for item in data["ontology_overview"]["nodes"]} == {"Metric", "GeneralObject", "Revenue", "Fruit"}
+
+
+def test_viewer_can_write_new_preview_without_overwriting_original(tmp_path):
+    original = tmp_path / "run"
+    original.mkdir()
+    (original / "viewer.html").write_text("original evidence", encoding="utf-8")
+    output = tmp_path / "preview" / "viewer.html"
+    assert render_viewer(original, 10, output_path=output) == output
+    assert (original / "viewer.html").read_text() == "original evidence"
+    assert "本体结构浏览" in output.read_text()

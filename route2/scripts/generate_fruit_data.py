@@ -519,11 +519,17 @@ def scaled_counts(scale):
     return {t.name: max(min(10, t.count), math.ceil(t.count * scale)) for t in TABLES}
 
 
-def generate(root: Path, scale: float = 1.0):
+def generate(root: Path, scale: float = 1.0, *, row_factory=None,
+             column_comments=None, manifest_extra=None, minimum_counts=None):
+    """Write the same physical schema; optional factories version synthetic semantics."""
     root = Path(root)
     if root.exists():
         raise FileExistsError(f"Output already exists: {root}")
     counts = scaled_counts(scale)
+    for name, minimum in (minimum_counts or {}).items():
+        counts[name] = max(counts[name], minimum)
+    row_factory = row_factory or make_row
+    column_comments = column_comments or {}
     for folder in ("data", "schema/tables", "schema/constraints", "schema/foreign_keys"):
         (root / folder).mkdir(parents=True, exist_ok=True)
     for table in TABLES:
@@ -531,7 +537,8 @@ def generate(root: Path, scale: float = 1.0):
         columns = [
             {"column_name": field, "ordinal_position": order, "data_type": _type(field),
              "is_not_null": field == table.pk, "default_value": None,
-             "column_comment": COMMENTS.get(field, field.replace("_", " ") + "，合成业务字段")}
+             "column_comment": column_comments.get((table.name, field),
+                  COMMENTS.get(field, field.replace("_", " ") + "，合成业务字段"))}
             for order, field in enumerate(table.fields, 1)
         ]
         metadata = {**base, "table_comment": table.comment, "relkind": "r",
@@ -550,7 +557,7 @@ def generate(root: Path, scale: float = 1.0):
             writer = csv.DictWriter(out, fieldnames=table.fields)
             writer.writeheader()
             for i in range(counts[table.name]):
-                writer.writerow(make_row(table, i, counts))
+                writer.writerow(row_factory(table, i, counts))
         print(f"{table.name}: {counts[table.name]:,} rows", flush=True)
     manifest = {
         "synthetic": True,
@@ -562,6 +569,7 @@ def generate(root: Path, scale: float = 1.0):
         "assumption": "Prompt lists 22 tables; fruit_import_staging_temp is the synthetic 23rd table",
         "semantic_status": "Test fixture only; not ground truth for ontology quality",
     }
+    manifest.update(manifest_extra or {})
     (root / "synthetic_manifest.yaml").write_text(
         yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return validate(root)

@@ -29,6 +29,11 @@ route2/offline/
 .AppleDouble
 __MACOSX/
 fixtures/
+# Versioned regression inputs contain only synthetic topology and frozen test code.
+!route2/tests/fixtures/
+route2/tests/fixtures/*
+!route2/tests/fixtures/witness_executor_baseline.py
+!route2/tests/fixtures/viewer_v8_topology.json
 data/
 **/design/field_association/results-*.yaml
 *.csv
@@ -36,3 +41,32 @@ data/
 *.pptx
 *.zip
 *.tar.gz
+
+# Explicitly authorized synthetic experiment snapshot; other local runs stay ignored.
+!experiments/fruit-full-v8-20260928/synthetic-data.tar.gz
+!experiments/fruit-full-v8-20260928/extraction-results.tar.gz
+
+# Authorized v10 synthetic inputs and completed experiment results.
+!experiments/fruit-full-v10-20260929/synthetic-data.tar.gz
+!experiments/fruit-full-v10-20260929/extraction-results.tar.gz
+
+# Authorized v11 in-progress synthetic result snapshot.
+!experiments/generalized-full-v11-20260930/extraction-checkpoint.tar.gz
+
+# Authorized V13 synthetic v3 inputs; other local datasets remain ignored.
+!route2/local_data/
+route2/local_data/*
+!route2/local_data/fruit_data_v3/
+route2/local_data/fruit_data_v3/**
+!route2/local_data/fruit_data_v3/synthetic_manifest.yaml
+!route2/local_data/fruit_data_v3/README.md
+!route2/local_data/fruit_data_v3/SHA256SUMS
+!route2/local_data/fruit_data_v3/data/
+!route2/local_data/fruit_data_v3/data/*.csv
+!route2/local_data/fruit_data_v3/schema/
+!route2/local_data/fruit_data_v3/schema/tables/
+!route2/local_data/fruit_data_v3/schema/tables/*.yaml
+!route2/local_data/fruit_data_v3/schema/constraints/
+!route2/local_data/fruit_data_v3/schema/constraints/*.yaml
+!route2/local_data/fruit_data_v3/schema/foreign_keys/
+!route2/local_data/fruit_data_v3/schema/foreign_keys/*.yaml

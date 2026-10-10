@@ -15,6 +15,7 @@ from typing import Literal
 
 from .models import BuildPlan, DerivedType, Strict
 from .storage import digest
+from .unit_identity import unit_identity
 
 
 ROOTS = frozenset(("GeneralObject", "Measure", "Metric", "Dimension", "Term"))
@@ -107,14 +108,15 @@ def _eligible_groups(plan, data):
     groups = defaultdict(list)
     for item in plan.object_types:
         if (item.category != "business_type"
-                or item.derivation_kind != "exact_definition"
-                or item.evidence_scope != "definition_record"
+                or (item.derivation_kind, item.evidence_scope) not in {
+                    ("exact_definition", "definition_record"),
+                    ("template_projection", "projected_definition_template")}
                 or not item.label or not item.definition):
             continue
         root = _root_of(item, by_id)
         if root is None:
             continue
-        unit = _norm(item.unit)
+        unit = unit_identity(item.unit)
         # Two unknown units do not establish a compatible quantitative unit.
         if root == "Metric" and not unit:
             continue
@@ -126,7 +128,12 @@ def _eligible_groups(plan, data):
             continue
         scope = tuple(sorted((_norm(k), _norm(v))
                               for k, v in item.applicability_scope.items()))
-        key = (root, _norm(item.label), unit, scope, item.aggregation_operator)
+        # Parameters preserve literal source values. Normalizing punctuation,
+        # case or whitespace here could erase a meaningful calculation setting.
+        parameters = tuple(sorted(item.definition_parameters.items()))
+        key = (root, _norm(item.label), unit, scope, item.aggregation_operator, parameters,
+               tuple(sorted(item.identity_qualifiers.items())),
+               tuple(sorted(item.classification_attributes.items())))
         groups[key].append((item, fragments))
     for values in groups.values():
         values.sort(key=lambda pair: pair[0].id)
@@ -135,12 +142,17 @@ def _eligible_groups(plan, data):
 
 def _candidate(data, group_key, source, target):
     left, right = source[0], target[0]
+    identity = [data.snapshot_id, left.id, right.id]
+    if left.definition_parameters:
+        identity.append(left.definition_parameters)
     return {
-        "candidate_id": "equivalence:" + digest([data.snapshot_id, left.id, right.id])[:24],
+        "candidate_id": "equivalence:" + digest(identity)[:24],
         "source_type_id": left.id, "target_type_id": right.id,
         "root_type": group_key[0], "label": left.label,
         "unit": left.unit, "aggregation_operator": left.aggregation_operator,
         "applicability_scope": dict(group_key[3]),
+        "definition_parameters": dict(left.definition_parameters),
+        "classification_attributes": dict(left.classification_attributes),
         "status": "candidate_only",
     }
 
@@ -190,6 +202,16 @@ def compile_equivalence(data, core: BuildPlan, candidate, decision):
             or decision.source_type_id != source_id
             or decision.target_type_id != target_id):
         raise ValueError("Decision does not name the exact candidate pair")
+    current_types = {item.id: item for item in core.object_types}
+    if (source_id in current_types and target_id in current_types
+            and current_types[source_id].classification_attributes != current_types[target_id].classification_attributes):
+        raise ValueError("Source classification attributes differ; exact equivalence is unsupported")
+    if (source_id in current_types and target_id in current_types
+            and current_types[source_id].identity_qualifiers != current_types[target_id].identity_qualifiers):
+        raise ValueError("Definition identity qualifiers differ; cross-namespace equivalence is unsupported")
+    if (source_id in current_types and target_id in current_types
+            and current_types[source_id].definition_parameters != current_types[target_id].definition_parameters):
+        raise ValueError("Definition parameters differ; exact equivalence is unsupported")
     groups = _eligible_groups(core, data)
     group = next((members for members in groups.values()
                   if {source_id, target_id} <= {item.id for item, _ in members}), None)
@@ -203,6 +225,10 @@ def compile_equivalence(data, core: BuildPlan, candidate, decision):
     expected = _candidate(data, group_key, by_id[source_id], by_id[target_id])
     if candidate.get("candidate_id") != expected["candidate_id"]:
         raise ValueError("Candidate identity changed")
+    if candidate.get("definition_parameters", {}) != source.definition_parameters:
+        raise ValueError("Candidate definition parameters changed")
+    if candidate.get("classification_attributes", {}) != source.classification_attributes:
+        raise ValueError("Candidate classification attributes changed")
     left = _selected_fragment(source_fragments, "description",
                               decision.source_description_evidence_id,
                               decision.source_description_quote)
@@ -254,13 +280,18 @@ def compile_equivalence(data, core: BuildPlan, candidate, decision):
     if source_records & target_records:
         raise ValueError("Two types cite the same definition record; classification conflict")
     canonical = min(source_id, target_id)
+    identity = [data.snapshot_id, source_id, target_id]
+    if source.definition_parameters:
+        identity.append(source.definition_parameters)
     return {
-        "id": "type_equivalence:" + digest([data.snapshot_id, source_id, target_id])[:24],
+        "id": "type_equivalence:" + digest(identity)[:24],
         "source_type_id": source_id, "target_type_id": target_id,
         "canonical_type_id": canonical,
         "root_type": group_key[0], "label": source.label,
         "unit": source.unit, "aggregation_operator": source.aggregation_operator,
         "applicability_scope": source.applicability_scope,
+        "definition_parameters": dict(source.definition_parameters),
+        "classification_attributes": dict(source.classification_attributes),
         "source_description_evidence_ids": [x["evidence_id"] for x in source_fragments["description"]],
         "target_description_evidence_ids": [x["evidence_id"] for x in target_fragments["description"]],
         "source_formula_evidence_ids": [x["evidence_id"] for x in source_fragments["formula"]],

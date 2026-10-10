@@ -7,9 +7,9 @@ lookup establish endpoints; they do not establish the predicate's meaning.
 
 from __future__ import annotations
 
-from collections import Counter
-from collections import defaultdict
+from collections import Counter, defaultdict, deque
 from itertools import combinations
+import json
 import re
 
 from pydantic import Field
@@ -34,15 +34,85 @@ class ConfigurationRelationSpec(Strict):
     # A literal value can be shown to a semantic judge, but is not itself a
     # validated predicate label such as depends_on or contains.
     relation_text_column: str | None = None
+    selector: dict[str, str] = Field(default_factory=dict)
+    source_scope_bindings: dict[str, str] = Field(default_factory=dict)
+    target_scope_bindings: dict[str, str] = Field(default_factory=dict)
+    source_rule_id: str | None = None
+    target_rule_id: str | None = None
 
 
 _RELATION_TEXT = re.compile(
     r"(?:^|_)(?:relation|relationship|dependency|depends|formula|description|rule)"
     r"(?:_|$)|关系|依赖|计算公式|关系说明|引用说明", re.I)
+_RELATION_VALUE = re.compile(r"包含|含有|依赖|取决于|指向|引用|关联|相关于|\b(?:contains|depends on|points to|references|related to)\b", re.I)
 
 
-def _accepted_definition_roots(data, plan, concepts, alignments):
-    accepted_by_record, _ = _type_alignments(plan, concepts, alignments)
+def _structured_document(value):
+    """A document containing codes is not a statement about any chosen pair."""
+    try:
+        return isinstance(json.loads(value), (dict, list))
+    except (TypeError, ValueError):
+        return False
+
+
+def configuration_text_pair_binding(data, candidate, types):
+    """Bind text to this pair, without accepting its predicate or direction.
+
+    Complete sentences may identify both current endpoints by their codes or
+    names. A generic purpose statement can describe the sole schema-declared
+    reference pair. JSON requires its own declared field-path contract; a
+    table-wide document must never be borrowed by arbitrary column pairings.
+    """
+    literal = candidate.get("predicate_literal")
+    if not candidate.get("relation_text_column") or literal is None:
+        return None
+    if not isinstance(literal, str) or not literal.strip() or _structured_document(literal):
+        raise ValueError("configuration_text_is_not_a_statement_for_the_selected_reference_pair")
+
+    def mentioned(anchor):
+        if not isinstance(anchor, str) or len(anchor.strip()) < 2:
+            return False
+        # Do not match Q1 inside Q10. This is only recall; compilation checks
+        # the full positive clause and preserves direction and qualifiers.
+        return re.search(r"(?<![A-Za-z0-9_])" + re.escape(anchor.strip()) +
+                         r"(?![A-Za-z0-9_])", literal, re.I) is not None
+
+    anchors = []
+    for side in ("source", "target"):
+        endpoint = candidate.get(side + "_definition", {})
+        item = types.get(candidate.get(side + "_type_id"))
+        label = item.label if item is not None else None
+        values = [candidate.get(side + "_code"), label, *endpoint.get("lookup_scope", {}).values()]
+        anchors.append({value for value in values if mentioned(value)})
+    if any(left != right for left in anchors[0] for right in anchors[1]):
+        return {"kind": "literal_endpoint_anchors", "column": candidate["relation_text_column"],
+                "source_anchors": sorted(anchors[0]), "target_anchors": sorted(anchors[1])}
+    table = data.tables[candidate["configuration_table"]]
+    declared = {item["column_name"] for item in table["columns"]
+                if re.search(r"引用|对应.*(?:编码|定义|表)|\b(?:references?|foreign key)\b",
+                             str(item.get("column_comment") or ""), re.I)}
+    declared.update(fk.get("column_name") for fk in table.get("foreign_keys", ()))
+    selected = {candidate.get("source_code_column"), candidate.get("target_code_column")}
+    if len(selected) == 2 and declared == selected:
+        return {"kind": "sole_schema_declared_reference_pair", "column": candidate["relation_text_column"],
+                "reference_columns": sorted(selected)}
+    raise ValueError("configuration_text_does_not_identify_the_selected_reference_pair")
+
+
+def verify_configuration_pair(data, plan, candidate, witness):
+    """Recheck cheap pair constraints before semantic judgement or replay."""
+    left = candidate.get("source_definition", {}).get("record_id")
+    right = candidate.get("target_definition", {}).get("record_id")
+    if left and left == right:
+        raise ValueError("configuration_references_resolve_to_the_same_record")
+    column = candidate.get("relation_text_column")
+    if column and witness.get(column) != candidate.get("predicate_literal"):
+        raise ValueError("Configuration relationship text is absent, changed or over budget")
+    return configuration_text_pair_binding(data, candidate, {item.id: item for item in plan.object_types})
+
+
+def _accepted_definition_roots(data, plan, concepts, alignments, memberships=()):
+    accepted_by_record, _ = _type_alignments(plan, concepts, alignments, memberships)
     types = {item.id: item for item in plan.object_types}
     roots = defaultdict(set)
     for record_id, match in accepted_by_record.items():
@@ -61,29 +131,129 @@ def _accepted_definition_roots(data, plan, concepts, alignments):
 
 def _relation_text_candidate(data, table_name, reference_columns):
     table = data.tables[table_name]
+    visible = []
     for column in table["columns"]:
         name = column["column_name"]
-        if name in reference_columns:
-            continue
-        if not _RELATION_TEXT.search(name + " " + str(column.get("column_comment") or "")):
+        # Identifier names often contain "rule"; that does not make their
+        # numeric IDs a relationship statement.
+        if name in reference_columns or name in table.get("pk", []):
             continue
         try:
             _check_column(data, table_name, name)
         except ValueError:
             continue
-        return name
+        visible.append(name)
+    # Opaque names and absent comments do not erase an explicit source
+    # statement. This is bounded recall only: compilation still checks the
+    # entire positive clause, both endpoint names and the exact witness.
+    if visible:
+        select = ", ".join(f"substr(CAST({qi(name)} AS VARCHAR), 1, 1025)" for name in visible)
+        rows = data.db.execute(f"SELECT {select} FROM {qi(table['sql_name'])} ORDER BY __r2_row LIMIT 16").fetchall()
+        scored = []
+        for position, name in enumerate(visible):
+            values = [row[position] for row in rows if isinstance(row[position], str)
+                      and row[position].strip() and len(row[position]) <= 1024]
+            if not values or all(re.fullmatch(r"[\d\s.+-]+", value) or _structured_document(value)
+                                 for value in values):
+                continue
+            column = next(value for value in table["columns"] if value["column_name"] == name)
+            declared = bool(_RELATION_TEXT.search(name + " " + str(column.get("column_comment") or "")))
+            stated = any(_RELATION_VALUE.search(value) for value in values)
+            if declared or stated:
+                scored.append((int(stated), int(declared), -position, name))
+        if scored:
+            return max(scored)[-1]
+    return None
+
+
+def declared_reference_evidence(data, rule, *, definition_tables=None):
+    """Resolve an original FK or explicitly named target column declaration.
+
+    A bridge column may be both PK and FK. This exception proves the reference
+    path only; full-input uniqueness and the business predicate still need
+    their independent checks. Bare target columns require one definition
+    table in the supplied accepted-type scope, never a best name match.
+    """
+    source, target = rule.get("source") or {}, rule.get("target") or {}
+    local = data.tables.get(source.get("table"))
+    remote = data.tables.get(target.get("table"))
+    if local is None or remote is None:
+        return None
+    for fk in local.get("foreign_keys", ()):
+        if (fk.get("column_name") == source.get("field")
+                and fk.get("referenced_schema") == remote.get("schema")
+                and fk.get("referenced_table") == remote.get("table_name")
+                and fk.get("referenced_column") == target.get("field")):
+            return {"kind": "declared_foreign_key", "source_table": source["table"],
+                    "declaration": dict(fk)}
+    column = next((item for item in local["columns"] if item["column_name"] == source.get("field")), {})
+    quote = str(column.get("column_comment") or "")
+    scope = sorted(set(data.tables if definition_tables is None else definition_tables))
+    target_roots = definition_tables if isinstance(definition_tables, dict) else {}
+    for clause in re.split(r"[,;，；。\n]", quote):
+        if re.search(r"不|未|可能|或|\b(?:not|may|or|unless)\b", clause, re.I):
+            continue
+        # Conditional branches are literal discriminator values, not a
+        # guessed interpretation of labels such as "dimension-like".
+        conditional = re.fullmatch(r"\s*([A-Za-z_][\w-]*)\s*(?:引用|references?)\s*([A-Za-z_][\w.]*)\s*", clause, re.I)
+        condition = {}
+        if conditional:
+            branch, token = conditional.groups()
+            fields = [item["column_name"] for item in local["columns"]
+                      if (rule.get("selector") or {}).get(item["column_name"]) == branch
+                      and re.search(r"类型|种类|\b(?:type|kind|discriminator)\b",
+                                    str(item.get("column_comment") or ""), re.I)]
+            if len(fields) != 1:
+                continue
+            condition = {fields[0]: branch}
+        else:
+            match = re.search(r"(?:引用|对应|\breferences?\s+)[^A-Za-z_]*([A-Za-z_][\w.]*)", clause, re.I)
+            if not match:
+                # "quantity code, corresponds to the measure definition"
+                # declares the local code's role. Without a named definition
+                # root below this cannot fall back to same-column matching.
+                token = source.get("field", "")
+            else:
+                token = match.group(1).rstrip(".")
+        declared_roots = {root for root, name in (("Dimension", "维度"), ("Measure", "度量"), ("Metric", "指标"))
+                          if re.search(r"(?:引用|对应|references?).*(?:" + name + "|" + root +
+                                       r").*(?:定义|definition)", clause, re.I)}
+        if not conditional and match is None and (len(declared_roots) != 1 or not
+                re.search(r"编码|\bcode\b", quote, re.I)):
+            continue
+        parts = token.split(".")
+        if len(parts) > 3 or parts[-1] != target.get("field"):
+            continue
+        matches = []
+        for name in scope:
+            table = data.tables.get(name, {})
+            if declared_roots and (len(declared_roots) != 1 or target_roots.get(name) != declared_roots):
+                continue
+            if parts[-1] not in table.get("column_names", []):
+                continue
+            if len(parts) == 3 and name != ".".join(parts[:2]):
+                continue
+            if len(parts) == 2 and table.get("table_name") != parts[0]:
+                continue
+            matches.append(name)
+        if matches != [target.get("table")]:
+            continue
+        return {"kind": "declared_column_reference", "source_table": source["table"],
+                "column": source["field"], "quote": quote, "target_token": token,
+                "target": dict(target), "condition": condition,
+                "definition_table_scope": scope, "declared_target_roots": sorted(declared_roots)}
     return None
 
 
 def infer_configuration_specs(
-    data, plan: BuildPlan, concepts, alignments, checked_rules, *, max_specs=100,
+    data, plan: BuildPlan, concepts, alignments, checked_rules, *, max_specs=100, memberships=(),
 ):
     """Pair two checked config→definition code references, never assert a relation.
 
     Each input rule must have exact raw-code matching over the full snapshot,
     no missing/ambiguous referenced rows, and no selector/scope condition that
     this simple dual-code contract cannot represent. Distinct accepted target
-    business roots block shared-key alignment from becoming a relation lead.
+    business roots without an explicit statement remain alignment-only leads.
     The returned `spec` mappings can feed `discover_configuration_relations`;
     their evidence remains candidate-level until both endpoints and the
     predicate have been judged separately.
@@ -91,7 +261,7 @@ def infer_configuration_specs(
     if type(max_specs) is not int or max_specs < 1:
         raise ValueError("max_specs must be a positive integer")
     plan = BuildPlan.model_validate(plan)
-    target_roots = _accepted_definition_roots(data, plan, concepts, alignments)
+    target_roots = _accepted_definition_roots(data, plan, concepts, alignments, memberships)
     by_table = defaultdict(list)
     skipped = Counter()
     seen = 0
@@ -99,6 +269,10 @@ def infer_configuration_specs(
         seen += 1
         if rule.get("status") != "checked_technical":
             skipped["not_checked_technical"] += 1
+            continue
+        declaration = declared_reference_evidence(data, rule)
+        if rule.get("numeric_overlap_only") and declaration is None:
+            skipped["numeric_overlap_without_reference_semantics"] += 1
             continue
         if (rule.get("transform", {}).get("operator") != "identity"
                 or rule.get("verification", {}).get("scan_scope") != "full_input"):
@@ -111,9 +285,6 @@ def infer_configuration_specs(
                                           ("ambiguous_matches", "missing_in_input", "missing_scope"))):
             skipped["incomplete_or_ambiguous_full_input_check"] += 1
             continue
-        if rule.get("selector") or rule.get("scope_bindings"):
-            skipped["condition_not_supported_by_dual_code_spec"] += 1
-            continue
         source, target = rule.get("source") or {}, rule.get("target") or {}
         source_table, target_table = source.get("table"), target.get("table")
         source_field, target_field = source.get("field"), target.get("field")
@@ -123,11 +294,22 @@ def infer_configuration_specs(
         try:
             _check_column(data, source_table, source_field)
             _check_column(data, target_table, target_field)
+            for field in rule.get("selector") or {}:
+                _check_column(data, source_table, field)
+            for local, remote in (rule.get("scope_bindings") or {}).items():
+                _check_column(data, source_table, local)
+                _check_column(data, target_table, remote)
         except ValueError:
             skipped["invisible_or_unknown_column"] += 1
             continue
-        if classify_row_purpose(data.tables[source_table])["purpose"] != "configuration_data":
-            skipped["source_not_configuration_data"] += 1
+        # Table-name heuristics cannot veto two independently verified code
+        # references. Their purpose is still unjudged until the next stage.
+        if classify_row_purpose(data.tables[source_table])["purpose"] == "business_fact":
+            skipped["business_fact_is_not_configuration_witness"] += 1
+            continue
+        if (rule["source"]["field"] in data.tables[source_table].get("pk", [])
+                and declaration is None):
+            skipped["configuration_identity_is_not_business_reference"] += 1
             continue
         roots = target_roots.get(target_table, set())
         if len(roots) != 1:
@@ -141,22 +323,23 @@ def infer_configuration_specs(
         for (left, left_root), (right, right_root) in combinations(rules, 2):
             total_pairs += 1
             left_source, right_source = left["source"], right["source"]
+            left_selector, right_selector = left.get("selector") or {}, right.get("selector") or {}
+            if any(left_selector[key] != right_selector[key] for key in left_selector.keys() & right_selector.keys()):
+                skipped["incompatible_reference_conditions"] += 1
+                continue
             if left_source["field"] == right_source["field"]:
                 skipped["same_configuration_column"] += 1
                 continue
-            if left_root == right_root:
+            text_column = _relation_text_candidate(
+                data, table_name, {left_source["field"], right_source["field"]})
+            if left_root == right_root and text_column is None:
                 # Two code paths into records of one business root are often
                 # alternate descriptions of the same type, not a predicate.
                 skipped["same_business_root_alignment_lead"] += 1
                 continue
-            if left["target"]["table"] == right["target"]["table"]:
+            if left["target"]["table"] == right["target"]["table"] and text_column is None:
                 skipped["same_definition_table_alignment_lead"] += 1
                 continue
-            if len(output) >= max_specs:
-                skipped["spec_limit"] += 1
-                continue
-            text_column = _relation_text_candidate(
-                data, table_name, {left_source["field"], right_source["field"]})
             spec = ConfigurationRelationSpec(
                 spec_id="config_spec:" + digest([
                     data.snapshot_id, table_name, left["rule_id"], right["rule_id"]])[:24],
@@ -168,6 +351,10 @@ def infer_configuration_specs(
                 target_definition_table=right["target"]["table"],
                 target_definition_code_column=right["target"]["field"],
                 relation_text_column=text_column,
+                selector={**left_selector, **right_selector},
+                source_scope_bindings=left.get("scope_bindings") or {},
+                target_scope_bindings=right.get("scope_bindings") or {},
+                source_rule_id=left["rule_id"], target_rule_id=right["rule_id"],
             )
             output.append({
                 "spec": spec.model_dump(), "status": "candidate_only",
@@ -185,8 +372,20 @@ def infer_configuration_specs(
                 }),
                 "semantic_status": "two_verified_reference_rules_are_not_a_business_predicate",
             })
+    # Spend the bounded spec allowance across tables rather than letting the
+    # lexically first table consume it through many equivalent rule pairings.
+    queues = defaultdict(deque)
+    for item in output:
+        queues[item["spec"]["configuration_table"]].append(item)
+    selected = []
+    while len(selected) < max_specs and any(queues.values()):
+        for key in sorted(queues):
+            if queues[key] and len(selected) < max_specs:
+                selected.append(queues[key].popleft())
+    skipped["spec_limit"] = len(output) - len(selected)
+    output = selected
     return {
-        "method": "pair_full_input_checked_config_references_to_distinct_accepted_definition_roots",
+        "method": "pair_full_input_checked_config_references_with_separate_semantic_adjudication",
         "snapshot_id": data.snapshot_id,
         "spec_candidates": output,
         "coverage": {"rules_inspected": seen, "eligible_rule_groups": len(by_table),
@@ -208,7 +407,7 @@ def _check_column(data, table_name, column_name):
         raise ValueError(f"Sensitive configuration reference column: {table_name}.{column_name}")
 
 
-def _type_alignments(plan, concepts, alignments):
+def _type_alignments(plan, concepts, alignments, memberships=()):
     accepted = {item.id for item in plan.object_types if item.category == "business_type"}
     by_concept = {item["id"]: item for item in concepts}
     by_record = {}
@@ -233,7 +432,24 @@ def _type_alignments(plan, concepts, alignments):
                 "type_id": type_id, "concept_id": concept["id"],
                 "alignment_id": alignment.get("id"),
                 "evidence_ids": alignment.get("evidence_ids", []),
+                "mapping_kind": "exact",
             }
+    for member in memberships:
+        record_id, type_id = member.get("record_id"), member.get("type_id", member.get("object_type_id"))
+        if (not record_id or type_id not in accepted
+                or not (member.get("status") == "definition_template_match"
+                        or (member.get("mapping_kind") == "template_instance"
+                            and member.get("status") == "accepted"))
+                or not member.get("evidence_ids")):
+            continue
+        old = by_record.get(record_id)
+        if old and old["type_id"] != type_id:
+            conflicting.add(record_id)
+        elif old is None:
+            by_record[record_id] = {"type_id": type_id, "concept_id": member.get("concept_id"),
+                "alignment_id": member["id"], "evidence_ids": member.get("evidence_ids", []),
+                "snapshot_id": member.get("snapshot_id"),
+                "mapping_kind": member.get("mapping_kind", "shares_definition_type_template")}
     for record_id in conflicting:
         by_record.pop(record_id, None)
     return by_record, conflicting
@@ -245,6 +461,11 @@ def _grouped_pairs(data, spec, limit):
     if spec.relation_text_column:
         cols.append(spec.relation_text_column)
     names = ["source_code", "target_code", "relation_literal"][:len(cols)]
+    for field in sorted(set(spec.source_scope_bindings) | set(spec.target_scope_bindings)):
+        if field not in cols:
+            cols.append(field)
+            names.append("scope_" + field)
+    condition = " AND ".join(f"{qi(column)} = ?" for column in sorted(spec.selector)) or "TRUE"
     select = ", ".join(f"{qi(column)} AS {qi(alias)}" for column, alias in zip(cols, names))
     group = ", ".join(qi(column) for column in cols)
     order = ", ".join(f"{qi(alias)} NULLS LAST" for alias in names)
@@ -253,6 +474,7 @@ def _grouped_pairs(data, spec, limit):
             SELECT {select}, count(*) AS configuration_rows,
                    min(__r2_row) AS witness_row_number
             FROM {qi(table['sql_name'])}
+            WHERE {condition}
             GROUP BY {group}
         )
         SELECT grouped.*, count(*) OVER () AS all_distinct_code_pairs,
@@ -261,7 +483,7 @@ def _grouped_pairs(data, spec, limit):
         ORDER BY configuration_rows DESC, {order}
         LIMIT ?
     """
-    cursor = data.db.execute(query, [limit])
+    cursor = data.db.execute(query, [spec.selector[key] for key in sorted(spec.selector)] + [limit])
     fields = [item[0] for item in cursor.description]
     return [dict(zip(fields, row)) for row in cursor.fetchall()]
 
@@ -296,13 +518,13 @@ def _record_evidence(data, spec, witness, columns):
 
 
 def discover_configuration_relations(
-    data, plan: BuildPlan, concepts, alignments, specs, *, max_pairs_per_spec=1000,
+    data, plan: BuildPlan, concepts, alignments, specs, *, max_pairs_per_spec=1000, memberships=(),
 ):
     """Return bounded, evidence-backed relation *candidates* from explicit codes.
 
     The SQL scans every configuration row and groups only observed code tuples.
     Each definition code must match exactly one row in the full imported table,
-    and that row must have an accepted exact type alignment.  Missing, multiple,
+    and that row must have an accepted type alignment or definition membership. Missing, multiple,
     or unaligned endpoints remain unresolved.  Even two verified endpoints do
     not authorize a business predicate without a separate semantic decision.
     """
@@ -312,17 +534,19 @@ def discover_configuration_relations(
     parsed = [ConfigurationRelationSpec.model_validate(item) for item in specs]
     if len({item.spec_id for item in parsed}) != len(parsed):
         raise ValueError("Duplicate configuration relation spec ID")
-    align_by_record, conflicting_alignments = _type_alignments(plan, concepts, alignments)
+    align_by_record, conflicting_alignments = _type_alignments(plan, concepts, alignments, memberships)
     candidates, reports = [], []
     lookup_cache = {}
 
-    def endpoint(table_name, code_column, code):
+    def endpoint(table_name, code_column, code, scope):
         if code is None or str(code).strip() == "":
             return {"status": "blank_code"}
-        cache_key = (table_name, code_column, code)
+        if any(value in (None, "") for value in scope.values()):
+            return {"status": "missing_scope"}
+        cache_key = (table_name, code_column, code, tuple(sorted(scope.items())))
         if cache_key in lookup_cache:
             return lookup_cache[cache_key]
-        matches = data.lookup(table_name, ((code_column, code),))
+        matches = data.lookup(table_name, ((code_column, code), *sorted(scope.items())))
         if not matches:
             result = {"status": "missing_definition"}
         elif len(matches) > 1:
@@ -348,6 +572,13 @@ def discover_configuration_relations(
             _check_column(data, table, column)
         if spec.relation_text_column:
             _check_column(data, spec.configuration_table, spec.relation_text_column)
+        for field in spec.selector:
+            _check_column(data, spec.configuration_table, field)
+        for bindings, target in ((spec.source_scope_bindings, spec.source_definition_table),
+                                 (spec.target_scope_bindings, spec.target_definition_table)):
+            for local, remote in bindings.items():
+                _check_column(data, spec.configuration_table, local)
+                _check_column(data, target, remote)
         if spec.source_code_column == spec.target_code_column:
             raise ValueError("Configuration source and target code columns must differ")
         rows = _grouped_pairs(data, spec, max_pairs_per_spec)
@@ -357,20 +588,22 @@ def discover_configuration_relations(
         for item in rows:
             witness = _witness(data, spec, item["witness_row_number"])
             columns = [spec.source_code_column, spec.target_code_column]
+            columns.extend(set(spec.selector) | set(spec.source_scope_bindings) | set(spec.target_scope_bindings))
             if spec.relation_text_column:
                 columns.append(spec.relation_text_column)
             config_record_id, config_evidence = _record_evidence(data, spec, witness, columns)
+            source_scope = {remote: witness[local] for local, remote in spec.source_scope_bindings.items()}
+            target_scope = {remote: witness[local] for local, remote in spec.target_scope_bindings.items()}
             source = endpoint(spec.source_definition_table, spec.source_definition_code_column,
-                              item["source_code"])
+                              item["source_code"], source_scope)
             target = endpoint(spec.target_definition_table, spec.target_definition_code_column,
-                              item["target_code"])
+                              item["target_code"], target_scope)
             verified = source["status"] == target["status"] == "accepted_type"
             status = "endpoint_verified_candidate" if verified else "unresolved"
-            statuses[status] += 1
             candidate = {
                 "id": "configuration_relation_candidate:" + digest([
                     data.snapshot_id, spec.spec_id, item["source_code"], item["target_code"],
-                    item.get("relation_literal")])[:24],
+                    item.get("relation_literal"), source_scope, target_scope, spec.selector])[:24],
                 "spec_id": spec.spec_id, "status": status,
                 "snapshot_id": data.snapshot_id,
                 "predicate_status": "unjudged", "direction_status": "unjudged",
@@ -379,14 +612,20 @@ def discover_configuration_relations(
                 "source_code_column": spec.source_code_column,
                 "target_code_column": spec.target_code_column,
                 "relation_text_column": spec.relation_text_column,
+                "selector": spec.selector,
+                "source_scope_bindings": spec.source_scope_bindings,
+                "target_scope_bindings": spec.target_scope_bindings,
+                "source_rule_id": spec.source_rule_id, "target_rule_id": spec.target_rule_id,
                 "configuration_record_id": config_record_id,
                 "configuration_witness_row_number": item["witness_row_number"],
                 "configuration_rows_with_same_code_pair": item["configuration_rows"],
                 "source_code": item["source_code"], "target_code": item["target_code"],
                 "source_definition": {"table": spec.source_definition_table,
-                                      "code_column": spec.source_definition_code_column, **source},
+                                      "code_column": spec.source_definition_code_column,
+                                      "lookup_scope": source_scope, **source},
                 "target_definition": {"table": spec.target_definition_table,
-                                      "code_column": spec.target_definition_code_column, **target},
+                                      "code_column": spec.target_definition_code_column,
+                                      "lookup_scope": target_scope, **target},
                 "source_type_id": source.get("type_id") if verified else None,
                 "target_type_id": target.get("type_id") if verified else None,
                 "evidence_ids": sorted(set(config_evidence + source.get("evidence_ids", [])
@@ -394,6 +633,12 @@ def discover_configuration_relations(
                 "evidence_scope": "one_configuration_witness_with_full_snapshot_unique_code_lookup",
                 "semantic_status": "code_references_do_not_prove_relation_meaning",
             }
+            if verified:
+                try:
+                    candidate["text_pair_binding"] = verify_configuration_pair(data, plan, candidate, witness)
+                except ValueError as exc:
+                    candidate.update(status="unresolved", reason=str(exc))
+            statuses[candidate["status"]] += 1
             candidates.append(candidate)
         reports.append({"spec_id": spec.spec_id, "configuration_table": spec.configuration_table,
                         "scan_scope": "full_input", "input_rows": total_rows,

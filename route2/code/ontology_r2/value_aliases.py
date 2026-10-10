@@ -46,7 +46,7 @@ def _fields(data, fields, limit):
                                            for name in info["column_names"]]
         roles = classify_columns({**info, "columns": declared})
         all_fields.update((table, item["column"]) for item in roles
-                          if item["role"] != "sensitive")
+                          if item["role"] not in {"sensitive", "empty", "audit_time", "audit_metadata"})
     if fields is not None:
         requested = list(dict.fromkeys(tuple(field) for field in fields))
         if any(field not in all_fields for field in requested):
@@ -140,7 +140,13 @@ def propose_value_alias_candidates(
     forms_by_field = defaultdict(list)
     for field in selected:
         for raw, observation in samples[field].items():
-            for form in _forms(raw, bool(_ALIAS_NAME.search(field[1]))):
+            inferred_alias = any(item.get("column") == field[1] and item.get("role") == "alias"
+                                 and item.get("status") == "source_verified_role_candidate"
+                                 for item in data.tables[field[0]].get("inferred_semantic_roles", []))
+            # Delimited values are recall leads even with opaque names. The
+            # resulting transform must pass a full-input collision check.
+            for form in _forms(raw, bool(_ALIAS_NAME.search(field[1])) or inferred_alias
+                                    or bool(_ALIAS_SPLIT.search(raw))):
                 item = {**observation, **form}
                 inverted[form["canonical"]][field].append(item)
                 forms_by_field[field].append(item)
@@ -148,7 +154,8 @@ def propose_value_alias_candidates(
     pairs = defaultdict(lambda: {"keys": set(), "left_values": set(),
                                  "right_values": set(), "examples": [],
                                  "collision_keys": set(), "repeated_record_keys": set(),
-                                 "rules": set(), "comparison_modes": set()})
+                                 "rules": set(), "comparison_modes": set(),
+                                 "left_rules": set(), "right_rules": set()})
     skipped_common_keys = 0
     queued_pair_key_events = 0
     for key, holders in sorted(inverted.items()):
@@ -168,6 +175,8 @@ def propose_value_alias_candidates(
             bucket["left_values"].update(item["raw_value"] for item in left_items)
             bucket["right_values"].update(item["raw_value"] for item in right_items)
             bucket["rules"].update(item["rule"] for item in left_items + right_items)
+            bucket["left_rules"].update(item["rule"] for item in left_items)
+            bucket["right_rules"].update(item["rule"] for item in right_items)
             raw_equal = bool({item["raw_value"] for item in left_items} & {
                 item["raw_value"] for item in right_items})
             alias_equal = any(item["rule"].startswith("alias_list_item")
@@ -224,6 +233,8 @@ def propose_value_alias_candidates(
             "orientation": "undetermined",
             "retrieval_channels": sorted(bucket["rules"]),
             "comparison_modes": sorted(bucket["comparison_modes"]),
+            "source_transform_rules": sorted(bucket["left_rules"]),
+            "target_transform_rules": sorted(bucket["right_rules"]),
             "checks": {
                 "shared_normalized_keys_in_sample": len(bucket["keys"]),
                 "source_distinct_raw_values_sampled": left_count,

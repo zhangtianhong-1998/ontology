@@ -65,7 +65,7 @@ def make_fixture(root):
         "measure_id": "记录编号", "measure_code": "度量编码", "measure_name": "度量名称",
         "definition": "度量业务定义", "unit": "金额单位",
     }, [{"measure_id": "v1", "measure_code": "REVENUE", "measure_name": "收入",
-         "definition": "收入是未限定经营对象的可复用金额口径，可按需要汇总", "unit": "元"}])
+         "definition": "收入是不绑定具体经营对象的可复用金额口径，可按需要汇总", "unit": "元"}])
     _table(root, "fruit_dim_definition", "水果经营地区维度定义", {
         "dim_id": "记录编号", "dim_code": "维度编码", "dim_name": "维度名称",
         "definition": "维度业务定义",

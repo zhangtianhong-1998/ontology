@@ -1,0 +1,86 @@
+schema: fruit_market
+table_name: fruit_api_tag
+table_comment: API、卡片和宽表的业务标签
+relkind: r
+estimated_rows: 95813
+total_size: null
+data_size: null
+columns:
+- column_name: fruit_tag_id
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: true
+  default_value: null
+  column_comment: fruit tag id，合成业务字段
+- column_name: business_id
+  ordinal_position: 2
+  data_type: bigint
+  is_not_null: false
+  default_value: null
+  column_comment: 业务对象编号，需结合 business_type 解析目标表
+- column_name: business_type
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 业务对象类型：API、CARD 或 TABLE
+- column_name: tag_name
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: tag name，合成业务字段
+- column_name: tag_category
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: tag category，合成业务字段
+- column_name: tag_frequency
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: tag frequency，合成业务字段
+- column_name: domain_code
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: domain code，合成业务字段
+- column_name: tag_description
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: tag description，合成业务字段
+- column_name: delete_flag
+  ordinal_position: 9
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 10
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 11
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 12
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 13
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性

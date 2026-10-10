@@ -87,7 +87,7 @@ def test_control_name_conflicting_with_fact_shape_remains_unresolved():
     purpose = classify_row_purpose(table)
     assert purpose["purpose"] == "unresolved"
     assert purpose["reason"] == "control_table_name_and_business_fact_evidence_coexist"
-    assert purpose["classification_granularity"] == "table_level_heuristic"
+    assert purpose["classification_granularity"] == "table_level_candidate_from_column_evidence"
 
 
 def test_time_words_in_numeric_value_comment_do_not_turn_value_into_coordinate():
@@ -106,3 +106,30 @@ def test_time_words_in_numeric_value_comment_do_not_turn_value_into_coordinate()
     assert purpose["purpose"] == "business_fact"
     assert purpose["evidence_columns"]["business_time"] == ["period"]
     assert purpose["evidence_columns"]["numeric_business_value"] == ["sales_amount"]
+
+
+def test_plain_names_without_comments_recognize_fact_shape_without_business_identity(tmp_path):
+    from ontology_r2.fact_observations import build_fact_observation_candidates
+
+    root = tmp_path / "input"
+    _table(root, "observations", {"id": "", "region": "", "period": "", "value": ""}, [
+        {"id": "1", "region": "EAST", "period": "2025Q1", "value": "100"},
+        {"id": "2", "region": "SOUTH", "period": "2025Q2", "value": "120"},
+    ])
+    work = tmp_path / "work"
+    work.mkdir()
+    data = Dataset(root, work)
+    try:
+        purpose = classify_row_purpose(data.tables["fruit.observations"])
+        assert purpose["purpose"] == "business_fact"
+        assert purpose["evidence_columns"]["business_time"] == ["period"]
+        assert purpose["evidence_columns"]["dimension_coordinate"] == ["region"]
+        assert purpose["evidence_columns"]["numeric_business_value"] == ["value"]
+        assert purpose["authority"] == "candidate_not_business_fact_proof"
+        observations = build_fact_observation_candidates(data)
+        candidates = observations["tables"][0]["candidates"]
+        assert len(candidates) == 2
+        assert all(item["business_type_binding"] == "unresolved"
+                   for item in candidates)
+    finally:
+        data.close()

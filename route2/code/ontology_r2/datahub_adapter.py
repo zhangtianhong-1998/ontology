@@ -29,6 +29,12 @@ def dataset_urn(qualified_name, platform="postgres", environment="PROD"):
     return f"urn:li:dataset:(urn:li:dataPlatform:{platform},{qualified_name},{environment})"
 
 
+def schema_field_urn(qualified_name, field_path, platform="postgres", environment="PROD"):
+    """Stable DataHub schema-field identity; does not require a running server."""
+    field_path = _urn_part(field_path, "field path")
+    return f"urn:li:schemaField:({dataset_urn(qualified_name, platform, environment)},{field_path})"
+
+
 def _nullable(value):
     if isinstance(value, bool):
         return not value
@@ -45,6 +51,9 @@ def _nullable(value):
 
 def _datahub_type(native_type):
     name = native_type.lower().strip()
+    # Arrays must be recognized before their scalar element type.
+    if name.endswith("[]") or name.startswith("array"):
+        return "ArrayType"
     if re.match(r"^(bool|boolean)\b", name):
         return "BooleanType"
     if re.match(r"^(smallint|integer|int|bigint|numeric|decimal|real|float|double|money|serial|bigserial)\b", name):
@@ -55,8 +64,6 @@ def _datahub_type(native_type):
         return "TimeType"
     if re.match(r"^(bytea|blob|binary|varbinary)\b", name):
         return "BytesType"
-    if name.endswith("[]") or name.startswith("array"):
-        return "ArrayType"
     # DataHub requires a generic type. Keep the source's full type verbatim in
     # nativeDataType so this fallback cannot erase its original meaning.
     return "StringType"

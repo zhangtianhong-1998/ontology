@@ -207,19 +207,29 @@ def test_infer_spec_from_two_checked_rules_and_keep_direction_unjudged(tmp_path)
                         if x["status"] == "endpoint_verified_candidate")
         assert verified["direction_status"] == verified["predicate_status"] == "unjudged"
 
-        # Two rules to the same accepted root are alignment leads, even if
-        # their raw-key checks happen to pass.
+        # Same-root references can be relationship candidates when a source
+        # statement exists; this does not repair an invalid endpoint lookup.
         same_root = [rules[0], _rule(
             "c-metric-alias", spec, "measure_ref", spec["source_definition_table"],
             "metric_code")]
         blocked = infer_configuration_specs(data, plan, concepts, alignments, same_root)
-        assert blocked["spec_candidates"] == []
-        assert blocked["coverage"]["skipped_reasons"]["same_business_root_alignment_lead"] == 1
+        assert len(blocked["spec_candidates"]) == 1
+        unresolved = discover_configuration_relations(data, plan, concepts, alignments,
+            [blocked["spec_candidates"][0]["spec"]])
+        assert unresolved["coverage"]["endpoint_verified_candidates"] == 0
 
         conditioned = [{**rules[0], "selector": {"business_type": "API"}}, rules[1]]
         rejected = infer_configuration_specs(data, plan, concepts, alignments, conditioned)
         assert rejected["spec_candidates"] == []
         assert rejected["coverage"]["skipped_reasons"][
-            "condition_not_supported_by_dual_code_spec"] == 1
+            "invisible_or_unknown_column"] == 1
+
+        conditioned = [{**rules[0], "selector": {"metric_ref": "I1"}}, rules[1]]
+        supported = infer_configuration_specs(data, plan, concepts, alignments, conditioned)
+        assert supported["spec_candidates"][0]["spec"]["selector"] == {"metric_ref": "I1"}
+        scoped = discover_configuration_relations(
+            data, plan, concepts, alignments, [supported["spec_candidates"][0]["spec"]])
+        assert all(item["source_code"] == "I1" for item in scoped["candidates"])
+        assert scoped["coverage"]["specs"][0]["input_rows"] == 4
     finally:
         data.close()

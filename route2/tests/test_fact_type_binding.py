@@ -2,9 +2,11 @@ import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
 
+import pytest
+
 from ontology_r2.fact_observations import build_fact_observation_candidates
 from ontology_r2.fact_type_binding import (
-    _source_definition_evidence, bind_fact_observations,
+    _source_definition_evidence, _unit_from_comment, bind_fact_observations,
 )
 from ontology_r2.models import BuildPlan, DerivedType, SourceProperty
 from ontology_r2.pipeline import (add_fact_value_attributes, check_output,
@@ -116,6 +118,37 @@ def _bind(data, core, llm, **options):
     return asyncio.run(bind_fact_observations(data, observed, core, llm, **options))
 
 
+@pytest.mark.parametrize("annotation", ["单位元", "单位：元", "单位为元", "单位是元", "（元）"])
+def test_literal_unit_annotations_bind_existing_metric(tmp_path, annotation):
+    data, core = _fixture(tmp_path, comment="经营利润金额，" + annotation)
+    try:
+        result = _bind(data, core, _LLM())
+        assert result["coverage"]["accepted_fields"] == 1
+        assert result["coverage"]["instances_created"] == 2
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize("comment", [
+    "单位成本", "单位价格", "计量单位名称", "组织单位", "单位不明", "收入金额", "单位元增长率",
+    "单位：未知", "单位为None", "单位是待定",
+])
+def test_non_unit_words_and_placeholders_do_not_declare_units(comment):
+    assert _unit_from_comment(comment) == set()
+
+
+def test_conflicting_literal_units_are_not_collapsed_or_converted(tmp_path):
+    assert _unit_from_comment("单位元，单位万元") == {"元", "万元"}
+    assert _unit_from_comment("均价，单位元/吨") == {"元/吨"}
+    data, core = _fixture(tmp_path, comment="经营利润金额，单位元，单位万元")
+    try:
+        result = _bind(data, core, _LLM())
+        assert result["instances"] == []
+        assert result["coverage"]["skipped_reasons"]["unit_missing_or_conflicting"] == 2
+    finally:
+        data.close()
+
+
 def test_one_field_call_instantiates_only_exact_observed_tuples_with_full_source_rows(tmp_path):
     data, core = _fixture(tmp_path)
     try:
@@ -145,16 +178,16 @@ def test_one_field_call_instantiates_only_exact_observed_tuples_with_full_source
         data.close()
 
 
-def test_aggregation_operator_is_not_a_business_fact_value_type(tmp_path):
+def test_measure_binding_does_not_execute_its_aggregation_metadata(tmp_path):
     data, core = _fixture(tmp_path)
     try:
         core.object_types[0].parent = "Measure"
         core.object_types[0].aggregation_operator = "sum"
         llm = _LLM()
         result = _bind(data, core, llm)
-        assert result["instances"] == []
-        assert result["coverage"]["accepted_fields"] == 0
-        assert llm.calls == []
+        assert result["coverage"]["accepted_fields"] == 1
+        assert {item["observed_value"] for item in result["instances"]} == {"100", "120"}
+        assert len(llm.calls) == 1
     finally:
         data.close()
 
@@ -217,6 +250,31 @@ def test_same_name_types_require_complete_verified_equivalence_for_fact_binding(
         assert all(item["type"] == canonical for item in with_assertion["instances"])
         assert all(item["binding_decision"]["equivalence_assertion_ids"]
                    == ["type_equivalence:fixture"] for item in with_assertion["instances"])
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize("target_parameters,assertion_parameters", [
+    ({"period_scope": "公历月"}, {"period_scope": "公历年"}),
+    ({}, {"period_scope": "公历年"}),
+    ({"period_scope": "公历年"}, None),
+])
+def test_equivalence_replay_cannot_hide_definition_parameter_conflicts(
+        tmp_path, target_parameters, assertion_parameters):
+    data, core = _fixture(tmp_path, duplicate_type=True)
+    try:
+        core.object_types[0].definition_parameters = {"period_scope": "公历年"}
+        core.object_types[1].definition_parameters = target_parameters
+        canonical = core.object_types[0].id
+        assertion = {"id": "type_equivalence:stale", "source_type_id": canonical,
+                     "target_type_id": core.object_types[1].id, "canonical_type_id": canonical}
+        if assertion_parameters is not None:
+            assertion["definition_parameters"] = assertion_parameters
+        result = _bind(data, core, _LLM(),
+                       canonical_type_map={item.id: canonical for item in core.object_types},
+                       equivalence_assertions=[assertion])
+        assert result["instances"] == []
+        assert result["coverage"]["skipped_reasons"]["multiple_compatible_types_share_label"] == 2
     finally:
         data.close()
 
@@ -307,6 +365,37 @@ def test_absent_full_source_definition_and_scope_mismatch_are_not_silently_bound
         assert result["coverage"]["instances_created"] == 1
         assert result["coverage"]["skipped_reasons"][
             "applicability_scope_unverified_or_conflicting"] == 1
+    finally:
+        data.close()
+
+
+def test_internal_scope_key_requires_an_explicit_observed_coordinate_binding(tmp_path):
+    data, core = _fixture(tmp_path, comment="EAST 经营利润金额（元）")
+    try:
+        core.object_types[0].applicability_scope = {"region": "EAST"}
+        unbound = _bind(data, core, _LLM())
+        assert unbound["instances"] == []
+        assert unbound["coverage"]["skipped_reasons"]["applicability_scope_unverified_or_conflicting"] == 2
+
+        class ExplicitScope(_LLM):
+            async def ask(self, task, payload, schema):
+                result = await super().ask(task, payload, schema)
+                result.scope_bindings = {"region": "region_code"}
+                return result
+
+        bound = _bind(data, core, ExplicitScope())
+        assert len(bound["instances"]) == 1
+        assert bound["instances"][0]["binding_decision"]["bound_scope_values"] == {"region": "EAST"}
+
+        class UnknownScope(ExplicitScope):
+            async def ask(self, task, payload, schema):
+                result = await super().ask(task, payload, schema)
+                result.scope_bindings = {"region": "missing_column"}
+                return result
+
+        invalid = _bind(data, core, UnknownScope())
+        assert invalid["instances"] == []
+        assert invalid["coverage"]["skipped_reasons"]["scope_binding_not_a_unique_coordinate_column"] == 2
     finally:
         data.close()
 

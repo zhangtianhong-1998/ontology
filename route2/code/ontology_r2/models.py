@@ -1,7 +1,12 @@
 """Small, strict contracts shared by model calls and deterministic execution."""
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def json_null_placeholder(value):
+    """Normalize only the JSON null literal misencoded as a tool string."""
+    return None if isinstance(value, str) and value.strip() == "null" else value
 
 
 class Strict(BaseModel):
@@ -9,7 +14,8 @@ class Strict(BaseModel):
 
 
 class SourceProperty(Strict):
-    role: Literal["name", "alias", "description", "formula", "unit", "scope"]
+    role: Literal["name", "alias", "description", "formula", "unit", "scope",
+                  "metadata", "provenance", "identity", "structured_reference", "classification"]
     source_table: str
     source_column: str
     evidence_ids: list[str] = Field(default_factory=list)
@@ -56,6 +62,13 @@ class DerivedType(Strict):
     # Optional schema details keep older YAML plans valid. For object types,
     # applicability_scope describes the definition, not observation coordinates.
     applicability_scope: dict[str, str] = Field(default_factory=dict)
+    # Definition-level calculation settings/grain, never observed coordinates.
+    # These participate in exact type identity even when no row filter applies.
+    definition_parameters: dict[str, str] = Field(default_factory=dict)
+    # Namespace/tenant/version of a definition, not a row ID or observation.
+    identity_qualifiers: dict[str, str] = Field(default_factory=dict)
+    # Source-declared category attributes; retained in class identity, not row filters.
+    classification_attributes: dict[str, str] = Field(default_factory=dict)
     unit: str | None = None
     # Optional calculation attribute of a reusable Measure quantity. SUM/AVG
     # alone are operations, never Measure ontology types.
@@ -65,18 +78,31 @@ class DerivedType(Strict):
     # These describe fields on exact definition records. They are not a claim
     # that every business observation has the same populated property.
     source_properties: list[SourceProperty] = Field(default_factory=list)
-    derivation_kind: Literal["exact_definition", "shared_supertype"] | None = None
+    derivation_kind: Literal["exact_definition", "shared_supertype", "template_projection"] | None = None
     induced_from_type_ids: list[str] = Field(default_factory=list)
     # Only object-relation types may narrow their endpoint types.
     domain: list[str] = Field(default_factory=list)
     range: list[str] = Field(default_factory=list)
     endpoint_basis: Literal["record_alignment", "table_binding", "mixed",
-                            "configuration_reference"] | None = None
+                            "configuration_reference", "calculation_binding",
+                            "semantic_binding", "semantic_reference"] | None = None
+    predicate_name: str | None = None
+    semantic_parameters: dict[str, str] = Field(default_factory=dict)
     evidence_scope: Literal["source_schema", "definition_record",
                             "multiple_definition_records",
                             "sample_semantic_with_full_technical_check",
                             "one_positive_pair_with_exact_type_alignments",
-                            "one_configuration_witness_with_exact_type_alignments"] | None = None
+                            "one_positive_pair_with_type_bindings",
+                            "one_configuration_witness_with_exact_type_alignments",
+                            "one_configuration_witness_with_type_bindings",
+                            "complete_calculation_definition",
+                            "checked_structured_binding", "projected_definition_template",
+                            "verified_lexical_member_path"] | None = None
+
+    @field_validator("unit", "aggregation_operator", "predicate_name", mode="before")
+    @classmethod
+    def parse_nullable_tool_fields(cls, value):
+        return json_null_placeholder(value)
 
 
 class TablePlan(Strict):
@@ -101,6 +127,7 @@ class RelationPlan(Strict):
     source_column: str
     source_path: list[str] = Field(default_factory=list)
     target_column: str
+    transform: dict[str, str] = Field(default_factory=lambda: {"operator": "identity"})
     scope_bindings: dict[str, str] = Field(default_factory=dict)
     selector: Condition | None = None
     predicate: str = "points_to"

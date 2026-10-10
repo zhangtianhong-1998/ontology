@@ -1,0 +1,174 @@
+"""Bounded later rounds for identified gaps, preserving the first-pass result."""
+from __future__ import annotations
+
+from .group_incremental import construct_from_bundles
+from .storage import digest
+
+
+def repair_settings(options, total_calls):
+    options = options or {}
+    if not isinstance(options, dict):
+        raise ValueError('targeted_repair must be a mapping')
+    defaults = {'enabled': False, 'max_rounds': 2, 'max_tasks_per_round': 24,
+                'max_examples_per_task': 3, 'max_calls_per_round': min(100, total_calls),
+                'reserve_calls_for_followup': 0}
+    if set(options) - set(defaults):
+        raise ValueError('Unknown targeted_repair settings')
+    result = {**defaults, **options}
+    if type(result['enabled']) is not bool:
+        raise ValueError('targeted_repair.enabled must be boolean')
+    bounds = {'max_rounds': (1, 5), 'max_tasks_per_round': (1, 1000),
+              'max_examples_per_task': (1, 10), 'max_calls_per_round': (0, total_calls),
+              'reserve_calls_for_followup': (0, total_calls)}
+    for key, (lo, hi) in bounds.items():
+        if type(result[key]) is not int or not lo <= result[key] <= hi:
+            raise ValueError(f'targeted_repair.{key} must be an integer in {lo}..{hi}')
+    return result
+
+
+def _semantic_digest(result):
+    return digest({key: result.get(key, []) for key in
+                   ('template_projections', 'concepts', 'concept_relations')})
+
+
+def repair_evidence_fingerprint(bundle):
+    """A new round/error message alone is not new evidence for a paid retry."""
+    task = bundle.get('template_repair_task') or {}
+    return digest({'kind': bundle.get('task_kind'),
+                   'unstructured_task_id': bundle.get('bundle_id') if not bundle.get('records') else None,
+                   'records': bundle.get('records'), 'rule': bundle.get('rule'),
+                   'sources': task.get('source_bundle_ids', bundle.get('source_bundle_ids', [])),
+                   'scope': task.get('scope'),
+                   'templates': task.get('known_template_matches'),
+                   'endpoints': task.get('component_type_candidates')})
+
+
+async def run_targeted_repair(data, profile, bundles, result, llm, options, *,
+                              bundle_options=None, progress=None, on_checkpoint=None, index=None):
+    """Reuse the accepted core; only actual failed/partial patterns reach a model."""
+    from .template_reuse import build_targeted_repair_tasks
+
+    settings = repair_settings(options, llm.config.get('max_calls', 100))
+    report = {'rounds': [], 'tasks': [], 'observed_value_tasks': [], 'coverage': {'status': 'disabled',
+              'rounds_executed': 0, 'model_calls': 0, 'partial': False}}
+    if not settings['enabled'] or settings['max_rounds'] == 1:
+        return result, report
+    start_calls = llm.calls
+    bundle_options = bundle_options or {}
+    first_coverage = dict(result.get('coverage', {}))
+    first_skipped = result.get('bundles_skipped', 0)
+    stop_reason = 'round_limit'
+    attempted_fingerprints = set(result.get('repair_attempt_fingerprints', []))
+    blocked_fingerprints = set(result.get('repair_input_blocked_fingerprints', []))
+    def input_fingerprint(bundle):
+        return digest([repair_evidence_fingerprint(bundle), llm.config.get('max_input_bytes', 100000)])
+    pending = {'repair_tasks_not_attempted': 0, 'groups_not_selected': 0,
+               'observed_value_tasks_not_selected': 0}
+    for number in range(2, settings['max_rounds'] + 1):
+        tasks = build_targeted_repair_tasks(
+            data, bundles, result, max_tasks=max(len(bundles), settings['max_tasks_per_round']),
+            max_examples=settings['max_examples_per_task'], round_number=number,
+            max_bundle_bytes=bundle_options.get('max_bundle_bytes', 24000))
+        if index is not None:
+            from .template_reuse import augment_template_repair_witnesses
+            augmented = augment_template_repair_witnesses(
+                data, index, tasks['bundles'], max_witnesses=2,
+                max_bundle_bytes=bundle_options.get('max_bundle_bytes', 24000))
+            tasks['bundles'] = augmented['bundles']
+            tasks['coverage']['additional_witnesses'] = augmented['coverage']
+        proposed_count = len(tasks['bundles'])
+        tasks['bundles'] = [bundle for bundle in tasks['bundles']
+                           if repair_evidence_fingerprint(bundle) not in attempted_fingerprints]
+        deferred = proposed_count - len(tasks['bundles'])
+        blocked_count = sum(input_fingerprint(bundle) in blocked_fingerprints for bundle in tasks['bundles'])
+        tasks['bundles'] = [bundle for bundle in tasks['bundles']
+                           if input_fingerprint(bundle) not in blocked_fingerprints]
+        extra = max(0, len(tasks['bundles']) - settings['max_tasks_per_round'])
+        tasks['bundles'] = tasks['bundles'][:settings['max_tasks_per_round']]
+        tasks['coverage']['groups_not_selected'] = tasks['coverage'].get('groups_not_selected', 0) + extra
+        tasks['coverage']['unchanged_tasks_deferred'] = deferred
+        tasks['coverage']['input_blocked_tasks_deferred'] = blocked_count
+        # Discovery is refreshed after every changed round. Count its current
+        # omissions, rather than retaining gaps a later round already repaired.
+        pending = {'repair_tasks_not_attempted': 0,
+                   'groups_not_selected': tasks['coverage'].get('groups_not_selected', 0),
+                   'observed_value_tasks_not_selected': tasks['coverage'].get(
+                       'observed_value_tasks_not_selected', 0),
+                   'unchanged_tasks_deferred': deferred,
+                   'input_blocked_tasks_deferred': blocked_count}
+        report['tasks'].extend(tasks['tasks'])
+        observed = {item['id']: item for item in report['observed_value_tasks']}
+        observed.update({item['id']: item for item in tasks.get('observed_value_tasks', [])})
+        report['observed_value_tasks'] = list(observed.values())
+        if index is not None and report['observed_value_tasks']:
+            from .template_reuse import lookup_observed_value_sources
+            lookup = lookup_observed_value_sources(data, index, report['observed_value_tasks'])
+            report['observed_value_tasks'] = lookup['tasks']
+            report['observed_value_lookup'] = lookup['coverage']
+        row = {'round': number, 'discovery': tasks['coverage'], 'calls_before': llm.calls}
+        if not tasks['bundles']:
+            stop_reason = ('input_budget_blocked' if blocked_count else
+                           'awaiting_new_evidence' if deferred else 'no_targeted_tasks')
+            break
+        total = llm.config.get('max_calls', 100)
+        ceiling = min(total - settings['reserve_calls_for_followup'],
+                      llm.calls + settings['max_calls_per_round'])
+        if llm.calls >= ceiling:
+            pending['repair_tasks_not_attempted'] = len(tasks['bundles'])
+            report['rounds'].append({**row, **pending, 'status': 'budget_exhausted', 'model_calls': 0})
+            stop_reason = 'budget_exhausted'
+            break
+        before = _semantic_digest(result)
+        with llm.reserve_calls(total - ceiling, stage=f'targeted_repair_round_{number}'):
+            result = await construct_from_bundles(
+                data, profile, result['plan'], tasks['bundles'], llm, prior_result=result,
+                max_bundles=len(tasks['bundles']), review=bundle_options.get('review', True),
+                max_repairs_per_bundle=bundle_options.get('max_repairs_per_bundle', 0),
+                enable_template_projection=True, concept_batch_size=1, relation_batch_size=1,
+                progress=progress, on_checkpoint=on_checkpoint)
+        attempted_ids = {step['bundle_id'] for step in result.get('steps', [])
+                         if step.get('status') not in ('input_over_budget', 'budget_exhausted')}
+        attempted_fingerprints.update(repair_evidence_fingerprint(bundle)
+                                      for bundle in tasks['bundles']
+                                      if bundle.get('bundle_id') in attempted_ids)
+        result['repair_attempt_fingerprints'] = sorted(attempted_fingerprints)
+        blocked_ids = {step['bundle_id'] for step in result.get('steps', [])
+                       if step.get('status') == 'input_over_budget'}
+        blocked_fingerprints.update(input_fingerprint(bundle) for bundle in tasks['bundles']
+                                    if bundle.get('bundle_id') in blocked_ids)
+        result['repair_input_blocked_fingerprints'] = sorted(blocked_fingerprints)
+        pending['repair_tasks_not_attempted'] = result.get('coverage', {}).get(
+            'repair_tasks_not_attempted', 0)
+        row.update(**pending,
+                   status='partial' if result.get('partial') or any(pending.values()) else 'complete',
+                   model_calls=llm.calls - row['calls_before'], coverage=result.get('coverage', {}))
+        current_ids = {item['bundle_id'] for item in tasks['bundles'] if 'bundle_id' in item}
+        current_steps = [item for item in result.get('steps', []) if item['bundle_id'] in current_ids]
+        row['input_over_budget_tasks'] = sum(item['status'] == 'input_over_budget' for item in current_steps)
+        row['budget_exhausted_tasks'] = sum(item['status'] == 'budget_exhausted' for item in current_steps)
+        report['rounds'].append(row)
+        if _semantic_digest(result) == before:
+            # A queue that could not inspect its evidence did not converge.
+            stop_reason = ('budget_exhausted' if row['budget_exhausted_tasks'] else
+                           'input_budget_blocked' if row['input_over_budget_tasks'] else
+                           'discovery_limit' if any(pending.values()) else
+                           'no_semantic_change')
+            break
+    # A later small queue must not erase the original input coverage limits.
+    # New group checkpoints retain the original source inventory and may prove
+    # formerly unattempted records through a repair. Legacy callers lack it.
+    if 'source_bundles_not_attempted' not in result.get('coverage', {}):
+        result['bundles_skipped'] = max(first_skipped, result.get('bundles_skipped', 0))
+    result['partial'] = bool(result.get('partial') or result['bundles_skipped'] or any(pending.values()))
+    result.setdefault('coverage', {})['first_pass'] = first_coverage
+    result['coverage']['targeted_repair_pending'] = dict(pending)
+    result['coverage']['partial'] = result['partial']
+    partial = bool(result['partial'] or report['observed_value_tasks'])
+    report['coverage'] = {'status': 'partial' if partial else 'complete',
+                         'rounds_executed': len(report['rounds']), 'stop_reason': stop_reason,
+                         'model_calls': llm.calls - start_calls,
+                         'first_pass_unattempted': first_skipped,
+                         'observed_value_tasks': len(report['observed_value_tasks']),
+                         **pending,
+                         'partial': partial}
+    return result, report

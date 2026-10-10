@@ -1,0 +1,212 @@
+schema: fruit_market
+table_name: fruit_dashboard_card
+table_comment: 水果经营仪表板卡片
+relkind: r
+estimated_rows: 1000
+total_size: null
+data_size: null
+columns:
+- column_name: fruit_card_id
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: true
+  default_value: null
+  column_comment: fruit card id，合成业务字段
+- column_name: card_code
+  ordinal_position: 2
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: card code，合成业务字段
+- column_name: card_name
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 具体看板实例的名称，不是本体类型名
+- column_name: card_description
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 看板类型说明及本条具体实例的展示用途
+- column_name: business_domain
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: business domain，合成业务字段
+- column_name: api_id
+  ordinal_position: 6
+  data_type: bigint
+  is_not_null: false
+  default_value: null
+  column_comment: api id，合成业务字段
+- column_name: dim_code
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 维度头编码，对应维度定义表的 dim_code
+- column_name: metric_code
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 指标编码，对应指标详情和公共属性
+- column_name: measure_name
+  ordinal_position: 9
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 度量中文业务名称
+- column_name: wide_table_id
+  ordinal_position: 10
+  data_type: bigint
+  is_not_null: false
+  default_value: null
+  column_comment: wide table id，合成业务字段
+- column_name: chart_type
+  ordinal_position: 11
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: chart type，合成业务字段
+- column_name: component_name
+  ordinal_position: 12
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: component name，合成业务字段
+- column_name: component_version
+  ordinal_position: 13
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: component version，合成业务字段
+- column_name: positive_description
+  ordinal_position: 14
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: positive description，合成业务字段
+- column_name: negative_description
+  ordinal_position: 15
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: negative description，合成业务字段
+- column_name: analysis_period
+  ordinal_position: 16
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: analysis period，合成业务字段
+- column_name: region_code
+  ordinal_position: 17
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: region code，合成业务字段
+- column_name: fruit_category_code
+  ordinal_position: 18
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: fruit category code，合成业务字段
+- column_name: channel_code
+  ordinal_position: 19
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: channel code，合成业务字段
+- column_name: customer_type
+  ordinal_position: 20
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: customer type，合成业务字段
+- column_name: refresh_cycle
+  ordinal_position: 21
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: refresh cycle，合成业务字段
+- column_name: data_source_code
+  ordinal_position: 22
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: data source code，合成业务字段
+- column_name: owner_team
+  ordinal_position: 23
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: owner team，合成业务字段
+- column_name: status
+  ordinal_position: 24
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: status，合成业务字段
+- column_name: layout_row
+  ordinal_position: 25
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: layout row，合成业务字段
+- column_name: layout_col
+  ordinal_position: 26
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: layout col，合成业务字段
+- column_name: layout_width
+  ordinal_position: 27
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: layout width，合成业务字段
+- column_name: layout_height
+  ordinal_position: 28
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: layout height，合成业务字段
+- column_name: card_config_json
+  ordinal_position: 29
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: 已配置实例的指标引用及维度选择器，不枚举未配置组合
+- column_name: delete_flag
+  ordinal_position: 30
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 31
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 32
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 33
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 34
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性

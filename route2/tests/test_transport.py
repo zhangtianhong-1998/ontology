@@ -203,6 +203,30 @@ def test_incomplete_response_without_usage_reports_unknown_tokens(tmp_path, monk
     assert not list(llm.cache.glob("*.json"))
 
 
+@pytest.mark.parametrize("stream", [False, True])
+def test_malformed_arguments_receive_one_budgeted_format_repair(tmp_path, monkeypatch, stream):
+    from ontology_r2.llm import BudgetExceeded
+    with provider(monkeypatch, lambda body, number: (
+            "submit_result", '{"accepted":' if number == 1 else {"accepted": True})) as requests:
+        llm = StructuredLLM({"mode": "agentscope", "stream": stream,
+                             "max_response_repairs": 1, "max_calls": 2}, tmp_path / "repair")
+        result = asyncio.run(ask_once(llm))
+    assert result.accepted and len(requests) == llm.calls == 2
+    assert all(request["tool_choice"] == "auto" for request in requests)
+    assert "valid JSON" in json.dumps(requests[1]["messages"][-1]["content"])
+    assert llm.metrics()["provider_reported_tokens"] == 40
+    assert len(list(llm.cache.glob("*.json"))) == 1
+    trace = (tmp_path / "repair" / "trace.jsonl").read_text()
+    assert "llm_response_repair" in trace and "hidden-reasoning-marker" not in trace
+    with provider(monkeypatch, lambda body, number: ("submit_result", '{"accepted":')) as requests:
+        capped = StructuredLLM({"mode": "agentscope", "stream": stream,
+                                "max_response_repairs": 1, "max_calls": 1}, tmp_path / "cap")
+        with pytest.raises(BudgetExceeded):
+            asyncio.run(ask_once(capped))
+    assert len(requests) == capped.calls == 1
+    assert not list(capped.cache.glob("*.json"))
+
+
 @pytest.mark.parametrize("name,finish", [(None, "stop"), ("unexpected_tool", "tool_calls")])
 def test_auto_choice_rejects_non_result_responses(tmp_path, monkeypatch, name, finish):
     with provider(monkeypatch, lambda body, number: (name, {"accepted": True}), finish=finish) as requests:

@@ -30,6 +30,24 @@ def test_one_verified_pair_maps_both_endpoints_and_carries_source_packet():
     assert result["partial"] is False
 
 
+def test_parameter_variants_never_share_a_canonical_map():
+    data, core = _fixture(
+        descriptions=tuple("水果销售利润是收入扣除成本后的利润" for _ in range(3)),
+        formulas=tuple("收入-成本" for _ in range(3)))
+    core.object_types[0].definition_parameters = {"period_scope": "公历年"}
+    core.object_types[1].definition_parameters = {"period_scope": "公历年"}
+    core.object_types[2].definition_parameters = {"period_scope": "公历月"}
+    packets = []
+    def decide(packet):
+        packets.append(packet)
+        return _decision(data, packet["candidate"])
+    result = asyncio.run(run_type_equivalence(data, core, decide))
+    assert result["canonical_map"] == {"type:metric_0": "type:metric_0", "type:metric_1": "type:metric_0"}
+    assert len(packets) == 1
+    assert all(item["definition_parameters"] == {"period_scope": "公历年"}
+               for item in packets[0]["source_types"])
+
+
 def test_rejected_or_unresolved_pair_remains_separate():
     data, core = _fixture(formulas=("a-b", "a+b"))
     result = asyncio.run(run_type_equivalence(

@@ -1,0 +1,19 @@
+source_mapping_candidates: 23165
+source_records_read: 17522
+source_records_omitted: 0
+definition_record_instances: 17522
+slot_occurrences: 21989
+observed_fact_instances_existing_channel: 0
+instance_assertions: 55978
+pending: 5736
+unmaterialized_type_ids: []
+cartesian_products_created: 0
+uninstantiated_relation_type_ids:
+- business_relation:depends_on:60612517bf46ba6bcba8e48d
+- business_relation:depends_on:6965074007c0cb20705a662f
+- business_relation:depends_on:6bae329f45fb0f24427c3c67
+- business_relation:depends_on:72f730877f9248c57f198f96
+- business_relation:depends_on:7489a6f5d187f35c978fccdd
+llm_calls: 0
+partial: true
+semantic_scope: source-backed definition/configuration instances; not business measurements

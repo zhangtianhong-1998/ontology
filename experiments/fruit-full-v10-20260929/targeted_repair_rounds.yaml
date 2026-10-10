@@ -1,0 +1,58 @@
+- round: 2
+  discovery:
+    concept_bundles_examined: 889
+    accepted_exact_or_no_change: 30
+    round_number: 2
+    gap_groups_found: 27
+    tasks_selected: 27
+    groups_not_selected: 0
+    representatives_submitted: 52
+    source_records_in_gap_groups: 851
+    max_tasks: 80
+    max_examples: 3
+    llm_calls: 0
+    new_observed_values: 0
+    observed_value_tasks_selected: 0
+    observed_value_tasks_not_selected: 0
+    scope: gap_group_representatives_only_not_all_grouped_rows
+  calls_before: 477
+  status: partial
+  model_calls: 0
+  coverage:
+    bundles_available: 27
+    bundles_selected: 27
+    bundles_reused: 0
+    steps_this_run: 1
+    bundles_not_attempted: 26
+    statuses:
+      accepted: 64
+      no_change: 794
+      unresolved: 774
+      budget_exhausted: 1
+    source_bundles_available: 1632
+    source_bundles_not_attempted: 0
+    repair_tasks_not_attempted: 26
+    superseded_failures: 0
+    template_count: 12
+    template_binding_count: 17494
+    template_reused_before_llm: 778
+    partial: true
+    first_pass:
+      bundles_available: 1632
+      bundles_selected: 1632
+      bundles_reused: 0
+      steps_this_run: 1632
+      bundles_not_attempted: 0
+      statuses:
+        accepted: 64
+        no_change: 794
+        unresolved: 774
+        budget_exhausted: 0
+      source_bundles_available: 1632
+      source_bundles_not_attempted: 0
+      repair_tasks_not_attempted: 0
+      superseded_failures: 0
+      template_count: 12
+      template_binding_count: 790
+      template_reused_before_llm: 778
+      partial: true

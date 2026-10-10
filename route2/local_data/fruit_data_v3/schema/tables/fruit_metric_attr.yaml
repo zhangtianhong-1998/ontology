@@ -1,0 +1,104 @@
+schema: fruit_market
+table_name: fruit_metric_attr
+table_comment: 指标公共属性及别名
+relkind: r
+estimated_rows: 16000
+total_size: null
+data_size: null
+columns:
+- column_name: fruit_metric_attr_id
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: true
+  default_value: null
+  column_comment: fruit metric attr id，合成业务字段
+- column_name: metric_code
+  ordinal_position: 2
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 引用 fruit_metric_detail.metric_code，公共属性不独立拥有指标定义
+- column_name: metric_formula
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 指标公共属性中的计算表达式
+- column_name: metric_category
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: metric category，合成业务字段
+- column_name: metric_type
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 指标类型标记：Y、N 或 O
+- column_name: synonym_text
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 同义词和别名，用于候选召回
+- column_name: domain_code
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: domain code，合成业务字段
+- column_name: unit
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 计量单位；不同单位不可直接合并
+- column_name: valid_period
+  ordinal_position: 9
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: valid period，合成业务字段
+- column_name: measure_code
+  ordinal_position: 10
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 度量编码，对应度量定义
+- column_name: attr_description
+  ordinal_position: 11
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: attr description，合成业务字段
+- column_name: delete_flag
+  ordinal_position: 12
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 13
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 14
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 15
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 16
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性

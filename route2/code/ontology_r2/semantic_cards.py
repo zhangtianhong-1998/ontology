@@ -16,7 +16,7 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from .column_roles import classify_columns
-from .concept_candidates import _field_roles
+from .concept_candidates import _field_roles, field_role_conflicts
 from .row_semantics import classify_row_purpose, profile_joint_distinct
 from .storage import digest, qi
 
@@ -26,7 +26,44 @@ _WORDS = re.compile(r"[a-z0-9]+")
 _REFERENCE = re.compile(r"(?:^|_)(?:code|id|key|source|target|ref|reference|type|field|value)(?:_|$)", re.I)
 _CONTENT_REFERENCE = re.compile(r"(?:^|_)(?:code|field|value)(?:_|$)", re.I)
 _PURE_TECHNICAL = re.compile(r"(?:\d+(?:\.\d+)?|[0-9a-f]{16,}|\d{4}-\d\d-\d\d)", re.I)
-_CARD_ROLES = ("name", "alias", "description", "formula", "unit", "scope")
+_CARD_ROLES = ("name", "alias", "description", "formula", "unit", "scope",
+               "provenance", "metadata", "identity")
+# Context stays in complete cards and provenance. It does not create additional
+# scheduling groups; definition qualifiers and unresolved content still do.
+_PATTERN_ROLES = ("name", "alias", "description", "formula", "unit", "scope", "identity", "unknown")
+_PHYSICAL_NAME_DECLARATION = re.compile(
+    r"^(?:物理(?:数据表|表|数据库|文件)(?:名称|名)|"
+    r"physical\s+(?:table|database|file)\s+name)(?:\b|[\s,，;；:：。(.（]|$)", re.I)
+_BUSINESS_NAME_DECLARATION = re.compile(
+    r"业务(?:对象|名称)|经营对象|(?:指标|度量|维度)(?:名称|名)|计算公式|"
+    r"\b(?:business\s+(?:object|name)|metric\s+name|measure\s+name|dimension\s+name|formula)\b", re.I)
+
+
+def _definition_pattern_exclusions(table, roles):
+    """Separate only declared technical physical names from scheduling.
+
+    Generic resource/object names may denote business assets and remain intact.
+    Their complete values remain in source cards. A checked projection contract
+    may preserve them as instance values instead of fixing a class invariant;
+    this scheduling hint alone never proves membership.
+    """
+    names = set(roles.get("name", ()))
+    result = []
+    for column in table["columns"]:
+        raw = str(column.get("column_comment") or "")
+        declaration = _norm(raw)
+        if (column["column_name"] in names
+                and _PHYSICAL_NAME_DECLARATION.search(declaration)
+                and not _BUSINESS_NAME_DECLARATION.search(declaration)):
+            result.append({"column": column["column_name"], "role": "name",
+                           "reason": "declared_physical_resource_name",
+                           "declaration": raw,
+                           "schema_evidence_id": f"schema:{table['name']}:{column['column_name']}",
+                           "scope": "definition_pattern_scheduling_only",
+                           "entity_identity_claim": False,
+                           "template_membership_requires_complete_projection_contract": True,
+                           "original_value_retained_as_source_or_instance_value": True})
+    return result
 
 
 def _context_table(table_name):
@@ -55,22 +92,54 @@ def _terms(value: str) -> list[str]:
 
 
 def _columns(table, max_unknown_fields_per_table):
+    from .column_role_inference import formula_fragment_context
+
     roles = _field_roles(table)
     classified = classify_columns(table)
+    safe = {item["column"] for item in classified if item["role"] not in (
+        "sensitive", "empty", "audit_time", "audit_metadata", "technical_identifier")}
+    fragments = {name: item for name, item in formula_fragment_context(table).items()
+                 if name in safe}
+    for name in fragments:
+        if name in roles.get("formula", ()):
+            roles["formula"].remove(name)
+        # Calculation parameters distinguish the definition even when they
+        # are insufficient to construct a complete arithmetic expression.
+        if name not in roles.setdefault("scope", []):
+            roles["scope"].append(name)
+    # Metadata heuristics and model proposals share the same key/content
+    # boundary. Forced references include PKs.
+    conflicts = field_role_conflicts(table)
+    bindings = list(dict.fromkeys([*roles.pop("reference", []),
+        *(item["column"] for item in conflicts if item["binding_only"])]))
+    # Explicit unresolved role evidence must survive the generic unknown-field
+    # cap. Dropping a reviewed structured field would hide its meaning entirely.
+    unresolved = roles.get("unknown", [])
     selected = {column for columns in roles.values() for column in columns}
     reference = [item["column"] for item in classified
                  if item["role"] in ("semantic", "unknown") and item["column"] not in selected
                  and item["column"] not in table["pk"]
                  and _REFERENCE.search(item["column"])]
     unknown = [item["column"] for item in classified if item["role"] == "unknown"]
-    reference = reference[:8]
+    # Every eligible reference participates in the complete card fingerprint.
+    # Packet admission bounds bytes later; it must not silently drop columns.
+    reference = list(dict.fromkeys([*bindings, *reference]))
     selected.update(reference)
+    selected.update(unresolved)
     unknown_available = [name for name in unknown if name not in selected]
-    fallback = unknown_available[:max_unknown_fields_per_table]
+    fallback = list(dict.fromkeys([*unresolved, *unknown_available[:max_unknown_fields_per_table]]))
     return roles, reference, fallback, {
         "unknown_columns_considered": fallback,
         "unknown_columns_not_examined": unknown_available[max_unknown_fields_per_table:],
         "reference_columns_considered": reference,
+        "reference_columns_not_examined": [],
+        "reference_column_selection": "all_eligible_reference_columns",
+        "definition_pattern_exclusions": _definition_pattern_exclusions(table, roles),
+        "role_conflicts": conflicts,
+        "binding_columns_excluded_from_semantic_pattern": bindings,
+        "context_columns_excluded_from_semantic_pattern": {
+            role: list(roles.get(role, ())) for role in ("metadata", "provenance")},
+        "calculation_fragments": list(fragments.values()),
         "source_verified_role_candidates": [
             {"column": item["column"], "role": item["role"]}
             for item in table.get("inferred_semantic_roles", ())
@@ -78,10 +147,47 @@ def _columns(table, max_unknown_fields_per_table):
     }
 
 
+def _structured_semantic_candidate(value):
+    """Recall named structured lexical/reference content for semantic review.
+
+    This is a scheduling signal only. Configuration rows are routed separately,
+    and a plain administrative JSON object does not satisfy this condition.
+    Preserve the entire original JSON rather than manufacturing a definition.
+    """
+    try:
+        content = json.loads(value)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(content, dict):
+        return False
+    semantic_key = re.compile(
+        r"(?:^|_)(?:meaning|definition|description|alias|aliases|synonym|synonyms|"
+        r"term|concept|formula|expression|reference|ref|code)(?:_|$)|词义|释义|同义|别名|定义|引用")
+    administrative_key = re.compile(
+        r"^(?:language|locale|status|record|source|system|owner|created|updated|schema)(?:_|$)")
+    return any(semantic_key.search(str(key).casefold())
+               and not administrative_key.search(str(key).casefold())
+               and raw not in (None, "", [], {}) for key, raw in content.items())
+
+
 def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_index_chars,
-              row_purpose="unresolved"):
+              row_purpose="unresolved", pattern_name_exclusions=(), calculation_fragments=()):
     if row_purpose == "business_fact":
         return None
+    # A sampled operator column may contain a later expression. Check while
+    # doing the existing index scan; never erase that row's formula candidate.
+    from .column_role_inference import formula_fragment_value
+    for fragment in calculation_fragments:
+        name = fragment["column"]
+        value = row.get(name)
+        if value is None or not str(value).strip() or formula_fragment_value(
+                fragment["effective_role"], value):
+            continue
+        roles = {role: list(columns) for role, columns in roles.items()}
+        if name in roles.get("scope", ()):
+            roles["scope"].remove(name)
+        if name not in roles.setdefault("formula", []):
+            roles["formula"].append(name)
     fields = {}
     signature_fields = {}
     for role, columns in [*((role, roles.get(role, ())) for role in _CARD_ROLES),
@@ -93,7 +199,8 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
             if raw is None or not str(raw).strip():
                 continue
             raw = str(raw)
-            if role == "unknown" and (len(raw.strip()) < 3 or _PURE_TECHNICAL.fullmatch(raw.strip())):
+            if (role == "unknown" and column not in roles.get("unknown", ())
+                    and (len(raw.strip()) < 3 or _PURE_TECHNICAL.fullmatch(raw.strip()))):
                 continue
             originals.append([column, raw])
             values.append({"column": column, "value": raw[:max_field_chars],
@@ -104,9 +211,14 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
             signature_fields[role] = originals
     informative_reference = any(_CONTENT_REFERENCE.search(entry["column"])
                                 for entry in fields.get("reference", ()))
+    structured_definition_candidate = bool(fields.get("name") and any(
+        _structured_semantic_candidate(str(row.get(entry["column"]) or ""))
+        for entry in fields.get("unknown", ())))
     if row_purpose == "configuration_data":
         kind = "reference"
     elif row_purpose == "definition_data" and fields.get("name"):
+        kind = "definition"
+    elif structured_definition_candidate:
         kind = "definition"
     elif informative_reference:
         kind = "reference"
@@ -114,9 +226,17 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
         kind = "uncertain"
     else:
         return None
-    names = [value["value"] for value in fields.get("name", ())]
+    # Choose a readable display label without removing any other name from
+    # the source fields, search text, or complete pattern fingerprint.
+    names = sorted(fields.get("name", ()), key=lambda entry: (
+        not bool(re.search(r"(?:^|_)(?:cn|zh|chinese)(?:_|$)", entry["column"], re.I)),
+        not bool(_HAN.search(entry["value"])),
+        entry["column"] in {"schema_name", "physical_table_name"}))
     aliases = [value["value"] for value in fields.get("alias", ())]
-    scope = {value["column"]: value["value"] for value in fields.get("scope", ())}
+    # Definition identity qualifiers must survive with their original values;
+    # administrative/lexical context stays visible outside business scope.
+    scope = {value["column"]: value["value"] for role in ("scope", "identity")
+             for value in fields.get(role, ())}
     units = [value["value"] for value in fields.get("unit", ())]
     search_text = " ".join(value["value"] for role in ("name", "alias", "description", "formula", "unknown")
                            for value in fields.get(role, ()))
@@ -125,10 +245,16 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
     search_text = " ".join(part for part in (search_text, reference_text) if part)
     index_text_truncated = len(search_text) > max_index_chars
     search_text = search_text[:max_index_chars]
+    # Preview fields omit empty values, but reference identity also preserves
+    # NULL/empty differences and full values beyond the visible preview.
+    if reference:
+        signature_fields["reference"] = [[column, row.get(column)] for column in reference]
     signature = digest([table_name, kind, signature_fields])
-    semantic_fields = {role: [[column, _norm(raw)] for column, raw in signature_fields[role]]
-                       for role in _CARD_ROLES if role in signature_fields}
-    semantic_preview_truncated = any(entry["truncated"] for role in _CARD_ROLES
+    excluded_names = set(pattern_name_exclusions) if kind == "definition" else set()
+    semantic_fields = {role: [[column, _norm(raw)] for column, raw in signature_fields[role]
+                             if not (role == "name" and column in excluded_names)]
+                       for role in _PATTERN_ROLES if role in signature_fields}
+    semantic_preview_truncated = any(entry["truncated"] for role in _PATTERN_ROLES
                                      for entry in fields.get(role, ()))
     # A pattern is a retrieval/scheduling group, never a business identity.
     # A truncated semantic preview cannot safely stand for another card, even
@@ -137,13 +263,14 @@ def _row_card(table_name, row, roles, reference, fallback, max_field_chars, max_
                                 signature if semantic_preview_truncated else None])
     reference_signature = (digest(signature_fields["reference"])
                            if signature_fields.get("reference") else None)
-    return {"kind": kind, "table": table_name, "name": names[0] if names else "",
+    return {"kind": kind, "table": table_name, "name": names[0]["value"] if names else "",
             "aliases": aliases, "scope": scope, "unit": units[0] if units else "",
             "fields": fields, "search_text": search_text,
             "index_text_truncated": index_text_truncated, "signature": signature,
             "pattern_signature": pattern_signature,
             "reference_signature": reference_signature,
-            "semantic_preview_truncated": semantic_preview_truncated}
+            "semantic_preview_truncated": semantic_preview_truncated,
+            "structured_definition_candidate": structured_definition_candidate and kind == "definition"}
 
 
 def _root_hint(table):
@@ -235,6 +362,7 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
         card_id TEXT NOT NULL, record_id TEXT NOT NULL, row_number INTEGER NOT NULL,
         PRIMARY KEY (card_id, record_id)
       );
+      CREATE INDEX card_sources_record ON card_sources(record_id, card_id);
       CREATE VIRTUAL TABLE card_fts USING fts5(card_id UNINDEXED, grams, tokenize='unicode61');
     """)
     total = Counter()
@@ -245,16 +373,8 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
     for table_name, table in data.tables.items():
         roles, reference, fallback, report = _columns(table, max_unknown_fields_per_table)
         row_purpose = classify_row_purpose(table)
-        # A sample-backed model suggestion can widen retrieval, but it cannot
-        # alone establish that every row in an opaque table is a definition.
-        # Keep those cards uncertain until independent row-purpose evidence is
-        # available; do not silently promote them to exact type seeds.
-        if table.get("inferred_semantic_roles") and row_purpose["purpose"] == "definition_data":
-            prior = {**table, "inferred_semantic_roles": []}
-            if not _field_roles(prior).get("name"):
-                row_purpose = {**row_purpose, "purpose": "unresolved",
-                               "reason": "inferred_column_role_is_candidate_not_definition_proof",
-                               "authority": "source_checked_role_candidate_only"}
+        # Candidate roles widen recall. The later record-level compiler and
+        # Judge still decide whether a particular row really defines a type.
         quality = (4 if roles.get("name") and any(roles.get(role) for role in
                    ("description", "formula", "unit", "scope")) else
                    3 if roles.get("name") else 2 if roles.get("description") or roles.get("formula") else 1)
@@ -287,7 +407,10 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
                             counts["rows_scanned"] += 1
                             card = _row_card(table_name, row, roles, reference, fallback,
                                              max_field_chars, max_index_chars,
-                                             row_purpose["purpose"])
+                                             row_purpose["purpose"],
+                                             pattern_name_exclusions=[item["column"] for item in
+                                                 columns_report["definition_pattern_exclusions"]],
+                                             calculation_fragments=columns_report["calculation_fragments"])
                             if card is None:
                                 counts["rows_without_card"] += 1
                                 if row_purpose["purpose"] == "business_fact":
@@ -331,6 +454,8 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
                                        (card_id, record_id, row["__r2_row"]))
                             counts["rows_indexed"] += 1
                             counts["kind_" + card["kind"]] += 1
+                            counts["structured_definition_candidate_rows"] += int(
+                                card["structured_definition_candidate"])
                         if stage:
                             stage.advance(len(batch), detail=table_name)
                         db.commit()
@@ -352,6 +477,8 @@ def build_semantic_cards(data, index_path, *, max_cards=200000, max_field_chars=
             "rows_scanned": total["rows_scanned"], "rows_indexed": total["rows_indexed"],
             "cards_indexed": indexed_cards, "patterns_indexed": patterns_indexed,
             "definition_patterns_indexed": definition_patterns,
+            "structured_definition_candidate_rows": total["structured_definition_candidate_rows"],
+            "structured_definition_candidate_status": "named structured semantic content admitted for review; meaning and target identity unjudged",
             "pattern_semantics": "candidate_only; same pattern never merges reference variants or record identities",
             "rows_omitted_cap": total["rows_omitted_cap"],
             "rows_without_card": total["rows_without_card"],
@@ -393,6 +520,11 @@ class SemanticCardIndex:
         if row is None:
             raise ValueError("Incomplete semantic card index")
         self.coverage = json.loads(row["value"])
+        # Upgrade derived caches in place; source CSV/schema and card identity
+        # are unchanged. Reverse lookup otherwise scans the card-first PK.
+        self.db.execute("CREATE INDEX IF NOT EXISTS card_sources_record "
+                        "ON card_sources(record_id, card_id)")
+        self.db.commit()
 
     def close(self):
         self.db.close()
@@ -406,6 +538,25 @@ class SemanticCardIndex:
         item["row_number"] = item.pop("representative_row_number")
         item["index_text_truncated"] = bool(item["index_text_truncated"])
         item["root_hint_basis"] = "table_name_and_comment_weak_hint_not_classification"
+        report = self.coverage.get("by_table", {}).get(item["table"], {})
+        if report.get("definition_pattern_exclusions"):
+            item["definition_pattern_exclusions"] = report["definition_pattern_exclusions"]
+        if report.get("role_conflicts"):
+            item["role_conflicts"] = report["role_conflicts"]
+            item["binding_columns_excluded_from_semantic_pattern"] = report[
+                "binding_columns_excluded_from_semantic_pattern"]
+        if report.get("calculation_fragments"):
+            from .column_role_inference import formula_fragment_value
+            item["calculation_fragments"] = [
+                {key: fragment[key] for key in (
+                    "column", "proposed_role", "effective_role", "formula_status", "reason",
+                    "schema_evidence_id", "validation_scope", "expression_constructed",
+                    "operand_target_verified", "observations", "evidence_kind", "profile_field_id",
+                    "profile_sample_scope", "sample_exhaustive_in_input") if key in fragment}
+                for fragment in report["calculation_fragments"]
+                if fragment["column"] not in {field["column"] for field in item["fields"].get("formula", ())}
+                and (fragment["column"] not in item["scope"] or formula_fragment_value(
+                    fragment["effective_role"], item["scope"][fragment["column"]]))]
         # Card fields are retrieval context. Evidence IDs are registered only
         # when a group decision cites a concrete record value.
         item.pop("signature", None)
@@ -451,8 +602,8 @@ class SemanticCardIndex:
         by a single large table. A pattern is only a candidate scheduling unit;
         its non-representative records remain unaligned.
         """
-        if type(limit) is not int or not 0 < limit <= 1000:
-            raise ValueError("pattern window limit must be an integer in 1..1000")
+        if type(limit) is not int or not 0 < limit <= 10000:
+            raise ValueError("pattern window limit must be an integer in 1..10000")
         if type(window_index) is not int or not 0 <= window_index <= 1000000:
             raise ValueError("window_index must be an integer in 0..1000000")
         if kind not in ("definition", "reference", "uncertain"):
@@ -582,10 +733,15 @@ class SemanticCardIndex:
         if not query_norm:
             return []
         results = {}
-        # Exact matches are an independent channel and are not limited by FTS tokenization.
+        # Resolve names/aliases through their inverted indexes first. The
+        # CROSS JOIN keeps this small ID set outermost; otherwise SQLite may
+        # choose a full kind scan before testing the alias correlation.
         exact = self.db.execute(
-            "SELECT c.*, 0.0 AS bm25 FROM cards c WHERE "
-            "(c.name_norm=? OR EXISTS (SELECT 1 FROM aliases a WHERE a.card_id=c.card_id AND a.name_norm=?))"
+            "WITH exact_ids AS MATERIALIZED ("
+            "SELECT card_id FROM cards INDEXED BY cards_name WHERE name_norm=? "
+            "UNION SELECT card_id FROM aliases INDEXED BY aliases_name WHERE name_norm=?) "
+            "SELECT c.*, 0.0 AS bm25 FROM exact_ids e CROSS JOIN cards c "
+            "ON c.card_id=e.card_id WHERE 1=1"
             + where + " ORDER BY c.card_id LIMIT ?", [query_norm, query_norm, *params, limit]).fetchall()
         for row in exact:
             card = self._card(row)

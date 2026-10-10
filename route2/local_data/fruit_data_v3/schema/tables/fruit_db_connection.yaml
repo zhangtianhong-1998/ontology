@@ -1,0 +1,122 @@
+schema: fruit_market
+table_name: fruit_db_connection
+table_comment: 合成数据源连接元数据，不含可用凭据
+relkind: r
+estimated_rows: 10
+total_size: null
+data_size: null
+columns:
+- column_name: fruit_db_conn_id
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: true
+  default_value: null
+  column_comment: fruit db conn id，合成业务字段
+- column_name: connection_code
+  ordinal_position: 2
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: connection code，合成业务字段
+- column_name: connection_type
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: connection type，合成业务字段
+- column_name: connection_name
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: connection name，合成业务字段
+- column_name: connection_url
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: connection url，合成业务字段
+- column_name: account_name
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: account name，合成业务字段
+- column_name: schema_name
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: schema name，合成业务字段
+- column_name: db_name
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: db name，合成业务字段
+- column_name: port
+  ordinal_position: 9
+  data_type: bigint
+  is_not_null: false
+  default_value: null
+  column_comment: port，合成业务字段
+- column_name: region_code
+  ordinal_position: 10
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: region code，合成业务字段
+- column_name: ssl_mode
+  ordinal_position: 11
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: ssl mode，合成业务字段
+- column_name: status
+  ordinal_position: 12
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: status，合成业务字段
+- column_name: owner_team
+  ordinal_position: 13
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: owner team，合成业务字段
+- column_name: connection_description
+  ordinal_position: 14
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: connection description，合成业务字段
+- column_name: delete_flag
+  ordinal_position: 15
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 16
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 17
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 18
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 19
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性

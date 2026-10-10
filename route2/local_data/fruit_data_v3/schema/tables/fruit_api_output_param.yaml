@@ -1,0 +1,92 @@
+schema: fruit_market
+table_name: fruit_api_output_param
+table_comment: API 和卡片的出参定义
+relkind: r
+estimated_rows: 274444
+total_size: null
+data_size: null
+columns:
+- column_name: fruit_output_param_id
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: true
+  default_value: null
+  column_comment: fruit output param id，合成业务字段
+- column_name: business_id
+  ordinal_position: 2
+  data_type: bigint
+  is_not_null: false
+  default_value: null
+  column_comment: 业务对象编号，需结合 business_type 解析目标表
+- column_name: business_type
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 业务对象类型：API、CARD 或 TABLE
+- column_name: param_name
+  ordinal_position: 4
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: API 参数英文名称
+- column_name: param_cn_name
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: API 参数中文业务名称
+- column_name: param_type
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: param type，合成业务字段
+- column_name: unit
+  ordinal_position: 7
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 计量单位；不同单位不可直接合并
+- column_name: output_order
+  ordinal_position: 8
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: output order，合成业务字段
+- column_name: param_description
+  ordinal_position: 9
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: API 参数的含义及适用范围
+- column_name: delete_flag
+  ordinal_position: 10
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 逻辑删除标记，0 为有效
+- column_name: created_by
+  ordinal_position: 11
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 创建人账号，审计属性
+- column_name: creation_date
+  ordinal_position: 12
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 创建时间，审计属性
+- column_name: last_updated_by
+  ordinal_position: 13
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改人账号，审计属性
+- column_name: last_update_date
+  ordinal_position: 14
+  data_type: timestamp
+  is_not_null: false
+  default_value: null
+  column_comment: 最后修改时间，审计属性

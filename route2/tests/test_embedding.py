@@ -1,6 +1,8 @@
 import pytest
+import sys
+from types import SimpleNamespace
 
-from ontology_r2.embedding import settings, top_cosine
+from ontology_r2.embedding import LocalEmbedder, settings, top_cosine
 from ontology_r2.external import ExternalIndex
 from ontology_r2.incremental import semantic_core_hits
 from ontology_r2.knowledge import rerank_hits
@@ -26,6 +28,88 @@ def test_embedding_settings_require_explicit_local_model(tmp_path, monkeypatch):
     monkeypatch.setenv("ONTOLOGY_EMBEDDING_MODEL_PATH", str(tmp_path / "missing"))
     with pytest.raises(FileNotFoundError):
         settings({"enabled": False})
+
+
+def test_dtype_and_progress_settings_are_explicit_and_environment_overridable(monkeypatch):
+    monkeypatch.delenv("ONTOLOGY_EMBEDDING_ENABLED", raising=False)
+    monkeypatch.delenv("ONTOLOGY_EMBEDDING_DTYPE", raising=False)
+    monkeypatch.delenv("ONTOLOGY_EMBEDDING_SHOW_PROGRESS", raising=False)
+    assert settings({})["dtype"] == "float32"
+    monkeypatch.setenv("ONTOLOGY_EMBEDDING_DTYPE", "bfloat16")
+    monkeypatch.setenv("ONTOLOGY_EMBEDDING_SHOW_PROGRESS", "true")
+    config = settings({"dtype": "auto", "show_progress": False})
+    assert config["dtype"] == "bfloat16" and config["show_progress"] is True
+    monkeypatch.setenv("ONTOLOGY_EMBEDDING_DTYPE", "float16")
+    with pytest.raises(ValueError, match="embedding.dtype"):
+        settings({})
+    monkeypatch.setenv("ONTOLOGY_EMBEDDING_DTYPE", "auto")
+    monkeypatch.setenv("ONTOLOGY_EMBEDDING_SHOW_PROGRESS", "maybe")
+    with pytest.raises(ValueError, match="SHOW_PROGRESS"):
+        settings({})
+    monkeypatch.delenv("ONTOLOGY_EMBEDDING_SHOW_PROGRESS")
+    with pytest.raises(ValueError, match="show_progress"):
+        settings({"show_progress": "false"})
+
+
+def _local_embedder(tmp_path, monkeypatch, **options):
+    import numpy as np
+    model_path = tmp_path / "model"
+    model_path.mkdir(exist_ok=True)
+    (model_path / "model.safetensors").write_bytes(b"synthetic weights")
+    class Model:
+        prompts = {"query": "query instruction", "document": ""}
+        default_prompt_name = None
+        def __init__(self, path, **kwargs):
+            self.load_kwargs = kwargs
+            self.calls = []
+            requested = kwargs["model_kwargs"]["dtype"]
+            self.dtype = "bfloat16" if requested == "auto" else requested
+        def parameters(self):
+            return iter([SimpleNamespace(dtype="torch." + self.dtype, device="cpu")])
+        def encode(self, texts, **kwargs):
+            self.calls.append((list(texts), kwargs))
+            return np.array([[len(text), 1.0] for text in texts], dtype=np.float32)
+        def get_embedding_dimension(self):
+            return 2
+    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=Model))
+    return LocalEmbedder({"enabled": True, "model_path": str(model_path), "batch_size": 2,
+                          "min_cosine_similarity": 0.35, "query_prompt": None, **options})
+
+
+@pytest.mark.parametrize("dtype,actual", [("float32", "float32"), ("bfloat16", "bfloat16"), ("auto", "bfloat16")])
+def test_model_load_dtype_and_encoding_contract_are_reported(tmp_path, monkeypatch, dtype, actual):
+    embedding = _local_embedder(tmp_path, monkeypatch, dtype=dtype)
+    assert embedding.model.load_kwargs == {"device": "cpu", "local_files_only": True,
+                                            "model_kwargs": {"dtype": dtype}}
+    report = embedding.report()
+    assert report["configured_dtype"] == dtype and report["actual_dtype"] == actual
+    assert report["device"] == "cpu"
+    assert report["encoding_contract"]["actual_dtype"] == actual
+    assert len(report["encoding_contract_sha256"]) == 64
+
+
+def test_progress_reports_batches_and_memory_cache_is_contract_scoped(tmp_path, monkeypatch, capsys):
+    import numpy as np
+    embedding = _local_embedder(tmp_path, monkeypatch, show_progress=True)
+    vectors = embedding.documents(["income", "cost", "income", "profit"])
+    assert vectors.shape == (4, 2) and vectors.dtype == np.float32
+    assert np.allclose(np.linalg.norm(vectors, axis=1), 1)
+    assert embedding.documents_encoded == 3
+    assert len(embedding.model.calls) == 1
+    assert embedding.model.calls[0][1]["show_progress_bar"] is True
+    assert "3 texts, 2 batches, cpu/float32" in capsys.readouterr().err
+    assert {key[0] for key in embedding.cache} == {embedding.encoding_contract_sha256}
+    embedding.documents(["income"])
+    assert len(embedding.model.calls) == 1
+    embedding.queries(["income", "cost"])
+    assert embedding.model.calls[-1][1]["prompt_name"] == "query"
+    assert "[embedding:query]" in capsys.readouterr().err
+    assert embedding.queries([]).shape == (0, 2)
+    other = _local_embedder(tmp_path, monkeypatch, dtype="bfloat16")
+    assert other.encoding_contract_sha256 != embedding.encoding_contract_sha256
+    other.documents(["income"])
+    assert other.model.calls[0][1]["show_progress_bar"] is False
+    assert capsys.readouterr().err == ""
 
 
 def test_exact_cosine_normalizes_and_preserves_tie_order():

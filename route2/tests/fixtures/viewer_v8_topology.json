@@ -1,0 +1,2304 @@
+{
+  "source": "association-rebuild-full-v8-20260928; topology projection only; no semantic acceptance implied",
+  "nodes": [
+    {
+      "id": "GeneralObject",
+      "label": "一般对象"
+    },
+    {
+      "id": "Measure",
+      "label": "度量"
+    },
+    {
+      "id": "Metric",
+      "label": "指标"
+    },
+    {
+      "id": "Dimension",
+      "label": "维度"
+    },
+    {
+      "id": "Term",
+      "label": "术语"
+    },
+    {
+      "id": "type:a86c9931c02f49ea9371ad6e",
+      "label": "华南香蕉库存周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:730faec7d451d4ec0839c00e",
+      "label": "进出口口岸专题维20",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:8154fe9055b7b2f21791432c",
+      "label": "橙子",
+      "parent": "Term"
+    },
+    {
+      "id": "type:a3cd066fa34169beb1862ceb",
+      "label": "客户类型专题维49",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:10665c141dd32543dee0ab7d",
+      "label": "产区专题维57",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:263b146bf618547a019d3f85",
+      "label": "华东草莓区域均价差异",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:d76408a22c077a2d42f54280",
+      "label": "Kiwi",
+      "parent": "Term"
+    },
+    {
+      "id": "type:2f920827909d61e8a8e5254d",
+      "label": "进出口口岸专题维40",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:249d618646040f657e426aad",
+      "label": "橙子合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:f1918752d10659a38597f956",
+      "label": "华东苹果损耗率趋势",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:3fe3b5a21dcdd0dbc6bab96b",
+      "label": "产区专题维22",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:a7d2a707b77cd13056b48662",
+      "label": "草莓总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:bb62a1aaf81b0797dcbeeb41",
+      "label": "apple",
+      "parent": "Term"
+    },
+    {
+      "id": "type:a84ada2e89ac1a31b7da6ced",
+      "label": "进出口口岸专题维80",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:bbcbdc83ea9aafe4e2846af5",
+      "label": "华南香蕉出口量同比增长",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:a3ab7d8dc6a92099988b0ad6",
+      "label": "客户类型专题维69",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:3202d212e5d72358d6902d9e",
+      "label": "Strawberry",
+      "parent": "Term"
+    },
+    {
+      "id": "type:0dacfe72b07bcca1bf5ef97e",
+      "label": "销售渠道专题维58",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:2b4814c68c6ff0c070b088e1",
+      "label": "华东草莓库存周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:9ab1fb2f58c877ac1cb3b4e4",
+      "label": "香蕉损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:08e3034d9463682e9a7e55e7",
+      "label": "客户类型专题维59",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:f334a5359cfc089a050c6e5d",
+      "label": "Banana",
+      "parent": "Term"
+    },
+    {
+      "id": "type:9eb34b4a2d58f5ffa003532d",
+      "label": "华东苹果进口均价波动",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:e9402ef502fbc4af605efb98",
+      "label": "葡萄损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:1d588e8ce567cf3065fcf43a",
+      "label": "进出口口岸专题维50",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:f0e17465811cd7222bd6125b",
+      "label": "香蕉损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:c1a422c8b5020ca506b497c6",
+      "label": "水果类别专题维61",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:7172554077351e8a3ee59885",
+      "label": "华南蓝莓水果销售总额",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:7b1b31c33912dab5f4cbab18",
+      "label": "草莓总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:960059814a48bc87935e0d2f",
+      "label": "红富士",
+      "parent": "Term"
+    },
+    {
+      "id": "type:4f776355cdbac726ff04bfc2",
+      "label": "产区专题维7",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:141289272c1724261e5213d3",
+      "label": "华南蓝莓进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:cb46d1ee75c56ffc927dadb8",
+      "label": "客户类型专题维64",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:ca39a097c3395046068757eb",
+      "label": "华南香蕉区域均价差异",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:f03eb80e457c61faadece5bc",
+      "label": "lychee",
+      "parent": "Term"
+    },
+    {
+      "id": "type:858ffdffd871e1eec2ad748f",
+      "label": "客户类型专题维79",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:b1ede2e66fb6ee70acc6fcc8",
+      "label": "南美荔枝水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:98008b6bce4a5b6ebf239cd7",
+      "label": "华东苹果水果销售总额",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:8596098524f600e431e48d6e",
+      "label": "橙子均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:d45934d1ef2653202d225c2e",
+      "label": "南美荔枝水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:4b01604f79a428d381d20cdd",
+      "label": "销售渠道专题维23",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:13347f6f2570ad0885f9b240",
+      "label": "芒果均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:02d7b494481912b9d11e4828",
+      "label": "durian",
+      "parent": "Term"
+    },
+    {
+      "id": "type:49da15ebfaab5e049870c951",
+      "label": "客户类型专题维34",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:d574f760e67257d03fbbc54c",
+      "label": "华南蓝莓进口均价波动",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:fd62f9a4f2a2189cfd60ba84",
+      "label": "草莓周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:4f3f633a4edffddc1a6dcfe5",
+      "label": "产区专题维77",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:f60212963167d0ac32ef16f1",
+      "label": "葡萄总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:fd438aba53da14b3ca51553a",
+      "label": "orange",
+      "parent": "Term"
+    },
+    {
+      "id": "type:c3716299338fd00d1200d7ea",
+      "label": "华南蓝莓损耗率趋势",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:c33ad364ea65ca14474a5490",
+      "label": "客户类型专题维24",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:34aecf167cec1b18899c36fe",
+      "label": "榴莲损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:4e3666d504a49feb448144d0",
+      "label": "水果类别专题维16",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:6fe56162fcec53a5a59eab07",
+      "label": "草莓",
+      "parent": "Term"
+    },
+    {
+      "id": "type:93ddad8abb104c60249f4c9e",
+      "label": "华东草莓出口量同比增长",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:c60e8a9f0bbdc994b23bfb5c",
+      "label": "葡萄出口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:45d7f3496bf7cdb3bba87bba",
+      "label": "猕猴桃质量检测",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:e0a8be9520abbf36399d89cd",
+      "label": "水果类别专题维66",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:5f59cfeca9e14a54ff6b2521",
+      "label": "苹果均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:7ace6177769171a53fe747c6",
+      "label": "水果类别专题维26",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:81e9500c87abf22a8e4c81dd",
+      "label": "东南亚榴莲区域均价差异",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:66cede58ec35a1e16b368914",
+      "label": "蓝莓均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:474ce21939fb161082c1ebf1",
+      "label": "荔枝",
+      "parent": "Term"
+    },
+    {
+      "id": "type:a0e06c468a3bdc55fe2059ba",
+      "label": "进出口口岸专题维30",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:e0fdd61bd0524c2c8302b36d",
+      "label": "水果销售汇总表",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:22574fb83989c62297329488",
+      "label": "南美荔枝损耗率趋势",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:9fb3e20432c709e8e2646cda",
+      "label": "荔枝库存量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:85b99ac465fc0f5e2325243d",
+      "label": "客户类型专题维19",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:702229f99d8ae43f80118bc2",
+      "label": "非洲芒果进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:084509c41b54be4077bbbbfb",
+      "label": "非洲芒果损耗率趋势看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:79b64839c53f24479b06d70e",
+      "label": "Blueberry",
+      "parent": "Term"
+    },
+    {
+      "id": "type:babd62eb5ff90e9836d3f7fd",
+      "label": "苹果库存量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:1372521ea8ff180b89d016fb",
+      "label": "水果类别专题维51",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:f271fa508fb203c65b9b26f4",
+      "label": "非洲芒果水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:575da3d3f4d2eb9063a5f683",
+      "label": "非洲猕猴桃库存周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:9724a9670ad5b17cb973917b",
+      "label": "芒果库存量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:56cf5dda3202df4b81f289b3",
+      "label": "进出口口岸专题维70",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:6a295cf2b020e87e8af2dfe0",
+      "label": "mango",
+      "parent": "Term"
+    },
+    {
+      "id": "type:73ac770f63e31fae31317889",
+      "label": "进出口口岸专题维65",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:31c39a531cd98fa7d8b2fd4c",
+      "label": "东南亚榴莲出口量同比增长",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:f4e1b4d5a0c03b26ae36344f",
+      "label": "蓝莓库存量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:5ab09a4750b180e6383e97b2",
+      "label": "葡萄总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:abb1d97a096b675b1e0d7ee1",
+      "label": "华东苹果水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:6e4e6e67142ab5551ce072cb",
+      "label": "销售渠道",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:4b1111c99839754946817101",
+      "label": "榴莲",
+      "parent": "Term"
+    },
+    {
+      "id": "type:93f793a1b43706b2e4bc145b",
+      "label": "南美荔枝进口均价波动",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:fc600164ddef5beeed822e83",
+      "label": "葡萄损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:77e10b6fb118ed13ab7e1c30",
+      "label": "客户类型专题维29",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:ace8089098ce0ed6345747b3",
+      "label": "东南亚橙子进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:d877da2a5c954df7e6a33aa2",
+      "label": "猕猴桃出口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:3dff8ba484b7cf393d85cf73",
+      "label": "客户类型专题维14",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:2533a0ef77baff8e3e499103",
+      "label": "华南香蕉库存周转率看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:9f5736f952f6f65da0894007",
+      "label": "猕猴桃",
+      "parent": "Term"
+    },
+    {
+      "id": "type:a7be0fb4ee0d6b3443b126b0",
+      "label": "南美荔枝水果销售总额",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:fcaf8184b7afd2d21da959ce",
+      "label": "草莓损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:638327a7a3d2d7188de99554",
+      "label": "产区专题维37",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:dfa79cadc31d7943cea3954b",
+      "label": "榴莲周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:7434cff4f14a7b3194f35c19",
+      "label": "销售渠道专题维68",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:6eba9df0ce7c5de92bdf6037",
+      "label": "东南亚榴莲库存周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:75fc3858d50788b4680d8acf",
+      "label": "芒果合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:0c0089edbe9102c12e5e670e",
+      "label": "葡萄",
+      "parent": "Term"
+    },
+    {
+      "id": "type:27061c8aa96586b3be70ddd3",
+      "label": "产区专题维62",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:9fcbcb01ced6cea1c3ede587",
+      "label": "非洲芒果进口均价波动",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:5894c5c5fc2a0969784dea2a",
+      "label": "香蕉总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:afaa2b86dc8fb5f49f1c637f",
+      "label": "产区专题维47",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:f8db97eec5fa0c94adc0bfb6",
+      "label": "香蕉",
+      "parent": "Term"
+    },
+    {
+      "id": "type:c99e8e77ad90e6496dfd9892",
+      "label": "南美葡萄库存周转率看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:46de45a6d8d381f4cfe4f9af",
+      "label": "葡萄周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:456ffdeaad9b056f9fccd2a2",
+      "label": "猕猴桃质量检测",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:a164a6556c72f1aa72707021",
+      "label": "南美葡萄出口量同比增长",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:2c1e8c03f730a86fd35a7a14",
+      "label": "进出口口岸专题维55",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:96a573d1a482381c39979fe4",
+      "label": "grape",
+      "parent": "Term"
+    },
+    {
+      "id": "type:4a7ca79b602a43a770d93a3b",
+      "label": "非洲芒果损耗率趋势",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:5eca86670934723148a21e4b",
+      "label": "苹果均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:ff3eeca59108feb235287e47",
+      "label": "销售渠道专题维73",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:ad03846d519fa584bd5f08e7",
+      "label": "水果类别专题维41",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:8097be044eabd4b3bae54594",
+      "label": "苹果",
+      "parent": "Term"
+    },
+    {
+      "id": "type:c4a2d4bc2ea2f352eaf738ca",
+      "label": "东南亚橙子损耗率趋势",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:4a1689bc5ac1c394774970b2",
+      "label": "葡萄出口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:79c758e666e7b2fc1c76f564",
+      "label": "水果类别专题维71",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:b5cd4b826cc24ef4d8987440",
+      "label": "产区专题维72",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:7b69824601395950b6ab1993",
+      "label": "芒果",
+      "parent": "Term"
+    },
+    {
+      "id": "type:c82583260d8a94a059630cd3",
+      "label": "非洲芒果水果销售总额",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:58f282b576b7937820d94530",
+      "label": "香蕉总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:83fd2b55e95863a6e6b71f9f",
+      "label": "产区专题维52",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:86933de45a2cf22db98900a8",
+      "label": "东南亚橙子进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:304900d2393ac203fc1a6c94",
+      "label": "南美葡萄库存周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:e96ed94527998f07ba7e067f",
+      "label": "猕猴桃出口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:40b125424b227c2037a7b549",
+      "label": "水果类别专题维31",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:5d3d1d67d87a19f3bfd78af2",
+      "label": "产区专题维67",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:5720c78c024400412c28567d",
+      "label": "南美葡萄区域均价差异",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:dfae3cd428a1a4ca0cc8446e",
+      "label": "草莓周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:96f803b6cdf539ac55d4b305",
+      "label": "进出口口岸专题维75",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:46be427087f4f979c9a0931c",
+      "label": "东南亚橙子水果销售总额",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:286fd07ba8a582c4a13f5f3e",
+      "label": "芒果进口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:c6b81934ef702c42d4bf4aa8",
+      "label": "橙子合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:8b4c7220ca6e7fb6e48c0fc3",
+      "label": "销售渠道专题维38",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:9621ba2f13e6d1235ffab111",
+      "label": "东南亚橙子进口均价波动",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:be9e0df8b1fd6a0be1a69ae8",
+      "label": "葡萄总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:24898971ef9c95fcfc326854",
+      "label": "水果类别专题维46",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:aa68ab7179143c9525fb8ba2",
+      "label": "香蕉进出口通关查询",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:43f8a8f8dd2757b84fb8a030",
+      "label": "非洲芒果损耗率趋势看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:4c558ee89b8bf29fa9f8e88d",
+      "label": "销售渠道专题维8",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:f781e024711094328a97f04f",
+      "label": "非洲猕猴桃出口量同比增长",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:0f59ec8696e664f5a5b8f4bb",
+      "label": "进出口口岸专题维10",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:8ee6f33f8005351e57d07e9a",
+      "label": "橙子库存量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:4bb9194bf222c6fe28b5fa57",
+      "label": "南美荔枝进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:3ee1b2528183ef5bbc8e7bad",
+      "label": "非洲猕猴桃区域均价差异",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:a058fae49cedc38c73e893ba",
+      "label": "橙子进口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:5d28d9cad60f3ddebf84bef4",
+      "label": "客户类型专题维74",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:e7336f9b11397317bef79879",
+      "label": "华东苹果进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:9a0e1a3601c9e50909c0c5e3",
+      "label": "猕猴桃损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:44a7709fe33481338120f82d",
+      "label": "产区专题维12",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:3c6c64945a7385bb9c27018e",
+      "label": "香蕉总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:6643aa07a3f717058cd54e9b",
+      "label": "进出口口岸专题维25",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:16ff82f32d6891a59fb1ba36",
+      "label": "产区专题维17",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:c9e2ffb4fa658e1a431ec6ee",
+      "label": "芒果库存量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:952a2e2c7bfe3d4dd8aed10b",
+      "label": "产区专题维27",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:51fa607d0be633a1826da978",
+      "label": "香蕉进出口通关查询",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:84a151f227df52240f677524",
+      "label": "华南蓝莓水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:e25f6e87ec3fcd45b63e5513",
+      "label": "蓝莓合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:a0b1b9916b76d6b893412cfd",
+      "label": "客户类型专题维39",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:d5bc763b4908a40d2a01d2ae",
+      "label": "蓝莓进口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:155ed978611a1908117dac60",
+      "label": "客户类型专题维44",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:caa764343530047810c4d6d1",
+      "label": "苹果合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:3a3eacd30643b2170d8b393c",
+      "label": "南美葡萄出口量同比增长看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:803959bead07d3da8e7de08b",
+      "label": "华南蓝莓水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:81f6da0d32ab18aaf882e6a6",
+      "label": "华东苹果损耗率趋势看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:278b441d71353e8f960ae2e9",
+      "label": "榴莲总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:1d423ddaaac5efa0d85ba2df",
+      "label": "水果类别专题维11",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:135c2b10771fdf9cf136a0e3",
+      "label": "进出口口岸专题维35",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:ee3672c0dc7128f3bc781d35",
+      "label": "橙子进口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:79add5d2a01ee0c92ea2ca49",
+      "label": "产区",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:0a1e4f7873c89bd3e1a6db9a",
+      "label": "芒果合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:74376f3cdaa8e63dbb4cbb64",
+      "label": "客户类型专题维9",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:196a16fe6dae88fa3ec120b4",
+      "label": "南美葡萄库存周转率看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:a4920c830fffb31d647e504d",
+      "label": "华东草莓区域均价差异看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:28c57593e51acb8d982c6d6d",
+      "label": "南美荔枝损耗率趋势看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:3b91fc5a4a914d436cd4f091",
+      "label": "水果类别专题维36",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:6f3fa454afe3d3023281b547",
+      "label": "荔枝进口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:f7ce020619871bab1289d962",
+      "label": "进出口口岸",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:6aa895e44efb19f17e9c7c5e",
+      "label": "销售渠道专题维33",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:161b664d1dd0f6ac61362334",
+      "label": "南美葡萄库存周转率看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:b91d644d8263d447e4e94a22",
+      "label": "荔枝库存量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:da616937c5491a40c10e3bc6",
+      "label": "非洲芒果水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:2e89f9427679329f29593111",
+      "label": "销售渠道专题维78",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:4bbcffecda9ba3b10fde6652",
+      "label": "香蕉周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:d6a203a21512a49b31c9f34e",
+      "label": "芒果均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:b8a5e2e976a204b82492f5bf",
+      "label": "销售渠道专题维63",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:daf1fb2eded94d801006cfb9",
+      "label": "华东苹果损耗率趋势看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:0a71f75380ab51019649aaf1",
+      "label": "猕猴桃出口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:413db2fa57f3404637f94e33",
+      "label": "水果类别专题维76",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:c541d58eb9d763a51c0c9c0b",
+      "label": "猕猴桃总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:1b398f0c1149098f7ba3c7a1",
+      "label": "客户类型专题维54",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:598d35fb9f0d154d9509e27c",
+      "label": "非洲芒果水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:97b03078391062ba0b8f9cd7",
+      "label": "草莓周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:f05a0bfdb622ffc79fef59d2",
+      "label": "南美荔枝损耗率趋势看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:dbe760ec10359e6821524c05",
+      "label": "东南亚榴莲出口量同比增长看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:7a5d76f87a8563c95165d44e",
+      "label": "客户类型",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:a63062bcf7475193551b3269",
+      "label": "苹果合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:113435f2b89b38c002864fc0",
+      "label": "销售渠道专题维28",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:66e4447c83fdb41eebf1cd11",
+      "label": "苹果合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:a6c63893af5397153197dc71",
+      "label": "非洲猕猴桃区域均价差异看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:72ab759ec66b4e1230283054",
+      "label": "销售渠道专题维48",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:018201a6a58a53c5a0c6bb54",
+      "label": "荔枝均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:a7d70b60db4dd4e1378af29e",
+      "label": "产区专题维32",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:59f14467e711bcd64efbd723",
+      "label": "产区专题维42",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:a7994aad9d4d5f51b96e6ab5",
+      "label": "水果类别专题维6",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:c6d77c84d28ec7271048b8f8",
+      "label": "香蕉周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:7fc2e01439771d7e368d6937",
+      "label": "榴莲损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:de91eee3fa9ae3e81634b262",
+      "label": "进出口口岸专题维45",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:de4707a875aaf88c6e34df9f",
+      "label": "水果类别",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:34e8b30263883c2f3a5f4e95",
+      "label": "猕猴桃损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:fcba5d1ab619cb4974388f4f",
+      "label": "销售渠道专题维18",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:96ae484b37f9733d79c79ddd",
+      "label": "草莓损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:324f1cb371ad331171051f61",
+      "label": "销售渠道专题维43",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:cb78234172da486507836e38",
+      "label": "荔枝均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:60ba31737bd56d0a737224d4",
+      "label": "南美荔枝进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:e3a21c13432269d213298c5a",
+      "label": "销售渠道专题维13",
+      "parent": "Dimension"
+    },
+    {
+      "id": "type:defc179cd0288c90f966ef94",
+      "label": "蓝莓均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:284689d39df662a7709c3d57",
+      "label": "东南亚橙子进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:3b83505b0895abc4473c1421",
+      "label": "草莓总产量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:5e84d0b589f4fe86f643d8cf",
+      "label": "华南蓝莓进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:4a984866a21656d7b4fa16c8",
+      "label": "榴莲出口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:6b56b3c87ef4b4d9c32bb0c4",
+      "label": "橙子库存量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:ab9d03f806cb54ec11cf2fa1",
+      "label": "橙子均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:23a575a6c98b275ce582b5e2",
+      "label": "草莓出口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:ac95181af97c68e803bfee70",
+      "label": "荔枝均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:e742d8f05884bf751380252c",
+      "label": "草莓损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:75a94cdc0608b9cc462bceb4",
+      "label": "非洲芒果进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:f1bb1a604adfcd2a0f394993",
+      "label": "东南亚橙子损耗率趋势看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:570ef66f22756f687729c906",
+      "label": "华南蓝莓进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:6b049de4adbf5a542dbc1067",
+      "label": "苹果均价",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:d56b21d6a5a54c1fb191ffb9",
+      "label": "非洲芒果进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:c803f5af76bb31da6ba94be9",
+      "label": "荔枝合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:a84ce5f0c3679986c707a91f",
+      "label": "华东草莓区域均价差异看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:6194218b4fbf32acc05cdc98",
+      "label": "非洲猕猴桃区域均价差异看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:de6368c6e67e4e973746fb13",
+      "label": "榴莲周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:293fe0150d1685ea7cc098e4",
+      "label": "蓝莓库存量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:7a17c5fedcb4dec7a6b1fbdc",
+      "label": "葡萄损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:756d5a6cab5d966353301c7b",
+      "label": "东南亚榴莲区域均价差异看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:d53a2227ec908d53e7582dd6",
+      "label": "南美荔枝水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:9fa29e9015b3f595e7d9d3ba",
+      "label": "猕猴桃周转率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:435bc3c13c368da62b091a1b",
+      "label": "橙子合格率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:5c6ca1698288f5f865feedce",
+      "label": "南美荔枝进口均价波动看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:9c689cdee17f93814b735da4",
+      "label": "非洲芒果水果销售总额看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:7ee83637320f1e8c7ef08980",
+      "label": "榴莲损耗率",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:0ba24e72d6cb73aecb985f63",
+      "label": "荔枝进口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:5122a17795a1c4c29be1df58",
+      "label": "非洲猕猴桃区域均价差异看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:dc97ae526fd463440faf9709",
+      "label": "华南香蕉出口量同比增长看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:4c82a28da0be23b6df72f991",
+      "label": "苹果进口量",
+      "parent": "Metric"
+    },
+    {
+      "id": "type:d1b1ef8253c0a48af5febf63",
+      "label": "华南香蕉区域均价差异看板",
+      "parent": "GeneralObject"
+    },
+    {
+      "id": "type:74d9c978057bc94c01c0e746",
+      "label": "华南香蕉区域均价差异看板",
+      "parent": "GeneralObject"
+    }
+  ],
+  "edges": [
+    {
+      "from": "type:a86c9931c02f49ea9371ad6e",
+      "to": "Metric"
+    },
+    {
+      "from": "type:730faec7d451d4ec0839c00e",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:8154fe9055b7b2f21791432c",
+      "to": "Term"
+    },
+    {
+      "from": "type:a3cd066fa34169beb1862ceb",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:10665c141dd32543dee0ab7d",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:263b146bf618547a019d3f85",
+      "to": "Metric"
+    },
+    {
+      "from": "type:d76408a22c077a2d42f54280",
+      "to": "Term"
+    },
+    {
+      "from": "type:2f920827909d61e8a8e5254d",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:249d618646040f657e426aad",
+      "to": "Metric"
+    },
+    {
+      "from": "type:f1918752d10659a38597f956",
+      "to": "Metric"
+    },
+    {
+      "from": "type:3fe3b5a21dcdd0dbc6bab96b",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:a7d2a707b77cd13056b48662",
+      "to": "Metric"
+    },
+    {
+      "from": "type:bb62a1aaf81b0797dcbeeb41",
+      "to": "Term"
+    },
+    {
+      "from": "type:a84ada2e89ac1a31b7da6ced",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:bbcbdc83ea9aafe4e2846af5",
+      "to": "Metric"
+    },
+    {
+      "from": "type:a3ab7d8dc6a92099988b0ad6",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:3202d212e5d72358d6902d9e",
+      "to": "Term"
+    },
+    {
+      "from": "type:0dacfe72b07bcca1bf5ef97e",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:2b4814c68c6ff0c070b088e1",
+      "to": "Metric"
+    },
+    {
+      "from": "type:9ab1fb2f58c877ac1cb3b4e4",
+      "to": "Metric"
+    },
+    {
+      "from": "type:08e3034d9463682e9a7e55e7",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:f334a5359cfc089a050c6e5d",
+      "to": "Term"
+    },
+    {
+      "from": "type:9eb34b4a2d58f5ffa003532d",
+      "to": "Metric"
+    },
+    {
+      "from": "type:e9402ef502fbc4af605efb98",
+      "to": "Metric"
+    },
+    {
+      "from": "type:1d588e8ce567cf3065fcf43a",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:f0e17465811cd7222bd6125b",
+      "to": "Metric"
+    },
+    {
+      "from": "type:c1a422c8b5020ca506b497c6",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:7172554077351e8a3ee59885",
+      "to": "Metric"
+    },
+    {
+      "from": "type:7b1b31c33912dab5f4cbab18",
+      "to": "Metric"
+    },
+    {
+      "from": "type:960059814a48bc87935e0d2f",
+      "to": "Term"
+    },
+    {
+      "from": "type:4f776355cdbac726ff04bfc2",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:141289272c1724261e5213d3",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:cb46d1ee75c56ffc927dadb8",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:ca39a097c3395046068757eb",
+      "to": "Metric"
+    },
+    {
+      "from": "type:f03eb80e457c61faadece5bc",
+      "to": "Term"
+    },
+    {
+      "from": "type:858ffdffd871e1eec2ad748f",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:b1ede2e66fb6ee70acc6fcc8",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:98008b6bce4a5b6ebf239cd7",
+      "to": "Metric"
+    },
+    {
+      "from": "type:8596098524f600e431e48d6e",
+      "to": "Metric"
+    },
+    {
+      "from": "type:d45934d1ef2653202d225c2e",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:4b01604f79a428d381d20cdd",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:13347f6f2570ad0885f9b240",
+      "to": "Metric"
+    },
+    {
+      "from": "type:02d7b494481912b9d11e4828",
+      "to": "Term"
+    },
+    {
+      "from": "type:49da15ebfaab5e049870c951",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:d574f760e67257d03fbbc54c",
+      "to": "Metric"
+    },
+    {
+      "from": "type:fd62f9a4f2a2189cfd60ba84",
+      "to": "Metric"
+    },
+    {
+      "from": "type:4f3f633a4edffddc1a6dcfe5",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:f60212963167d0ac32ef16f1",
+      "to": "Metric"
+    },
+    {
+      "from": "type:fd438aba53da14b3ca51553a",
+      "to": "Term"
+    },
+    {
+      "from": "type:c3716299338fd00d1200d7ea",
+      "to": "Metric"
+    },
+    {
+      "from": "type:c33ad364ea65ca14474a5490",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:34aecf167cec1b18899c36fe",
+      "to": "Metric"
+    },
+    {
+      "from": "type:4e3666d504a49feb448144d0",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:6fe56162fcec53a5a59eab07",
+      "to": "Term"
+    },
+    {
+      "from": "type:93ddad8abb104c60249f4c9e",
+      "to": "Metric"
+    },
+    {
+      "from": "type:c60e8a9f0bbdc994b23bfb5c",
+      "to": "Metric"
+    },
+    {
+      "from": "type:45d7f3496bf7cdb3bba87bba",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:e0a8be9520abbf36399d89cd",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:5f59cfeca9e14a54ff6b2521",
+      "to": "Metric"
+    },
+    {
+      "from": "type:7ace6177769171a53fe747c6",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:81e9500c87abf22a8e4c81dd",
+      "to": "Metric"
+    },
+    {
+      "from": "type:66cede58ec35a1e16b368914",
+      "to": "Metric"
+    },
+    {
+      "from": "type:474ce21939fb161082c1ebf1",
+      "to": "Term"
+    },
+    {
+      "from": "type:a0e06c468a3bdc55fe2059ba",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:e0fdd61bd0524c2c8302b36d",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:22574fb83989c62297329488",
+      "to": "Metric"
+    },
+    {
+      "from": "type:9fb3e20432c709e8e2646cda",
+      "to": "Metric"
+    },
+    {
+      "from": "type:85b99ac465fc0f5e2325243d",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:702229f99d8ae43f80118bc2",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:084509c41b54be4077bbbbfb",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:79b64839c53f24479b06d70e",
+      "to": "Term"
+    },
+    {
+      "from": "type:babd62eb5ff90e9836d3f7fd",
+      "to": "Metric"
+    },
+    {
+      "from": "type:1372521ea8ff180b89d016fb",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:f271fa508fb203c65b9b26f4",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:575da3d3f4d2eb9063a5f683",
+      "to": "Metric"
+    },
+    {
+      "from": "type:9724a9670ad5b17cb973917b",
+      "to": "Metric"
+    },
+    {
+      "from": "type:56cf5dda3202df4b81f289b3",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:6a295cf2b020e87e8af2dfe0",
+      "to": "Term"
+    },
+    {
+      "from": "type:73ac770f63e31fae31317889",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:31c39a531cd98fa7d8b2fd4c",
+      "to": "Metric"
+    },
+    {
+      "from": "type:f4e1b4d5a0c03b26ae36344f",
+      "to": "Metric"
+    },
+    {
+      "from": "type:5ab09a4750b180e6383e97b2",
+      "to": "Metric"
+    },
+    {
+      "from": "type:abb1d97a096b675b1e0d7ee1",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:6e4e6e67142ab5551ce072cb",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:4b1111c99839754946817101",
+      "to": "Term"
+    },
+    {
+      "from": "type:93f793a1b43706b2e4bc145b",
+      "to": "Metric"
+    },
+    {
+      "from": "type:fc600164ddef5beeed822e83",
+      "to": "Metric"
+    },
+    {
+      "from": "type:77e10b6fb118ed13ab7e1c30",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:ace8089098ce0ed6345747b3",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:d877da2a5c954df7e6a33aa2",
+      "to": "Metric"
+    },
+    {
+      "from": "type:3dff8ba484b7cf393d85cf73",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:2533a0ef77baff8e3e499103",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:9f5736f952f6f65da0894007",
+      "to": "Term"
+    },
+    {
+      "from": "type:a7be0fb4ee0d6b3443b126b0",
+      "to": "Metric"
+    },
+    {
+      "from": "type:fcaf8184b7afd2d21da959ce",
+      "to": "Metric"
+    },
+    {
+      "from": "type:638327a7a3d2d7188de99554",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:dfa79cadc31d7943cea3954b",
+      "to": "Metric"
+    },
+    {
+      "from": "type:7434cff4f14a7b3194f35c19",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:6eba9df0ce7c5de92bdf6037",
+      "to": "Metric"
+    },
+    {
+      "from": "type:75fc3858d50788b4680d8acf",
+      "to": "Metric"
+    },
+    {
+      "from": "type:0c0089edbe9102c12e5e670e",
+      "to": "Term"
+    },
+    {
+      "from": "type:27061c8aa96586b3be70ddd3",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:9fcbcb01ced6cea1c3ede587",
+      "to": "Metric"
+    },
+    {
+      "from": "type:5894c5c5fc2a0969784dea2a",
+      "to": "Metric"
+    },
+    {
+      "from": "type:afaa2b86dc8fb5f49f1c637f",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:f8db97eec5fa0c94adc0bfb6",
+      "to": "Term"
+    },
+    {
+      "from": "type:c99e8e77ad90e6496dfd9892",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:46de45a6d8d381f4cfe4f9af",
+      "to": "Metric"
+    },
+    {
+      "from": "type:456ffdeaad9b056f9fccd2a2",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:a164a6556c72f1aa72707021",
+      "to": "Metric"
+    },
+    {
+      "from": "type:2c1e8c03f730a86fd35a7a14",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:96a573d1a482381c39979fe4",
+      "to": "Term"
+    },
+    {
+      "from": "type:4a7ca79b602a43a770d93a3b",
+      "to": "Metric"
+    },
+    {
+      "from": "type:5eca86670934723148a21e4b",
+      "to": "Metric"
+    },
+    {
+      "from": "type:ff3eeca59108feb235287e47",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:ad03846d519fa584bd5f08e7",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:8097be044eabd4b3bae54594",
+      "to": "Term"
+    },
+    {
+      "from": "type:c4a2d4bc2ea2f352eaf738ca",
+      "to": "Metric"
+    },
+    {
+      "from": "type:4a1689bc5ac1c394774970b2",
+      "to": "Metric"
+    },
+    {
+      "from": "type:79c758e666e7b2fc1c76f564",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:b5cd4b826cc24ef4d8987440",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:7b69824601395950b6ab1993",
+      "to": "Term"
+    },
+    {
+      "from": "type:c82583260d8a94a059630cd3",
+      "to": "Metric"
+    },
+    {
+      "from": "type:58f282b576b7937820d94530",
+      "to": "Metric"
+    },
+    {
+      "from": "type:83fd2b55e95863a6e6b71f9f",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:86933de45a2cf22db98900a8",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:304900d2393ac203fc1a6c94",
+      "to": "Metric"
+    },
+    {
+      "from": "type:e96ed94527998f07ba7e067f",
+      "to": "Metric"
+    },
+    {
+      "from": "type:40b125424b227c2037a7b549",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:5d3d1d67d87a19f3bfd78af2",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:5720c78c024400412c28567d",
+      "to": "Metric"
+    },
+    {
+      "from": "type:dfae3cd428a1a4ca0cc8446e",
+      "to": "Metric"
+    },
+    {
+      "from": "type:96f803b6cdf539ac55d4b305",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:46be427087f4f979c9a0931c",
+      "to": "Metric"
+    },
+    {
+      "from": "type:286fd07ba8a582c4a13f5f3e",
+      "to": "Metric"
+    },
+    {
+      "from": "type:c6b81934ef702c42d4bf4aa8",
+      "to": "Metric"
+    },
+    {
+      "from": "type:8b4c7220ca6e7fb6e48c0fc3",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:9621ba2f13e6d1235ffab111",
+      "to": "Metric"
+    },
+    {
+      "from": "type:be9e0df8b1fd6a0be1a69ae8",
+      "to": "Metric"
+    },
+    {
+      "from": "type:24898971ef9c95fcfc326854",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:aa68ab7179143c9525fb8ba2",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:43f8a8f8dd2757b84fb8a030",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:4c558ee89b8bf29fa9f8e88d",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:f781e024711094328a97f04f",
+      "to": "Metric"
+    },
+    {
+      "from": "type:0f59ec8696e664f5a5b8f4bb",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:8ee6f33f8005351e57d07e9a",
+      "to": "Metric"
+    },
+    {
+      "from": "type:4bb9194bf222c6fe28b5fa57",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:3ee1b2528183ef5bbc8e7bad",
+      "to": "Metric"
+    },
+    {
+      "from": "type:a058fae49cedc38c73e893ba",
+      "to": "Metric"
+    },
+    {
+      "from": "type:5d28d9cad60f3ddebf84bef4",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:e7336f9b11397317bef79879",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:9a0e1a3601c9e50909c0c5e3",
+      "to": "Metric"
+    },
+    {
+      "from": "type:44a7709fe33481338120f82d",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:3c6c64945a7385bb9c27018e",
+      "to": "Metric"
+    },
+    {
+      "from": "type:6643aa07a3f717058cd54e9b",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:16ff82f32d6891a59fb1ba36",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:c9e2ffb4fa658e1a431ec6ee",
+      "to": "Metric"
+    },
+    {
+      "from": "type:952a2e2c7bfe3d4dd8aed10b",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:51fa607d0be633a1826da978",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:84a151f227df52240f677524",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:e25f6e87ec3fcd45b63e5513",
+      "to": "Metric"
+    },
+    {
+      "from": "type:a0b1b9916b76d6b893412cfd",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:d5bc763b4908a40d2a01d2ae",
+      "to": "Metric"
+    },
+    {
+      "from": "type:155ed978611a1908117dac60",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:caa764343530047810c4d6d1",
+      "to": "Metric"
+    },
+    {
+      "from": "type:3a3eacd30643b2170d8b393c",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:803959bead07d3da8e7de08b",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:81f6da0d32ab18aaf882e6a6",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:278b441d71353e8f960ae2e9",
+      "to": "Metric"
+    },
+    {
+      "from": "type:1d423ddaaac5efa0d85ba2df",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:135c2b10771fdf9cf136a0e3",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:ee3672c0dc7128f3bc781d35",
+      "to": "Metric"
+    },
+    {
+      "from": "type:79add5d2a01ee0c92ea2ca49",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:0a1e4f7873c89bd3e1a6db9a",
+      "to": "Metric"
+    },
+    {
+      "from": "type:74376f3cdaa8e63dbb4cbb64",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:196a16fe6dae88fa3ec120b4",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:a4920c830fffb31d647e504d",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:28c57593e51acb8d982c6d6d",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:3b91fc5a4a914d436cd4f091",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:6f3fa454afe3d3023281b547",
+      "to": "Metric"
+    },
+    {
+      "from": "type:f7ce020619871bab1289d962",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:6aa895e44efb19f17e9c7c5e",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:161b664d1dd0f6ac61362334",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:b91d644d8263d447e4e94a22",
+      "to": "Metric"
+    },
+    {
+      "from": "type:da616937c5491a40c10e3bc6",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:2e89f9427679329f29593111",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:4bbcffecda9ba3b10fde6652",
+      "to": "Metric"
+    },
+    {
+      "from": "type:d6a203a21512a49b31c9f34e",
+      "to": "Metric"
+    },
+    {
+      "from": "type:b8a5e2e976a204b82492f5bf",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:daf1fb2eded94d801006cfb9",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:0a71f75380ab51019649aaf1",
+      "to": "Metric"
+    },
+    {
+      "from": "type:413db2fa57f3404637f94e33",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:c541d58eb9d763a51c0c9c0b",
+      "to": "Metric"
+    },
+    {
+      "from": "type:1b398f0c1149098f7ba3c7a1",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:598d35fb9f0d154d9509e27c",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:97b03078391062ba0b8f9cd7",
+      "to": "Metric"
+    },
+    {
+      "from": "type:f05a0bfdb622ffc79fef59d2",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:dbe760ec10359e6821524c05",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:7a5d76f87a8563c95165d44e",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:a63062bcf7475193551b3269",
+      "to": "Metric"
+    },
+    {
+      "from": "type:113435f2b89b38c002864fc0",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:66e4447c83fdb41eebf1cd11",
+      "to": "Metric"
+    },
+    {
+      "from": "type:a6c63893af5397153197dc71",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:72ab759ec66b4e1230283054",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:018201a6a58a53c5a0c6bb54",
+      "to": "Metric"
+    },
+    {
+      "from": "type:a7d70b60db4dd4e1378af29e",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:59f14467e711bcd64efbd723",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:a7994aad9d4d5f51b96e6ab5",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:c6d77c84d28ec7271048b8f8",
+      "to": "Metric"
+    },
+    {
+      "from": "type:7fc2e01439771d7e368d6937",
+      "to": "Metric"
+    },
+    {
+      "from": "type:de91eee3fa9ae3e81634b262",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:de4707a875aaf88c6e34df9f",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:34e8b30263883c2f3a5f4e95",
+      "to": "Metric"
+    },
+    {
+      "from": "type:fcba5d1ab619cb4974388f4f",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:96ae484b37f9733d79c79ddd",
+      "to": "Metric"
+    },
+    {
+      "from": "type:324f1cb371ad331171051f61",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:cb78234172da486507836e38",
+      "to": "Metric"
+    },
+    {
+      "from": "type:60ba31737bd56d0a737224d4",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:e3a21c13432269d213298c5a",
+      "to": "Dimension"
+    },
+    {
+      "from": "type:defc179cd0288c90f966ef94",
+      "to": "Metric"
+    },
+    {
+      "from": "type:284689d39df662a7709c3d57",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:3b83505b0895abc4473c1421",
+      "to": "Metric"
+    },
+    {
+      "from": "type:5e84d0b589f4fe86f643d8cf",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:4a984866a21656d7b4fa16c8",
+      "to": "Metric"
+    },
+    {
+      "from": "type:6b56b3c87ef4b4d9c32bb0c4",
+      "to": "Metric"
+    },
+    {
+      "from": "type:ab9d03f806cb54ec11cf2fa1",
+      "to": "Metric"
+    },
+    {
+      "from": "type:23a575a6c98b275ce582b5e2",
+      "to": "Metric"
+    },
+    {
+      "from": "type:ac95181af97c68e803bfee70",
+      "to": "Metric"
+    },
+    {
+      "from": "type:e742d8f05884bf751380252c",
+      "to": "Metric"
+    },
+    {
+      "from": "type:75a94cdc0608b9cc462bceb4",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:f1bb1a604adfcd2a0f394993",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:570ef66f22756f687729c906",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:6b049de4adbf5a542dbc1067",
+      "to": "Metric"
+    },
+    {
+      "from": "type:d56b21d6a5a54c1fb191ffb9",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:c803f5af76bb31da6ba94be9",
+      "to": "Metric"
+    },
+    {
+      "from": "type:a84ce5f0c3679986c707a91f",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:6194218b4fbf32acc05cdc98",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:de6368c6e67e4e973746fb13",
+      "to": "Metric"
+    },
+    {
+      "from": "type:293fe0150d1685ea7cc098e4",
+      "to": "Metric"
+    },
+    {
+      "from": "type:7a17c5fedcb4dec7a6b1fbdc",
+      "to": "Metric"
+    },
+    {
+      "from": "type:756d5a6cab5d966353301c7b",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:d53a2227ec908d53e7582dd6",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:9fa29e9015b3f595e7d9d3ba",
+      "to": "Metric"
+    },
+    {
+      "from": "type:435bc3c13c368da62b091a1b",
+      "to": "Metric"
+    },
+    {
+      "from": "type:5c6ca1698288f5f865feedce",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:9c689cdee17f93814b735da4",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:7ee83637320f1e8c7ef08980",
+      "to": "Metric"
+    },
+    {
+      "from": "type:0ba24e72d6cb73aecb985f63",
+      "to": "Metric"
+    },
+    {
+      "from": "type:5122a17795a1c4c29be1df58",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:dc97ae526fd463440faf9709",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:4c82a28da0be23b6df72f991",
+      "to": "Metric"
+    },
+    {
+      "from": "type:d1b1ef8253c0a48af5febf63",
+      "to": "GeneralObject"
+    },
+    {
+      "from": "type:74d9c978057bc94c01c0e746",
+      "to": "GeneralObject"
+    }
+  ]
+}

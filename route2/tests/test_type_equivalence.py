@@ -84,6 +84,49 @@ def test_complete_bilateral_description_and_formula_support_one_pair():
     assert len(core.object_types) == 2
 
 
+@pytest.mark.parametrize("left,right", [
+    ({"period_scope": "公历年"}, {"period_scope": "公历月"}),
+    ({"budget": "1"}, {"budget": "0"}),
+    ({"period_scope": "公历年"}, {}),
+    ({"operator": "SUM"}, {"operator": "sum"}),
+])
+def test_definition_parameters_prevent_recall_and_stale_pair_acceptance(left, right):
+    data, core = _fixture()
+    candidate = propose_equivalence_candidates(core, data, 1)[0]
+    decision = _decision(data, candidate)
+    core.object_types[0].definition_parameters = left
+    core.object_types[1].definition_parameters = right
+    assert propose_equivalence_candidates(core, data, 2) == []
+    with pytest.raises(ValueError, match="Definition parameters differ"):
+        compile_equivalence(data, core, candidate, decision)
+
+
+def test_equal_parameters_are_explicit_and_changed_parameters_invalidate_pair():
+    data, core = _fixture()
+    for item in core.object_types:
+        item.definition_parameters = {"period_scope": "公历年", "budget": "1"}
+    candidate = propose_equivalence_candidates(core, data, 1)[0]
+    assertion = compile_equivalence(data, core, candidate, _decision(data, candidate))
+    assert assertion["definition_parameters"] == candidate["definition_parameters"] == {
+        "period_scope": "公历年", "budget": "1"}
+    for item in core.object_types:
+        item.definition_parameters = {"period_scope": "公历月", "budget": "1"}
+    with pytest.raises(ValueError, match="Candidate identity changed"):
+        compile_equivalence(data, core, candidate, _decision(data, candidate))
+
+
+def test_legacy_empty_parameters_keep_equivalence_identity():
+    data, core = _fixture()
+    candidate = propose_equivalence_candidates(core, data, 1)[0]
+    legacy = core.model_dump()
+    for item in legacy["object_types"]:
+        item.pop("definition_parameters")
+    restored = BuildPlan.model_validate(legacy)
+    assert propose_equivalence_candidates(restored, data, 1)[0] == candidate
+    candidate.pop("definition_parameters")
+    assert compile_equivalence(data, restored, candidate, _decision(data, candidate))["definition_parameters"] == {}
+
+
 def test_shared_name_alone_cannot_recall_conflicting_root_unit_scope_or_truncation():
     for kwargs in (
         {"roots": ("Metric", "Measure")},

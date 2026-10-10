@@ -1,9 +1,11 @@
 """Build a local, bounded result viewer from the disk-backed extraction output."""
 import json
+import yaml
 import sqlite3
 from pathlib import Path
 
-from .storage import read_yaml
+from .storage import read_yaml, UniqueLoader
+from .metadata_graph import technical_link_id
 
 
 MAX_ATTRIBUTES_PER_OBJECT = 16
@@ -36,19 +38,22 @@ def _attach_attribute_previews(db, nodes, ontology):
         placeholders = ",".join("?" for _ in batch)
         cursor = db.execute(
             "SELECT json_extract(body,'$.subject'), json_extract(body,'$.attribute'), "
-            "json_extract(body,'$.literal.value') FROM items "
+            "json_extract(body,'$.literal.value'), id, "
+            "json_extract(body,'$.evidence_ids') FROM items "
             "WHERE kind='assertions' AND json_type(body,'$.literal') IS NOT NULL "
             f"AND json_extract(body,'$.subject') IN ({placeholders})",
             batch,
         )
-        for subject, attribute, raw_value in cursor:
+        for subject, attribute, raw_value, assertion_id, evidence_json in cursor:
             node = by_id[subject]
             node["preview_attribute_count"] = node.get("preview_attribute_count", 0) + 1
             meta = catalog.get(attribute, {})
             column = meta.get("source_column") or attribute.rsplit(":", 1)[-1].rsplit(".", 1)[-1]
             value = str(raw_value) if raw_value is not None else ""
             preview = {"column": column, "value": value[:MAX_ATTRIBUTE_CHARS],
-                       "truncated": len(value) > MAX_ATTRIBUTE_CHARS}
+                       "truncated": len(value) > MAX_ATTRIBUTE_CHARS,
+                       "id": assertion_id, "attribute_id": attribute,
+                       "evidence_ids": json.loads(evidence_json or "[]")}
             if meta.get("literal_type"):
                 preview["literal_type"] = meta["literal_type"]
             if meta.get("declared_data_type"):
@@ -59,6 +64,51 @@ def _attach_attribute_previews(db, nodes, ontology):
             selected.append(preview)
             selected.sort(key=lambda item: (_attribute_rank(item["column"]), item["column"], item["value"]))
             del selected[MAX_ATTRIBUTES_PER_OBJECT:]
+
+
+def _instance_preview(db, ontology, max_nodes):
+    """Sample each semantic type, so a large record table cannot hide other types."""
+    type_ids = [item["id"] for item in ontology.get("object_types", [])
+                if item.get("category") == "business_type"]
+    counts = [{"type_id": type_id, "instance_kind": kind, "count": count}
+              for type_id, kind, count in db.execute(
+                  "SELECT coalesce(json_extract(body,'$.ontology_type_id'),json_extract(body,'$.type')), "
+                  "coalesce(json_extract(body,'$.instance_kind'),'legacy'), count(*) "
+                  "FROM items WHERE kind='objects' GROUP BY 1,2")]
+    if not type_ids:
+        return [], [], counts
+    marks = ",".join("?" for _ in type_ids)
+    rows = db.execute(
+        "SELECT body FROM (SELECT body, row_number() OVER (PARTITION BY "
+        "coalesce(json_extract(body,'$.ontology_type_id'),json_extract(body,'$.type')), "
+        "coalesce(json_extract(body,'$.instance_kind'),'legacy') ORDER BY id) AS rank "
+        "FROM items WHERE kind='objects' AND "
+        "coalesce(json_extract(body,'$.ontology_type_id'),json_extract(body,'$.type')) "
+        f"IN ({marks})) WHERE rank<=3 ORDER BY rank LIMIT ?", type_ids + [max_nodes])
+    nodes = {item["id"]: item for item in (json.loads(row[0]) for row in rows)}
+    selected_ids, links = list(nodes), {}
+    for start in range(0, len(selected_ids), SQLITE_PARAMETERS_PER_QUERY):
+        batch = selected_ids[start:start + SQLITE_PARAMETERS_PER_QUERY]
+        placeholders = ",".join("?" for _ in batch)
+        for (raw,) in db.execute(
+                "SELECT body FROM items WHERE kind='assertions' "
+                "AND json_extract(body,'$.object') IS NOT NULL AND ("
+                f"json_extract(body,'$.subject') IN ({placeholders}) OR "
+                f"json_extract(body,'$.object') IN ({placeholders})) ORDER BY id LIMIT ?",
+                batch + batch + [max_nodes * 2]):
+            edge = json.loads(raw)
+            if len(links) >= max_nodes * 2:
+                break
+            needed = {edge["subject"], edge["object"]} - nodes.keys()
+            if len(nodes) + len(needed) > max_nodes:
+                continue
+            for key in needed:
+                row = db.execute("SELECT body FROM items WHERE kind='objects' AND id=?", (key,)).fetchone()
+                if row:
+                    nodes[key] = json.loads(row[0])
+            if edge["subject"] in nodes and edge["object"] in nodes:
+                links[edge["id"]] = edge
+    return list(nodes.values()), list(links.values()), counts
 
 
 def _bound_concept_refs(item):
@@ -127,7 +177,7 @@ def _ontology_overview(ontology):
     nodes = roots + derived
     visible = {item["id"] for item in nodes}
     inheritance = [
-        {"source": item["parent"], "target": item["id"]}
+        {"source": item["id"], "target": item["parent"]}
         for item in derived if item.get("parent") in visible
     ]
     relations = []
@@ -187,9 +237,12 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                               "source": source_table, "target": target_table,
                               "source_field": str(source).rsplit(".", 1)[-1],
                               "target_field": str(target).rsplit(".", 1)[-1],
-                              "status": "declared", "evidence": edge})
+                              "status": "declared", "edge_type": "declared_fk",
+                              "source_column_id": source, "target_column_id": target,
+                              "evidence_ids": edge.get("evidence_ids", []), "evidence": edge})
     verified_whole_pairs = set()
     verified_rule_ids = set()
+    verified_link_ids = set()
     ruled_candidate_ids = set()
     for item in rule_set.get("rules", []):
         if item.get("status") not in ("checked_technical", "observed_subset"):
@@ -197,35 +250,54 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
         source, target = item.get("source", {}), item.get("target", {})
         if source.get("table") in ids and target.get("table") in ids:
             verified_rule_ids.add(item.get("rule_id"))
+            link_id = technical_link_id(item)
+            verified_link_ids.add(link_id)
             ruled_candidate_ids.add(item.get("candidate_id"))
             if (item.get("status") == "checked_technical" and not item.get("selector")
                     and not item.get("scope_bindings")):
                 verified_whole_pairs.add((source["table"], source.get("field"),
                                           target["table"], target.get("field")))
-            links.append({"id": item.get("rule_id"), "source": source["table"],
+            links.append({"id": link_id, "rule_id": item.get("rule_id"),
+                          "edge_type": "technical_link", "source": source["table"],
                           "target": target["table"], "source_field": source.get("field"),
                           "target_field": target.get("field"),
                           "status": "verified_technical" if item["status"] == "checked_technical"
                           else "observed_subset",
                           "selector": item.get("selector", {}), "scope_bindings": item.get("scope_bindings", {}),
+                          "transform": item.get("transform", {}),
+                          "source_column_id": source["table"] + "." + str(source.get("field")),
+                          "target_column_id": target["table"] + "." + str(target.get("field")),
+                          "evidence_ids": item.get("evidence_ids", []),
                           "verification": item.get("verification", {}),
+                          "numeric_overlap_only": item.get("numeric_overlap_only", False),
+                          "risk_flags": item.get("risk_flags", []),
                           "semantic_relation": item.get("semantic_relation", "unresolved")})
     # A saved meta_graph.yaml may be opened without its separate rule file.
     # Preserve inferred links from that graph but never label them as FKs.
     for edge in graph.get("edges", []):
-        if edge.get("type") != "inferred_technical_match" or edge.get("rule_id") in verified_rule_ids:
+        if edge.get("type") not in ("technical_link", "inferred_technical_match"):
+            continue
+        if (edge.get("id") in verified_link_ids or
+                (edge.get("type") == "inferred_technical_match" and edge.get("rule_id") in verified_rule_ids)):
             continue
         source, target = edge.get("source"), edge.get("target")
         source_table, target_table = column_owner.get(source), column_owner.get(target)
         if source_table not in ids or target_table not in ids:
             continue
-        links.append({"id": edge.get("rule_id") or f"inferred:{source}→{target}",
+        links.append({"id": edge.get("id") or edge.get("rule_id") or f"inferred:{source}→{target}",
+                      "edge_type": "technical_link", "rule_id": edge.get("rule_id"),
                       "source": source_table, "target": target_table,
                       "source_field": all_nodes.get(source, {}).get("column_name"),
                       "target_field": all_nodes.get(target, {}).get("column_name"),
                       "status": "verified_technical" if edge.get("status") == "checked_technical"
                       else "observed_subset", "selector": edge.get("selector", {}),
                       "scope_bindings": edge.get("scope_bindings", {}),
+                      "transform": edge.get("transform", {}),
+                      "verification": edge.get("verification", {}),
+                      "numeric_overlap_only": edge.get("numeric_overlap_only", False),
+                      "risk_flags": edge.get("risk_flags", []),
+                      "source_column_id": source, "target_column_id": target,
+                      "evidence_ids": edge.get("evidence_ids", []),
                       "semantic_relation": edge.get("semantic_relation", "unresolved"),
                       "evidence": edge})
     for item in candidates:
@@ -239,6 +311,8 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                           "source": source["table"], "target": target["table"],
                           "source_field": source.get("field"), "target_field": target.get("field"),
                           "status": "candidate", "retrieval_channels": item.get("retrieval_channels", []),
+                          "numeric_overlap_only": item.get("numeric_overlap_only", False),
+                          "risk_flags": item.get("risk_flags", []),
                           "decision": item.get("decision", {}),
                           "shared_sample_value_count": item.get("shared_sample_value_count")})
     counts = {status: sum(item["status"] == status for item in links)
@@ -309,10 +383,92 @@ def _metadata_preview(graph, candidates, rule_set, max_nodes):
                                    if item.get("kind") == "DatasetSnapshot")}
 
 
-def render_viewer(run, max_nodes=200, *, manifest_override=None):
+def _sequence_preview(path, limit, *, key=None, byte_limit=8 * 1024 * 1024):
+    """Read only a bounded YAML prefix; never load a million-binding document."""
+    summary = {"file": path.name, "shown": 0, "truncated": False, "status": "missing"}
+    if not path.exists():
+        return [], summary
+    with path.open("rb") as stream:
+        raw = stream.read(byte_limit + 1)
+    summary.update(status="available", file_bytes=path.stat().st_size,
+                   read_bytes=min(len(raw), byte_limit), truncated=len(raw) > byte_limit)
+    text = raw[:byte_limit].decode("utf-8", errors="ignore")
+    loader = UniqueLoader(text)
+    items = []
+
+    def skip_node():
+        event = loader.get_event()
+        depth = int(isinstance(event, (yaml.SequenceStartEvent, yaml.MappingStartEvent)))
+        while depth:
+            event = loader.get_event()
+            if isinstance(event, (yaml.SequenceStartEvent, yaml.MappingStartEvent)):
+                depth += 1
+            elif isinstance(event, (yaml.SequenceEndEvent, yaml.MappingEndEvent)):
+                depth -= 1
+
+    try:
+        loader.get_event()  # stream
+        loader.get_event()  # document
+        if key is not None:
+            if not isinstance(loader.get_event(), yaml.MappingStartEvent):
+                raise ValueError("Expected a mapping document")
+            while not loader.check_event(yaml.MappingEndEvent):
+                name = loader.construct_object(loader.compose_node(None, None), deep=True)
+                if name == key:
+                    break
+                skip_node()
+            else:
+                return [], {**summary, "status": "missing_key"}
+        if not isinstance(loader.get_event(), yaml.SequenceStartEvent):
+            raise ValueError("Expected a sequence")
+        while len(items) < limit and not loader.check_event(yaml.SequenceEndEvent):
+            node = loader.compose_node(None, None)
+            # YAML may implicitly close an incomplete block mapping at EOF.
+            # Discard that tail instead of presenting it as a complete binding.
+            if len(raw) > byte_limit and node.end_mark.index >= len(text.rstrip()):
+                break
+            item = loader.construct_object(node, deep=True)
+            if not isinstance(item, dict):
+                raise ValueError("Expected mapping records")
+            items.append(item)
+        summary["truncated"] |= not loader.check_event(yaml.SequenceEndEvent)
+    except (ValueError, yaml.YAMLError) as exc:
+        # A cut YAML tail is expected. Preserve complete records already parsed.
+        if not summary["truncated"]:
+            summary.update(status="invalid", error=str(exc)[:300])
+    finally:
+        loader.dispose()
+    summary["shown"] = len(items)
+    return items, summary
+
+
+def _template_preview(run, max_nodes):
+    projections, ps = _sequence_preview(run / "template_projections.yaml", max_nodes)
+    bindings, bs = _sequence_preview(run / "template_bindings.yaml", max_nodes * 15)
+    accepted, rs = _sequence_preview(run / "ontology_bindings.yaml", max_nodes * 3, key="bindings")
+    pending, us = _sequence_preview(run / "ontology_bindings.yaml", max_nodes, key="pending")
+    counts, examples = {}, []
+    for binding in bindings:
+        key = binding.get("object_type_id")
+        counts[key] = counts.get(key, 0) + 1
+        if counts[key] <= 3 and len(examples) < max_nodes * 3:
+            examples.append(binding)
+    return {"projections": projections, "bindings": examples, "binding_prefix_counts": counts,
+            "ontology_bindings": accepted, "pending": pending,
+            "files": [ps, bs, rs, us], "truncated": any(x["truncated"] for x in (ps, bs, rs, us)),
+            "warnings": [x["file"] for x in (ps, bs, rs, us) if x["status"] == "invalid"],
+            "notice": "绑定实例仅作有限预览，不进入本体主图；没有预览不表示不存在。"}
+
+
+def validate_viewer_limit(max_nodes):
+    """Fail on invalid configuration before any import or paid model request."""
+    if type(max_nodes) is not int or not 10 <= max_nodes <= 1000:
+        raise ValueError("max_nodes must be an integer between 10 and 1000")
+
+
+def render_viewer(run, max_nodes=200, *, manifest_override=None, output_path=None):
     run = Path(run).resolve()
-    if not 10 <= max_nodes <= 1000:
-        raise ValueError("max_nodes must be between 10 and 1000")
+    validate_viewer_limit(max_nodes)
 
     def read(name, fallback):
         file = run / name
@@ -325,7 +481,10 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                "objects": [], "concepts": [], "concept_count": None,
                "record_alignments": [], "relations": [], "relation_count": None,
                "record_relation_count": None, "business_relation_count": None,
-               "unresolved": [], "evidence": {}, "counts": {}}
+               "unresolved": [], "evidence": {}, "counts": {},
+               "instance_preview": [], "instance_relations": [], "instance_counts": [],
+               "instance_coverage": read("ontology_instance_coverage.yaml", {})}
+    payload["templates"] = _template_preview(run, max_nodes)
     database = run / "work/results.sqlite"
     if database.exists():
         with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as db:
@@ -374,13 +533,31 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
                 "SELECT body FROM items WHERE kind='record_alignments' ORDER BY id LIMIT ?",
                 (max_nodes,))]
             payload["unresolved"] = [json.loads(r[0]) for r in db.execute("SELECT body FROM items WHERE kind='unresolved' ORDER BY id LIMIT ?", (max_nodes,))]
+            payload["definition_membership_counts"] = dict(db.execute(
+                "SELECT json_extract(body,'$.type_id'), count(*) FROM items "
+                "WHERE kind='definition_memberships' GROUP BY json_extract(body,'$.type_id')"))
+            payload["definition_memberships"] = [json.loads(row[0]) for row in db.execute(
+                "SELECT body FROM (SELECT body, row_number() OVER (PARTITION BY "
+                "json_extract(body,'$.type_id') ORDER BY id) AS rn FROM items "
+                "WHERE kind='definition_memberships') WHERE rn <= 3 LIMIT ?", (max_nodes * 3,))]
+            (payload["instance_preview"], payload["instance_relations"], payload["instance_counts"]) = (
+                _instance_preview(db, payload["ontology"], max_nodes))
+            _attach_attribute_previews(db, payload["instance_preview"], payload["ontology"])
+            for item in payload["instance_preview"]:
+                _bound_concept_refs(item)
             refs = set()
-            for item in (payload["objects"] + payload["concepts"] + payload["record_alignments"]
+            for item in (payload["objects"] + payload["concepts"] + payload["instance_preview"]
+                         + payload["instance_relations"] + payload["record_alignments"]
                          + payload["relations"] + payload["unresolved"]
                          + payload["ontology"].get("object_types", [])
                          + payload["ontology"].get("relation_types", [])
-                         + payload["ontology"].get("attributes", [])):
+                         + payload["ontology"].get("attributes", [])
+                         + payload["templates"]["projections"]
+                         + payload["templates"]["bindings"]
+                         + payload["templates"]["ontology_bindings"]):
                 refs.update(item.get("evidence_ids", []))
+                for attribute in item.get("preview_attributes", []) + item.get("properties", []):
+                    refs.update(attribute.get("evidence_ids", []))
             for result in payload["knowledge"]:
                 for claim in result.get("claims", []):
                     refs.add(claim["id"])
@@ -392,27 +569,28 @@ def render_viewer(run, max_nodes=200, *, manifest_override=None):
     payload["preview"] = _preview_summary(payload, database.exists(), (run / "ontology.yaml").exists())
     payload["ontology_overview"] = _ontology_overview(payload["ontology"])
     graph = read("meta_graph.yaml", {"nodes": [], "edges": []})
+    payload["evidence"].update(graph.get("evidence", {}))
     preview = _metadata_preview(
         graph, read("field_candidates.yaml", []),
         read("association_rules.yaml", {"rules": []}), max_nodes)
-    # The local association results are useful for inspection, but they are
-    # neither DataHub schema edges nor declared foreign keys. Keep them in a
-    # separate page payload so a metadata renderer cannot conflate the two.
+    # Checked field links are part of the local metadata graph, with their own
+    # edge type. Unchecked candidates remain outside the graph preview.
     payload["association_preview"] = {
-        "links": [item for item in preview["links"] if item["status"] != "declared"],
+        "links": [item for item in preview["links"] if item["status"] == "candidate"],
         "link_counts": {key: value for key, value in preview["link_counts"].items()
-                        if key != "declared"},
+                        if key == "candidate"},
     }
-    preview["links"] = [item for item in preview["links"] if item["status"] == "declared"]
+    preview["links"] = [item for item in preview["links"] if item["status"] != "candidate"]
     preview["shown_links"] = len(preview["links"])
-    preview["total_links"] = preview["link_counts"]["declared"]
-    preview["link_counts"] = {"declared": preview["link_counts"]["declared"]}
+    preview["total_links"] = sum(value for key, value in preview["link_counts"].items() if key != "candidate")
+    preview["link_counts"] = {key: value for key, value in preview["link_counts"].items() if key != "candidate"}
     payload["metadata"] = preview
     # Audit logs remain on disk. The page contains only bounded graph data and summaries.
     payload["knowledge"] = [{k: v for k, v in item.items() if k != "documents"} for item in payload["knowledge"]]
     payload["construction"] = {**payload["construction"], "steps": [{k: v for k, v in s.items() if k != "attempts"} | {"attempts": [{k: v for k, v in a.items() if k not in ("delta", "accepted_delta")} for a in s["attempts"]]} for s in payload["construction"].get("steps", [])]}
     encoded = json.dumps(payload, ensure_ascii=False).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
     page = Path(__file__).with_name("viewer.html").read_text(encoding="utf-8").replace("__RESULT_DATA__", encoded)
-    target = run / "viewer.html"
+    target = Path(output_path).resolve() if output_path is not None else run / "viewer.html"
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(page, encoding="utf-8")
     return target

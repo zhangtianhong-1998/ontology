@@ -13,11 +13,37 @@ def test_metric_and_measure_hints_may_be_compared_without_asserting_identity():
     dimension = {"card_id": "x1", "root_hint": "Dimension"}
     assert _compatible(metric, measure)
     assert _compatible(measure, metric)
-    assert not _compatible(metric, dimension)
+    assert _compatible(metric, dimension)  # A hint cannot rule out a coordinate relation.
     assert not _compatible(metric, metric)
 from ontology_r2.semantic_cards import SemanticCardIndex, build_semantic_cards
 from ontology_r2.storage import Dataset
 from test_semantic_cards import _dataset, _table
+
+
+def test_full_config_packages_more_than_one_thousand_distinct_patterns(tmp_path):
+    from pathlib import Path
+    from ontology_r2.storage import read_yaml
+    config = read_yaml(Path(__file__).parents[1] / 'config/runtime.fruit-full.yaml')
+    options = {**config['instance_bundles'], 'vector_enabled': False,
+               'lexical_top_k': 0, 'max_joined_context_records': 0}
+    root = tmp_path / 'input'
+    _table(root, 'metric_definition', {'id': '记录 ID', 'name': '指标名称', 'definition': '指标定义'},
+           [{'id': str(i), 'name': f'经营收入{i}', 'definition': f'经营对象{i}的完整收入定义'}
+            for i in range(1001)])
+    work = tmp_path / 'work'; work.mkdir()
+    data = Dataset(root, work)
+    index = None
+    try:
+        built = build_semantic_cards(data, tmp_path / 'cards.sqlite')
+        index = SemanticCardIndex(built['index_path'])
+        result = build_instance_bundles(data, index, {'rules': []}, options)
+        assert result['coverage']['definition_patterns_inspected'] == 1001
+        assert result['coverage']['bundles_by_task']['concept_induction'] == 1001
+        assert result['coverage']['definition_patterns_unprocessed'] == 0
+    finally:
+        if index:
+            index.close()
+        data.close()
 
 
 def test_semantic_pattern_pages_reference_variants_without_merging_identity(tmp_path):
@@ -91,6 +117,17 @@ def test_checked_business_keys_precede_numeric_only_collisions():
          "source": {"table": "b"}},
     ]
     assert [item["rule_id"] for item in _round_robin_rules(rules, 1)] == ["b"]
+
+
+def test_partial_business_reference_can_precede_unrelated_numeric_collision():
+    rules = [
+        {"rule_id": "numeric", "status": "checked_technical", "numeric_overlap_only": True,
+         "source": {"table": "a", "field": "id"}, "target": {"table": "b", "field": "id"}},
+        {"rule_id": "partial", "status": "observed_subset", "numeric_overlap_only": False,
+         "source": {"table": "a", "field": "metric_code"},
+         "target": {"table": "metric", "field": "code"}},
+    ]
+    assert [item["rule_id"] for item in _round_robin_rules(rules, 1)] == ["partial"]
 
 
 def test_seed_budget_spans_business_roots_before_repeating_one_table():
@@ -200,7 +237,7 @@ def test_shared_metric_definition_key_is_not_compiled_as_business_relation():
         rule = {"status": "checked_technical", "transform": {"operator": "identity"},
                 "source": {"table": source, "field": "metric_code"},
                 "target": {"table": "fruit.metric_detail", "field": "metric_code"}}
-        assert _relation_bundle(data, rule, {}) == (None, "same_concept_key_requires_alignment")
+        assert _relation_bundle(data, rule, {}) == (None, "same_concept_key_routed_to_joined_context")
 
 
 def test_skipped_alignment_lead_does_not_consume_relation_packet_slot(monkeypatch):
@@ -213,7 +250,7 @@ def test_skipped_alignment_lead_does_not_consume_relation_packet_slot(monkeypatc
          "target": {"table": "fruit.measure", "field": "measure_code"}},
     ]
     monkeypatch.setattr(packets_module, "_relation_bundle", lambda data, rule, limits: (
-        (None, "same_concept_key_requires_alignment") if rule["rule_id"] == "a"
+        (None, "same_concept_key_routed_to_joined_context") if rule["rule_id"] == "a"
         else ({"task_kind": "relation_meaning", "bundle_id": "b"}, None)))
     index = SimpleNamespace(db=SimpleNamespace(execute=lambda sql: SimpleNamespace(
         fetchone=lambda: (0,))))
@@ -222,7 +259,7 @@ def test_skipped_alignment_lead_does_not_consume_relation_packet_slot(monkeypatc
                                                        "max_relation_bundles": 1})
     assert result["coverage"]["rules_selected"] == 2
     assert result["coverage"]["bundles_by_task"]["relation_meaning"] == 1
-    assert result["coverage"]["skipped"][0]["reason"] == "same_concept_key_requires_alignment"
+    assert result["coverage"]["skipped"][0]["reason"] == "same_concept_key_routed_to_joined_context"
 
 
 def test_lexical_packets_keep_conflicting_scopes_as_unjudged_candidates(tmp_path):

@@ -1,0 +1,10 @@
+{
+  "commit": "cf6ba4f46400a39336bd53536c7050608fc239d3",
+  "branch": "codex/ontology-template-rebuild",
+  "working_tree_clean": true,
+  "config": "/Users/sanjiuganmaoling/Desktop/ontology-xuanyue/route2/config/runtime.fruit-templates.yaml",
+  "config_sha256": "31cd9a738aad5461452608be417476dbe576cbd5a8a02aac6aaea0d6ea0ea66c",
+  "started_at": "2026-09-28T17:33:39.122534+00:00",
+  "pid": 49496,
+  "model": "deepseek-v4-flash"
+}

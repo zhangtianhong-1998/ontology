@@ -1,0 +1,128 @@
+{
+  "scope": "v10 experiment plus its two launch preflight runs; not all project history",
+  "source_commit": "cf6ba4f46400a39336bd53536c7050608fc239d3",
+  "experiment": {
+    "request_attempts": 491,
+    "provider_responses": 490,
+    "logical_requests": 472,
+    "format_repair_attempts": 18,
+    "transient_retry_attempts": 1,
+    "cache_hits": 0,
+    "provider_reported_tokens": 9368402,
+    "provider_finish_reasons": {
+      "tool_calls": 479,
+      "length": 10,
+      "stop": 1
+    },
+    "tasks": {
+      "association_react": {
+        "attempts": 3,
+        "responses": 3
+      },
+      "column_role_inference": {
+        "attempts": 23,
+        "responses": 23
+      },
+      "concept_bundle": {
+        "attempts": 145,
+        "responses": 145
+      },
+      "fact_type_binding": {
+        "attempts": 4,
+        "responses": 4
+      },
+      "group_review": {
+        "attempts": 43,
+        "responses": 43
+      },
+      "group_review_batch": {
+        "attempts": 34,
+        "responses": 34
+      },
+      "relation_batch": {
+        "attempts": 223,
+        "responses": 222
+      },
+      "relation_bundle": {
+        "attempts": 6,
+        "responses": 6
+      },
+      "type_generalization": {
+        "attempts": 10,
+        "responses": 10
+      }
+    },
+    "failed_connection_response_observed": false,
+    "failed_connection_reached_provider_or_billed": "unknown",
+    "over_input_limit_rejected_before_admission": 1
+  },
+  "preflight_runs": {
+    "template-replay-review-20260929": {
+      "summary": {
+        "mode": "live_repair_of_saved_synthetic_packet",
+        "status": "failed",
+        "error_type": "JSONDecodeError",
+        "frames": [
+          {
+            "file": "/Users/sanjiuganmaoling/Desktop/ontology-xuanyue/route2/local_config/verify_iterative_repair_live.py",
+            "line": 46,
+            "function": "main"
+          },
+          {
+            "file": "/Users/sanjiuganmaoling/Desktop/ontology-xuanyue/route2/code/ontology_r2/llm.py",
+            "line": 430,
+            "function": "ask"
+          },
+          {
+            "file": "/opt/miniconda3/lib/python3.13/json/__init__.py",
+            "line": 346,
+            "function": "loads"
+          },
+          {
+            "file": "/opt/miniconda3/lib/python3.13/json/decoder.py",
+            "line": 345,
+            "function": "decode"
+          },
+          {
+            "file": "/opt/miniconda3/lib/python3.13/json/decoder.py",
+            "line": 361,
+            "function": "raw_decode"
+          }
+        ],
+        "llm_calls": 1,
+        "wire_responses": 1,
+        "tokens": 15242
+      },
+      "summary_sha256": "112b001104cc7f6bd8c96873faf88957c62d82e1bec69033b9ad707e05b0a30c"
+    },
+    "template-replay-review-v2-20260929": {
+      "summary": {
+        "mode": "live_repair_of_saved_synthetic_packet",
+        "status": "accepted",
+        "review_errors": [],
+        "instance_nodes": 2,
+        "instance_edges": 1,
+        "applicability_scope": {},
+        "types": 2,
+        "observed_bindings": 1,
+        "typed_relations": 1,
+        "pending": 3,
+        "llm_calls": 2,
+        "wire_responses": 2,
+        "tokens": 25739
+      },
+      "summary_sha256": "6685b44212f011d3426483e6acd7ba2f4db2c3fb9029ba720584bd26517e083e"
+    }
+  },
+  "total_request_attempts": 494,
+  "total_observed_responses": 493,
+  "evidence": {
+    "run_manifest": "run_manifest.yaml",
+    "trace": "extraction-results.tar.gz:fruit-templates-full-v10-20260929/trace.jsonl",
+    "connection_error_trace_lines": [
+      1641,
+      1642
+    ],
+    "pre_admission_rejection_trace_line": 2365
+  }
+}

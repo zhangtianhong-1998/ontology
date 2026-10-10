@@ -1,0 +1,44 @@
+schema: fruit_market
+table_name: fruit_synonym_dict
+table_comment: 中英文及业务别名词典
+relkind: r
+estimated_rows: 5000
+total_size: null
+data_size: null
+columns:
+- column_name: sn
+  ordinal_position: 1
+  data_type: bigint
+  is_not_null: false
+  default_value: null
+  column_comment: sn，合成业务字段
+- column_name: word
+  ordinal_position: 2
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: word，合成业务字段
+- column_name: type
+  ordinal_position: 3
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: type，合成业务字段
+- column_name: attr
+  ordinal_position: 4
+  data_type: text
+  is_not_null: false
+  default_value: null
+  column_comment: attr，合成业务字段
+- column_name: lang
+  ordinal_position: 5
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: lang，合成业务字段
+- column_name: scope
+  ordinal_position: 6
+  data_type: character varying(255)
+  is_not_null: false
+  default_value: null
+  column_comment: scope，合成业务字段

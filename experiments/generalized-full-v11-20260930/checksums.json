@@ -1,0 +1,42 @@
+{
+  "source_commit": "ff8ded2487307a430d6faed50f8f44f688a6c29e",
+  "run_status": "in_progress",
+  "final_result": false,
+  "files": {
+    "README.md": {
+      "bytes": 3753,
+      "sha256": "e9a44c25d6519129d23f10ab46267398c149451620fb90f255d9e0bd8f34a3a3"
+    },
+    "api_call_audit.json": {
+      "bytes": 5668,
+      "sha256": "19d30a48db33bd8f9ad1dce6d63f1385a269eb0a4f08e457409a606babe9d518"
+    },
+    "checkpoint_plan.yaml": {
+      "bytes": 532307,
+      "sha256": "1f1e124ee446ea373db66acf6cc5f07879eec93f34b8561e036bdfeca8efa108"
+    },
+    "checkpoint_summary.json": {
+      "bytes": 10218,
+      "sha256": "c1ac72308c95bf8a8da9f1d7dfda1136e9c1093f43815a490ad9088c87c7be04"
+    },
+    "extraction-checkpoint.tar.gz": {
+      "bytes": 11559552,
+      "sha256": "c139bd751ea60ded8882a6b5adaef091d239c88bb2742e6e17cd978409527c47"
+    },
+    "runtime.full-v11.yaml": {
+      "bytes": 4735,
+      "sha256": "de45bce3336162a140548a396e4fbf856ce550217a05234d411df38b16482e6c"
+    },
+    "snapshot_metadata.json": {
+      "bytes": 6153,
+      "sha256": "47343aada4ff2d5a9f6a32eeb961eda2b4687aaaf6e230b492a8018d6e479d12"
+    },
+    "synthetic_manifest.yaml": {
+      "bytes": 1296,
+      "sha256": "ba9fd4c29498e55c87e8a3aa4ffa238db92428fc180a06b990bacbf06f092289"
+    }
+  },
+  "archive_member_inventory": "snapshot_metadata.json files",
+  "reused_input_archive": "../fruit-full-v10-20260929/synthetic-data.tar.gz",
+  "reused_input_sha256": "a604bd417b2cb0a71108cf80149147fba186e7cff0a4d3af0de7cd751b49de8f"
+}

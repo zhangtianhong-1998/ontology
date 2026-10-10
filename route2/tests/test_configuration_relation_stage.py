@@ -75,7 +75,7 @@ def test_compile_uses_definition_types_and_config_witness_only(tmp_path):
 @pytest.mark.parametrize("decision,reason", [
     (_decision(direction="target_to_source"), "predicate and direction"),
     (_decision(parent_relation="contains"), "predicate and direction"),
-    (_decision(configuration_quote="依赖"), "predicate and direction"),
+    (_decision(configuration_quote="依赖"), "entire statement"),
     (_decision(source_definition_quote="利润来自云上服务"), "exact complete definition record"),
     (_decision(target_definition_quote="成本是利润"), "exact complete definition record"),
     (_decision(label="经营利润包含收入"), "canonical directed predicate"),
@@ -203,5 +203,40 @@ def test_stage_caps_model_calls_and_reports_failed_judgements(tmp_path):
         assert failed["coverage"]["unresolved"] == 1
         assert failed["coverage"]["partial"] is True
         assert failed["plan"].relation_types == []
+    finally:
+        data.close()
+
+
+@pytest.mark.parametrize("literal", [
+    "经营利润不依赖收入", "经营利润仅在2025年依赖收入", "经营利润依赖收入，但关系已作废",
+    "经营利润可能依赖收入", "经营利润依赖收入，条件为地区北京", "经营利润并非依赖收入",
+])
+def test_full_configuration_modifiers_cannot_be_promoted_to_unqualified_relations(tmp_path, literal):
+    from ontology_r2.storage import qi
+    data, plan, concepts, alignments, spec = _input(tmp_path)
+    try:
+        sql_name = data.tables[spec["configuration_table"]]["sql_name"]
+        data.db.execute(f'UPDATE {qi(sql_name)} SET relation_text=? WHERE id IN (\'21\',\'22\')', [literal])
+        candidate = _candidate(data, plan, concepts, alignments, spec)
+        llm = _FixedLLM(_decision(configuration_quote=literal).model_dump())
+        result = asyncio.run(adjudicate_configuration_relations(
+            data, PROFILE, plan, [candidate], concepts, alignments, llm))
+        assert result["plan"].relation_types == []
+        assert result["coverage"]["unresolved"] == 1
+        assert result["steps"][0]["configuration_text"] == literal
+    finally:
+        data.close()
+
+
+def test_trimming_a_condition_off_configuration_quote_is_rejected(tmp_path):
+    from ontology_r2.storage import qi
+    data, plan, concepts, alignments, spec = _input(tmp_path)
+    try:
+        sql_name = data.tables[spec["configuration_table"]]["sql_name"]
+        literal = "经营利润依赖收入，仅用于北京"
+        data.db.execute(f'UPDATE {qi(sql_name)} SET relation_text=? WHERE id IN (\'21\',\'22\')', [literal])
+        candidate = _candidate(data, plan, concepts, alignments, spec)
+        with pytest.raises(ValueError, match="entire statement"):
+            compile_configuration_relation(data, PROFILE, plan, candidate, _decision(), concepts, alignments)
     finally:
         data.close()

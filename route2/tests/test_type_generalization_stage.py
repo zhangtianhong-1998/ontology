@@ -14,6 +14,7 @@ def test_stage_calls_structured_callback_and_compiles_only_accepted_decision():
         "阿里云水果销售所得营业收入", "商业市场水果销售所得营业收入"))
     for name, child in zip(("阿里云", "商业市场"), core.object_types):
         child.label = f"{name}水果收入"
+        child.definition_parameters = {"period_scope": "公历年"}
     packets = []
 
     async def decide(packet):
@@ -31,11 +32,15 @@ def test_stage_calls_structured_callback_and_compiles_only_accepted_decision():
     assert len(packets) == 1
     assert packets[0]["candidate"]["status"] == "candidate_only"
     assert all(item["definition_fragments"] for item in packets[0]["source_types"])
+    assert all(item["definition_parameters"] == {"period_scope": "公历年"}
+               for item in packets[0]["source_types"])
     assert all(fragment["source_ref"]["snapshot_id"] == "snap"
                for item in packets[0]["source_types"]
                for fragment in item["definition_fragments"])
     assert result["steps"][0]["status"] == "accepted"
     assert len(result["plan"].object_types) == 3
+    assert all(item.definition_parameters == {"period_scope": "公历年"}
+               for item in result["plan"].object_types)
     assert len(core.object_types) == 2
     assert result["coverage"]["model_decision_invocations"] == 1
     assert result["coverage"]["quality_status"].startswith("unjudged")

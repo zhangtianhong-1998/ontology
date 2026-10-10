@@ -1,6 +1,7 @@
 """Small, source-grounded row examples for a checked field-pair candidate."""
 
 from .storage import qi
+from .discovery import association_match_sql
 
 
 def _field(data, table, field):
@@ -28,7 +29,7 @@ def _row(data, table, row_number, key, fields):
 
 
 def joint_examples(data, candidate, check, *, limit=2, source_fields=(), target_fields=()):
-    """Return up to two unique raw-equality pairs and one checked counterexample.
+    """Return up to two uniquely matched original row pairs and one counterexample.
 
     These rows illustrate a verified *field comparison*, not an accepted
     business relation. Selector and scope predicates follow the exact check.
@@ -69,7 +70,7 @@ def joint_examples(data, candidate, check, *, limit=2, source_fields=(), target_
         "matched_pairs": [], "counterexamples": [],
     }
     if (source_table == target_table or check.get("decision", {}).get("status") != "checked"
-            or check.get("normalization") != "identity"
+            or check.get("normalization", "identity") not in {"identity", "nfkc_whitespace_casefold", "source_alias_items", "target_alias_items", "both_alias_items"}
             or not isinstance(counts.get("unique_matches"), int)
             or counts["unique_matches"] <= 0):
         result["status"] = "not_applicable"
@@ -88,47 +89,37 @@ def joint_examples(data, candidate, check, *, limit=2, source_fields=(), target_
         _field(data, target_table, target_field)
         _field(data, source_table, source_field)
 
-    scope_pairs = sorted(scopes.items())
-    source_scope = " AND ".join(
-        f"s.{qi(source_field)} IS NOT NULL AND s.{qi(source_field)} <> '' "
-        f"AND trim(s.{qi(source_field)}) <> ''"
-        for _, source_field in scope_pairs) or "TRUE"
-    target_scope = " AND ".join(
-        f"t.{qi(target_field)} IS NOT NULL AND t.{qi(target_field)} <> '' "
-        f"AND trim(t.{qi(target_field)}) <> ''"
-        for target_field, _ in scope_pairs) or "TRUE"
-    selector_sql = " AND ".join(f"s.{qi(field)} = ?" for field in sorted(selector)) or "TRUE"
-    target_scope_select = "".join(
-        f", t.{qi(target_field)} AS {qi(f'scope_{i}')}"
-        for i, (target_field, _) in enumerate(scope_pairs))
-    group_positions = ", ".join(str(i) for i in range(1, len(scope_pairs) + 2))
-    scope_join = "".join(
-        f" AND s.{qi(source_field)} = u.{qi(f'scope_{i}')}"
-        for i, (_, source_field) in enumerate(scope_pairs))
-    sql = f"""
-      WITH unique_target AS (
-        SELECT t.{target_key} AS ref{target_scope_select},
-               min(t.__r2_row) AS target_row_number
-        FROM {qi(data.tables[target_table]['sql_name'])} t
-        WHERE t.{target_key} IS NOT NULL AND t.{target_key} <> ''
-          AND trim(t.{target_key}) <> '' AND {target_scope}
-        GROUP BY {group_positions} HAVING count(*) = 1
-      )
-      SELECT s.__r2_row AS source_row_number, u.target_row_number,
-             s.{source_key} AS raw_value
-      FROM {qi(data.tables[source_table]['sql_name'])} s
-      JOIN unique_target u ON s.{source_key} = u.ref{scope_join}
-      WHERE s.{source_key} IS NOT NULL AND s.{source_key} <> ''
-        AND trim(s.{source_key}) <> '' AND {source_scope}
-        AND ({selector_sql}) IS TRUE
-      ORDER BY s.__r2_row, u.target_row_number LIMIT ?
-    """
-    pairs = data.db.execute(sql, [*(selector[field] for field in sorted(selector)), min(limit, 2)]).fetchall()
-    for source_row, target_row, raw_value in pairs:
+    transform = check.get("normalization", "identity")
+    sql, params = association_match_sql(data, candidate, selector=selector,
+                                         scope_bindings=scopes, transform=transform)
+    # The matching SQL emits at most one target for each eligible source row.
+    # Sample different observed targets before repeating one popular target;
+    # this groups validated pairs in DuckDB, never expands a row/target product.
+    pairs = data.db.execute(f"""WITH matches AS ({sql}), ranked AS (
+        SELECT source_row_number, target_row_number,
+               row_number() OVER (PARTITION BY target_row_number
+                                  ORDER BY source_row_number) AS target_occurrence,
+               count(DISTINCT target_row_number) OVER () AS target_witness_count
+        FROM matches
+    ) SELECT source_row_number, target_row_number, target_witness_count FROM ranked
+      ORDER BY target_occurrence, source_row_number, target_row_number LIMIT ?""",
+        [*params, min(limit, 2)]).fetchall()
+    result["match_basis"] = transform
+    target_count = pairs[0][2] if pairs else 0
+    sampled_targets = len({pair[1] for pair in pairs})
+    result["sampling"] = {"method": "distinct_observed_target_round_robin",
+                          "unique_target_witnesses": target_count,
+                          "sampled_unique_target_witnesses": sampled_targets,
+                          "unique_target_witnesses_not_sampled": target_count - sampled_targets,
+                          "ambiguous_targets_sampled_as_positive": False}
+    for source_row, target_row, _ in pairs:
         result["matched_pairs"].append({
             "source_record": _row(data, source_table, source_row, source["field"], source_fields),
             "target_record": _row(data, target_table, target_row, target["field"], target_fields),
-            "matching_raw_value": raw_value,
+            "matching_raw_value": _row(data, source_table, source_row, source["field"], ())["fields"][source["field"]],
+            "source_raw_value": _row(data, source_table, source_row, source["field"], ())["fields"][source["field"]],
+            "target_raw_value": _row(data, target_table, target_row, target["field"], ())["fields"][target["field"]],
+            "transform": transform,
         })
     for example in counts.get("counterexample_rows", [])[:1]:
         row_number = example["row_number"]
